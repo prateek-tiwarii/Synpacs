@@ -8,12 +8,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { useAppSelector, useAppDispatch } from '@/store/hooks'
+import { useAppDispatch } from '@/store/hooks'
 import { logout } from '@/store/authSlice'
 import { useNavigate } from 'react-router-dom'
+import { useUser } from '@/hooks/useUser'
 
 export function TopNav() {
-  const user = useAppSelector((state) => state.auth.user)
+  const { user } = useUser()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
 
@@ -23,7 +24,7 @@ export function TopNav() {
 
   const handleLogout = () => {
     dispatch(logout())
-    navigate('/auth')
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -53,18 +54,18 @@ export function TopNav() {
               <Button variant="ghost" className="flex items-center gap-3 hover:bg-gray-100">
                 <Avatar className="h-9 w-9">
                   <AvatarFallback className="bg-blue-100 text-blue-600 font-semibold">
-                    {user?.avatar || 'U'}
+                    {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden md:flex flex-col items-start">
-                  <span className="text-sm font-medium text-gray-900">{user?.name}</span>
+                  <span className="text-sm font-medium text-gray-900">{user?.full_name}</span>
                   <span className="text-xs text-gray-500">{user?.role}</span>
                 </div>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <div className="px-2 py-1.5">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                <p className="text-sm font-medium text-gray-900">{user?.full_name}</p>
                 <p className="text-xs text-gray-500">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
