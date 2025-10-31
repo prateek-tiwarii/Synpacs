@@ -156,7 +156,7 @@ const Dashboard = () => {
         </div>
 
 
-        <DashboardComponent/>
+        {/* <DashboardComponent/> */}
 
         {/* Filters */}
         <Card className="border-none shadow-md">

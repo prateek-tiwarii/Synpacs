@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, 
   ListChecks, 
@@ -8,6 +8,8 @@ import {
   HelpCircle,
   LogOut
 } from 'lucide-react'
+import { useAppDispatch } from '@/store/hooks'
+import { logout } from '@/store/authSlice'
 
 const sidebarItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -19,6 +21,13 @@ const sidebarItems = [
 
 export function Sidebar() {
   const location = useLocation()
+  const dispatch = useAppDispatch()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    dispatch(logout())
+    navigate('/login', { replace: true })
+  }
 
   return (
     <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-72 bg-white! border-r border-gray-200! transition-all duration-300 z-30 flex flex-col`}>
@@ -60,10 +69,7 @@ export function Sidebar() {
           <span className="text-sm font-medium">Help Center</span>
         </Link>
         <button
-          onClick={() => {
-            // Add logout logic here
-            console.log('Logout clicked')
-          }}
+          onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all bg-white! text-red-600! hover:bg-red-50!"
           title="Logout"
         >

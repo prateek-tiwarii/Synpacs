@@ -1,5 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { Home } from '@/pages/Home'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { About } from '@/pages/About'
 import { Auth } from '@/pages/Auth'
 import Dashboard from './pages/Dashboard'
@@ -9,47 +8,26 @@ import { Automation } from '@/pages/Automation'
 
 import { NotFound } from '@/pages/NotFound'
 import { Navigation } from '@/components/Navigation'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { useAppSelector } from '@/store/hooks'
 import './App.css'
-import Settings from './pages/Settings'
+
+function RootRedirect() {
+  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated)
+
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <Navigate to="/login" replace />
+}
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public Routes with Navigation */}
-        <Route
-          path="/"
-          element={
-            <div className="flex flex-col min-h-screen">
-              <Navigation />
-              <main className="flex-1 mt-16">
-                <Home />
-              </main>
-            </div>
-          }
-        />
-        <Route
-          path="/about"
-          element={
-            <div className="flex flex-col min-h-screen">
-              <Navigation />
-              <main className="flex-1 mt-16">
-                <About />
-              </main>
-            </div>
-          }
-        />
-        <Route
-          path="/auth"
-          element={
-            <div className="flex flex-col min-h-screen">
-              <Navigation />
-              <main className="flex-1 mt-16">
-                <Auth />
-              </main>
-            </div>
-          }
-        />
+    <div className=''>
+      <Router>
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
 
         {/* Dashboard Routes with Navbar */}
         <Route path="/dashboard" element={<Dashboard />} />
@@ -58,13 +36,51 @@ function App() {
         <Route path="/automation" element={<Automation />} />
         <Route path="/settings" element={<Settings/>} />
 
-        {/* Redirect root to dashboard */}
-        <Route path="/dashboard" element={<Dashboard />} />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/worklist"
+            element={
+              <ProtectedRoute>
+                <Worklist />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pac-list"
+            element={
+              <ProtectedRoute>
+                <PacList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/automation"
+            element={
+              <ProtectedRoute>
+                <Automation />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* 404 */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Router>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Router>
+    </div>
   )
 }
 

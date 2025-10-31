@@ -6,11 +6,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useAppSelector } from '@/store/hooks'
+import { Badge } from '@/components/ui/badge'
 import { Link } from 'react-router-dom'
+import { useUser } from '@/hooks/useUser'
 
 export function TopBar() {
-  const user = useAppSelector((state) => state.auth.user)
+  const { user } = useUser()
+
+  console.log(user)
+
+  const formatRole = (role?: string) => {
+    if (!role) return 'User'
+    return role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-between px-6">
@@ -97,9 +105,14 @@ export function TopBar() {
               <User className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-64">
             <div className="p-3 border-b">
-              <p className="font-semibold text-sm">{user?.name || 'Guest'}</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-semibold text-sm">{user?.full_name || 'Guest'}</p>
+                <Badge variant="info" className="text-[10px] px-2 py-0">
+                  {formatRole(user?.role)}
+                </Badge>
+              </div>
               <p className="text-xs text-gray-500">{user?.email || 'guest@synpac.com'}</p>
             </div>
             <DropdownMenuItem className="cursor-pointer">Profile</DropdownMenuItem>

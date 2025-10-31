@@ -1,29 +1,70 @@
-import { createSlice } from '@reduxjs/toolkit'
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
+import { apiService } from '@/lib/api'
+import { getCookie } from '@/lib/cookies'
 
-interface User {
-  id: string
-  name: string
+export interface User {
+  _id: string
   email: string
-  role: 'doctor' | 'admin' | 'staff'
-  avatar?: string
+  full_name: string
+  phone: string
+  role: string
+  is_active: boolean
+  hospital_id: string
+  created_by: string | null
+  last_login: string | null
+  createdAt: string
+  updatedAt: string
+  __v: number
+}
+
+interface UserResponse {
+  success: boolean
+  message: string
+  data: User
 }
 
 interface AuthState {
   user: User | null
   isAuthenticated: boolean
+  loading: boolean
+  error: string | null
+}
+
+const checkInitialAuth = () => {
+  return !!getCookie('jwt')
 }
 
 const initialState: AuthState = {
-  user: {
-    id: '1',
-    name: 'Dr. Sarah Johnson',
-    email: 'sarah.johnson@synpac.com',
-    role: 'doctor',
-    avatar: 'SJ',
-  },
-  isAuthenticated: true,
+  user: null,
+  isAuthenticated: checkInitialAuth(),
+  loading: false,
+  error: null,
 }
+
+export const login = createAsyncThunk(
+  'auth/login',
+  async (credentials: { email: string; password: string }, { rejectWithValue }) => {
+    try {
+      const response = await apiService.login(credentials)
+      return response
+    } catch (error) {
+      return rejectWithValue((error as Error).message)
+    }
+  }
+)
+
+export const fetchUser = createAsyncThunk(
+  'auth/fetchUser',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await apiService.request<UserResponse>('/api/v1/auth/get-user')
+      return response.data
+    } catch (error) {
+      return rejectWithValue((error as Error).message)
+    }
+  }
+)
 
 const authSlice = createSlice({
   name: 'auth',
@@ -32,18 +73,55 @@ const authSlice = createSlice({
     setUser: (state, action: PayloadAction<User>) => {
       state.user = action.payload
       state.isAuthenticated = true
+      state.error = null
     },
     logout: (state) => {
+      apiService.logout()
       state.user = null
       state.isAuthenticated = false
+      state.error = null
     },
     updateUser: (state, action: PayloadAction<Partial<User>>) => {
       if (state.user) {
         state.user = { ...state.user, ...action.payload }
       }
     },
+    clearError: (state) => {
+      state.error = null
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(login.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(login.fulfilled, (state) => {
+        state.loading = false
+        state.isAuthenticated = true
+        state.error = null
+      })
+      .addCase(login.rejected, (state, action) => {
+        state.loading = false
+        state.isAuthenticated = false
+        state.error = action.payload as string
+      })
+      .addCase(fetchUser.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchUser.fulfilled, (state, action) => {
+        state.loading = false
+        state.user = action.payload
+        state.isAuthenticated = true
+        state.error = null
+      })
+      .addCase(fetchUser.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
   },
 })
 
-export const { setUser, logout, updateUser } = authSlice.actions
+export const { setUser, logout, updateUser, clearError } = authSlice.actions
 export default authSlice.reducer

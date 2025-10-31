@@ -52,7 +52,7 @@ export function Navigation() {
               Welcome, {user.name}
             </span>
           ) : (
-            <Link to="/auth">
+            <Link to="/login">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 h-11 rounded-lg shadow-md hover:shadow-lg transition-all">
                 Sign In
               </Button>
