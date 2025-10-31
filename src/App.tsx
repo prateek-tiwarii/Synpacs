@@ -11,6 +11,7 @@ import { Navigation } from '@/components/Navigation'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
+import Settings from './pages/Settings'
 
 function RootRedirect() {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated)
@@ -29,12 +30,16 @@ function App() {
         <Routes>
           <Route path="/" element={<RootRedirect />} />
 
-        {/* Dashboard Routes with Navbar */}
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/worklist" element={<Worklist />} />
-        <Route path="/pac-list" element={<PacList />} />
-        <Route path="/automation" element={<Automation />} />
-        <Route path="/settings" element={<Settings/>} />
+          <Route
+            path="/login"
+            element={
+              <div className="flex flex-col min-h-screen min-w-screen">
+                <main className="flex-1">
+                  <Auth />
+                </main>
+              </div>
+            }
+          />
 
           <Route
             path="/dashboard"
