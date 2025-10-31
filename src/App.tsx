@@ -6,10 +6,11 @@ import Dashboard from './pages/Dashboard'
 import { Worklist } from '@/pages/Worklist'
 import { PacList } from '@/pages/PacList'
 import { Automation } from '@/pages/Automation'
-import { Settings } from '@/pages/Settings'
+
 import { NotFound } from '@/pages/NotFound'
 import { Navigation } from '@/components/Navigation'
 import './App.css'
+import Settings from './pages/Settings'
 
 function App() {
   return (
@@ -55,7 +56,7 @@ function App() {
         <Route path="/worklist" element={<Worklist />} />
         <Route path="/pac-list" element={<PacList />} />
         <Route path="/automation" element={<Automation />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<Settings/>} />
 
         {/* Redirect root to dashboard */}
         <Route path="/dashboard" element={<Dashboard />} />
