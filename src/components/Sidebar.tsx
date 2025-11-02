@@ -16,7 +16,7 @@ const sidebarItems = [
   { label: 'Worklist', href: '/worklist', icon: ListChecks },
   { label: 'PAC List', href: '/pac-list', icon: Image },
   { label: 'Automation', href: '/automation', icon: Zap },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Create User', href: '/User-Create', icon: Settings },
 ]
 
 export function Sidebar() {

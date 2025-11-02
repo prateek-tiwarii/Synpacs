@@ -11,7 +11,8 @@ import { Navigation } from '@/components/Navigation'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
-import Settings from './pages/Settings'
+import UserCreate from './pages/userCreate'
+
 
 function RootRedirect() {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated)
@@ -74,10 +75,10 @@ function App() {
             }
           />
           <Route
-            path="/settings"
+            path="/User-Create"
             element={
               <ProtectedRoute>
-                <Settings />
+                <UserCreate />
               </ProtectedRoute>
             }
           />
