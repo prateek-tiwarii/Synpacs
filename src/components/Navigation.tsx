@@ -47,9 +47,9 @@ export function Navigation() {
 
       
         <div>
-          {user && user.name ? (
+          {user && user.full_name ? (
             <span className="text-sm text-gray-700 font-medium">
-              Welcome, {user.name}
+              Welcome, {user.full_name}
             </span>
           ) : (
             <Link to="/login">

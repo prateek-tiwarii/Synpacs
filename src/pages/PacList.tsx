@@ -1,5 +1,4 @@
 import { DashboardLayout } from '@/components/DashboardLayout'
-import { FileText } from 'lucide-react'
 
 export function PacList() {
   return (

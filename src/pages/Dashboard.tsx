@@ -22,7 +22,6 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/DashboardLayout';
-import DashboardComponent from '@/components/dashbordChart';
 
 const NumberTicker = ({ value , duration = 1000 }: { value: string; duration?: number }) => {
   const [displayValue, setDisplayValue] = useState(0);

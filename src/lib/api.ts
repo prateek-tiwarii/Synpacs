@@ -88,6 +88,19 @@ class ApiService {
 
     return response.json() as Promise<T>
   }
+
+  async createUser(userData: { email: string; full_name: string; phone: string; role: string }) {
+    return this.request('/api/v1/user/create-user', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    })
+  }
+
+  async getAllUsers() {
+    return this.request('/api/v1/user/get-all-users', {
+      method: 'GET',
+    })
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL)

@@ -1,5 +1,4 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { About } from '@/pages/About'
 import { Auth } from '@/pages/Auth'
 import Dashboard from './pages/Dashboard'
 import { Worklist } from '@/pages/Worklist'
@@ -7,22 +6,11 @@ import { PacList } from '@/pages/PacList'
 import { Automation } from '@/pages/Automation'
 
 import { NotFound } from '@/pages/NotFound'
-import { Navigation } from '@/components/Navigation'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
-import UserCreate from './pages/userCreate'
+import UserCreate from './pages/UserCreate'
 
-
-function RootRedirect() {
-  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated)
-
-  if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
-  }
-
-  return <Navigate to="/login" replace />
-}
 
 function RootRedirect() {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated)
