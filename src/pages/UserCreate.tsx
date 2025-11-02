@@ -663,7 +663,7 @@ const HospitalsTable = ({ hospitals, onEdit, onView, onDelete }: any) => {
 };
 
 // Main Settings Page Component
-const Settings = () => {
+const UserCreate = () => {
   const [doctors, setDoctors] = useState(mockDoctorsData.data);
   const [hospitals, setHospitals] = useState(mockHospitalsData.data);
   const [doctorDialogOpen, setDoctorDialogOpen] = useState(false);
@@ -844,4 +844,4 @@ const Settings = () => {
 
 
 
-export default Settings;
+export default UserCreate;
