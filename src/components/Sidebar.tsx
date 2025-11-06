@@ -6,28 +6,49 @@ import {
   Settings, 
   Zap,
   HelpCircle,
-  LogOut
+  LogOut,
+  FileText
 } from 'lucide-react'
-import { useAppDispatch } from '@/store/hooks'
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { logout } from '@/store/authSlice'
 
-const sidebarItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Worklist', href: '/worklist', icon: ListChecks },
-  { label: 'PAC List', href: '/pac-list', icon: Image },
-  { label: 'Automation', href: '/automation', icon: Zap },
-  { label: 'Create User', href: '/User-Create', icon: Settings },
-]
+
+const getSidebarItems = (role: string) => {
+  if (role === 'doctor') {
+    return [
+      { label: 'My Cases', href: '/doctor-dashboard', icon: FileText },
+    ]
+  }
+  
+  
+  const items = [
+    { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { label: 'Worklist', href: '/worklist', icon: ListChecks },
+    { label: 'PAC List', href: '/pac-list', icon: Image },
+    { label: 'Automation', href: '/automation', icon: Zap },
+  ]
+
+  
+  if (role === 'super_coordinator') {
+    items.push({ label: 'Create User', href: '/User-Create', icon: Settings })
+  }
+
+  return items
+}
 
 export function Sidebar() {
   const location = useLocation()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
+  const user = useAppSelector((state) => state.auth.user)
 
   const handleLogout = () => {
     dispatch(logout())
     navigate('/login', { replace: true })
   }
+
+ 
+  const sidebarItems = user ? getSidebarItems(user.role) : []
 
   return (
     <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-72 bg-white! border-r border-gray-200! transition-all duration-300 z-30 flex flex-col`}>
