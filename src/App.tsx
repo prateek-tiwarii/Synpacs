@@ -10,6 +10,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
 import UserCreate from './pages/UserCreate'
+import Patient from './pages/Patient'
 
 
 function RootRedirect() {
@@ -73,10 +74,19 @@ function App() {
             }
           />
           <Route
-            path="/User-Create"
+            path="/manage-users"
             element={
               <ProtectedRoute>
                 <UserCreate />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/manage-patients"
+            element={
+              <ProtectedRoute>
+                <Patient />
               </ProtectedRoute>
             }
           />

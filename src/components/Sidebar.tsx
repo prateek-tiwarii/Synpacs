@@ -6,7 +6,8 @@ import {
   Settings, 
   Zap,
   HelpCircle,
-  LogOut
+  LogOut,
+  User
 } from 'lucide-react'
 import { useAppDispatch } from '@/store/hooks'
 import { logout } from '@/store/authSlice'
@@ -16,7 +17,8 @@ const sidebarItems = [
   { label: 'Worklist', href: '/worklist', icon: ListChecks },
   { label: 'PAC List', href: '/pac-list', icon: Image },
   { label: 'Automation', href: '/automation', icon: Zap },
-  { label: 'Create User', href: '/User-Create', icon: Settings },
+  { label: 'Manage Patients', href: '/manage-patients', icon: User },
+  { label: 'Manage Users', href: '/manage-users', icon: Settings },
 ]
 
 export function Sidebar() {

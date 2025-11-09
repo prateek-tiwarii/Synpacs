@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Edit2, Trash2, Plus, Users, Loader2 } from 'lucide-react';
+import { Eye, Trash2, Plus, Users, Loader2, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,8 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { apiService } from '@/lib/api';
+import { useUser } from '@/hooks/useUser';
 
 const USER_ROLES = [
   { value: 'doctor', label: 'Doctor/Radiologist' },
@@ -29,29 +31,67 @@ const ROLE_COLORS = {
   coordinator: 'bg-yellow-100 text-yellow-800'
 };
 
-const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
-  const [formData, setFormData] = useState(user || {
+const DAYS_OF_WEEK = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
+  { value: 'sunday', label: 'Sunday' }
+];
+
+const UserDialog = ({ open, onOpenChange, onSave }: any) => {
+  const [formData, setFormData] = useState({
     role: 'doctor',
     fullName: '',
     email: '',
-    phone: ''
+    phone: '',
+    speciality: '',
+    availableDays: [] as string[],
+    availableTimes: [{ startTime: '', endTime: '' }],
+    onCall: false
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   React.useEffect(() => {
-    if (user) {
-      setFormData(user);
-    } else {
-      setFormData({
-        role: 'doctor',
-        fullName: '',
-        email: '',
-        phone: ''
-      });
-    }
+    setFormData({
+      role: 'doctor',
+      fullName: '',
+      email: '',
+      phone: '',
+      speciality: '',
+      availableDays: [],
+      availableTimes: [{ startTime: '', endTime: '' }],
+      onCall: false
+    });
     setError('');
-  }, [user, open]);
+  }, [open]);
+
+  const addTimeSlot = () => {
+    setFormData({
+      ...formData,
+      availableTimes: [...formData.availableTimes, { startTime: '', endTime: '' }]
+    });
+  };
+
+  const removeTimeSlot = (index: number) => {
+    const newTimes = formData.availableTimes.filter((_, i) => i !== index);
+    setFormData({
+      ...formData,
+      availableTimes: newTimes.length > 0 ? newTimes : [{ startTime: '', endTime: '' }]
+    });
+  };
+
+  const updateTimeSlot = (index: number, field: 'startTime' | 'endTime', value: string) => {
+    const newTimes = [...formData.availableTimes];
+    newTimes[index][field] = value;
+    setFormData({
+      ...formData,
+      availableTimes: newTimes
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,9 +112,9 @@ const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto [&>button]:bg-white! [&>button]:text-red-600! [&>button]:hover:bg-white! [&>button]:hover:text-red-700!">
         <DialogHeader>
-          <DialogTitle>{user ? 'Edit User Account' : 'Create User Account'}</DialogTitle>
+          <DialogTitle>Create User Account</DialogTitle>
           <DialogDescription>
-            {user ? 'Update user information' : 'Fill in the required fields based on user role'}
+            Fill in the required fields based on user role
           </DialogDescription>
         </DialogHeader>
         
@@ -117,7 +157,17 @@ const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
             <Label htmlFor="role">Role *</Label>
             <Select 
               value={formData.role} 
-              onValueChange={(value) => setFormData({...formData, role: value})}
+              onValueChange={(value) => {
+                setFormData({
+                  ...formData, 
+                  role: value,
+                  // Clear doctor-specific fields when changing role
+                  speciality: value === 'doctor' ? formData.speciality : '',
+                  availableDays: value === 'doctor' ? formData.availableDays : [],
+                  availableTimes: value === 'doctor' ? formData.availableTimes : [{ startTime: '', endTime: '' }],
+                  onCall: value === 'doctor' ? formData.onCall : false
+                });
+              }}
             >
               <SelectTrigger className="bg-white! text-gray-900!">
                 <SelectValue placeholder="Select user role" />
@@ -130,6 +180,124 @@ const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
             </Select>
           </div>
 
+          {formData.role === 'doctor' && (
+            <>
+              <div>
+                <Label htmlFor="speciality">Speciality *</Label>
+                <Input
+                  id="speciality"
+                  placeholder="e.g., Cardiology, Radiology"
+                  value={formData.speciality}
+                  onChange={(e) => setFormData({...formData, speciality: e.target.value})}
+                  required
+                />
+              </div>
+
+              <div className="space-y-3 flex flex-col gap-2">
+                <Label>Available Days *</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {DAYS_OF_WEEK.map((day) => (
+                    <div key={day.value} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={day.value}
+                        checked={formData.availableDays.includes(day.value)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setFormData({
+                              ...formData,
+                              availableDays: [...formData.availableDays, day.value]
+                            });
+                          } else {
+                            setFormData({
+                              ...formData,
+                              availableDays: formData.availableDays.filter((d) => d !== day.value)
+                            });
+                          }
+                        }}
+                      />
+                      <label
+                        htmlFor={day.value}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {day.label}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Available Times *</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addTimeSlot}
+                    className="h-8 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100!"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Time Slot
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {formData.availableTimes.map((timeSlot, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <Input
+                            type="time"
+                            placeholder="Start Time"
+                            value={timeSlot.startTime}
+                            onChange={(e) => updateTimeSlot(index, 'startTime', e.target.value)}
+                            required
+                            className="bg-white"
+                          />
+                        </div>
+                        <div>
+                          <Input
+                            type="time"
+                            placeholder="End Time"
+                            value={timeSlot.endTime}
+                            onChange={(e) => updateTimeSlot(index, 'endTime', e.target.value)}
+                            required
+                            className="bg-white"
+                          />
+                        </div>
+                      </div>
+                      {formData.availableTimes.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeTimeSlot(index)}
+                          className="h-9 w-9 p-0 text-red-600 hover:bg-red-50! hover:text-red-700!"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">Add multiple time slots for different availability windows throughout the day</p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="onCall"
+                  checked={formData.onCall}
+                  onCheckedChange={(checked) => setFormData({...formData, onCall: checked === true})}
+                />
+                <label
+                  htmlFor="onCall"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Available On Call
+                </label>
+              </div>
+            </>
+          )}
+
           {error && (
             <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">
               {error}
@@ -141,7 +309,7 @@ const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
               Cancel
             </Button>
             <Button type="submit" className="bg-black! text-white! hover:bg-gray-800!" disabled={isLoading}>
-              {isLoading ? 'Saving...' : user ? 'Update User' : 'Create User'}
+              {isLoading ? 'Creating...' : 'Create User'}
             </Button>
           </div>
         </form>
@@ -150,7 +318,73 @@ const UserDialog = ({ open, onOpenChange, user, onSave }: any) => {
   );
 };
 
-const UsersTable = ({ users, onEdit, onView, onDelete }: any) => {
+const DeleteConfirmationModal = ({ open, onOpenChange, user, onConfirm, isDeleting }: any) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md [&>button]:bg-white! [&>button]:text-red-600! [&>button]:hover:bg-white! [&>button]:hover:text-red-700!">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-full">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
+            <DialogTitle className="text-xl">Delete User</DialogTitle>
+          </div>
+          <DialogDescription className="pt-4">
+            Are you sure you want to delete this user? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        
+        {user && (
+          <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+            <div>
+              <span className="text-sm font-medium text-gray-700">Name: </span>
+              <span className="text-sm text-gray-900">{user.fullName}</span>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Email: </span>
+              <span className="text-sm text-gray-900">{user.email}</span>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Role: </span>
+              <Badge className={ROLE_COLORS[user.role as keyof typeof ROLE_COLORS]}>
+                {USER_ROLES.find(r => r.value === user.role)?.label || user.role}
+              </Badge>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end pt-4">
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={() => onOpenChange(false)} 
+            className="bg-white! text-black! border-gray-300 hover:bg-gray-100!"
+            disabled={isDeleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            type="button" 
+            onClick={onConfirm}
+            className="bg-red-600! text-white! hover:bg-red-700!"
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              'Delete User'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const UsersTable = ({ users, onView, onDelete, currentUserId }: any) => {
   const getRoleLabel = (roleValue: string) => {
     const role = USER_ROLES.find(r => r.value === roleValue);
     return role ? role.label : roleValue;
@@ -176,51 +410,55 @@ const UsersTable = ({ users, onEdit, onView, onDelete }: any) => {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {users.map((user: any) => (
-          <TableRow key={user.id}>
-            <TableCell className="font-medium">
-              <div>{user.fullName}</div>
-              {user.note && <div className="text-xs text-gray-500">{user.note}</div>}
-            </TableCell>
-            <TableCell>
-              <Badge className={ROLE_COLORS[user.role as keyof typeof ROLE_COLORS]}>
-                {getRoleLabel(user.role)}
-              </Badge>
-            </TableCell>
-            <TableCell>{user.phone}</TableCell>
-            <TableCell className="text-blue-600">{user.email}</TableCell>
-            <TableCell className="text-sm text-gray-600">{formatDate(user.addedOn)}</TableCell>
-            <TableCell className="text-sm text-gray-700">{user.addedBy || '—'}</TableCell>
-            <TableCell>
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => onView(user)}
-                  className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100!"
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => onEdit(user)}
-                  className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100!"
-                >
-                  <Edit2 className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => onDelete(user.id)}
-                  className="h-8 w-8 p-0 bg-white! text-red-600! border-gray-300 hover:bg-red-50!"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
+        {users.map((user: any) => {
+          const isCurrentUser = user.id === currentUserId;
+          return (
+            <TableRow key={user.id} className={isCurrentUser ? "bg-blue-50/50" : ""}>
+              <TableCell className="font-medium">
+                <div className="flex items-center gap-2">
+                  <span>{user.fullName}</span>
+                  {isCurrentUser && (
+                    <Badge className="bg-blue-100 text-blue-800 text-xs">You</Badge>
+                  )}
+                </div>
+                {user.note && <div className="text-xs text-gray-500">{user.note}</div>}
+              </TableCell>
+              <TableCell>
+                <Badge className={ROLE_COLORS[user.role as keyof typeof ROLE_COLORS]}>
+                  {getRoleLabel(user.role)}
+                </Badge>
+              </TableCell>
+              <TableCell>{user.phone}</TableCell>
+              <TableCell className="text-blue-600">{user.email}</TableCell>
+              <TableCell className="text-sm text-gray-600">{formatDate(user.addedOn)}</TableCell>
+              <TableCell className="text-sm text-gray-700">{user.addedBy || '—'}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => onView(user)}
+                    disabled={isCurrentUser}
+                    className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100! disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isCurrentUser ? "Cannot view your own profile here" : "View user"}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => onDelete(user)}
+                    disabled={isCurrentUser}
+                    className="h-8 w-8 p-0 bg-white! text-red-600! border-gray-300 hover:bg-red-50! disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isCurrentUser ? "You cannot delete yourself" : "Delete user"}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -228,13 +466,16 @@ const UsersTable = ({ users, onEdit, onView, onDelete }: any) => {
 
 
 const UserCreate = () => {
+  const { user: currentUser } = useUser();
   const [users, setUsers] = useState<any[]>([]);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -271,41 +512,70 @@ const UserCreate = () => {
   };
 
   const handleAddUser = () => {
-    setSelectedUser(null);
-    setUserDialogOpen(true);
-  };
-
-  const handleEditUser = (user: any) => {
-    setSelectedUser(user);
     setUserDialogOpen(true);
   };
 
   const handleViewUser = (user: any) => {
-    setSelectedUser(user);
-    setUserDialogOpen(true);
+    // View functionality can be implemented here if needed
+    console.log('View user:', user);
   };
 
-  const handleDeleteUser = (id: any) => {
-    if (confirm('Are you sure you want to delete this user?')) {
-      setUsers(users.filter((u: any) => u.id !== id));
+  const handleDeleteUser = (user: any) => {
+    setUserToDelete(user);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+
+    try {
+      setIsDeleting(true);
+      await apiService.deleteUser(userToDelete.id);
+      
+      setUsers(users.filter((u: any) => u.id !== userToDelete.id));
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+    } catch (err: any) {
+      console.error('Error deleting user:', err);
+      alert(err.message || 'Failed to delete user');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleSaveUser = async (userData: any) => {
-    if (selectedUser) {
-      setUsers(users.map((u: any) => u.id === selectedUser.id ? {...userData, id: selectedUser.id} : u));
+    if (userData.role === 'doctor') {
+      // Use doctor-specific endpoint for doctors
+      const doctorPayload = {
+        email: userData.email,
+        full_name: userData.fullName,
+        phone: userData.phone,
+        speciality: userData.speciality,
+        availability: [
+          {
+            available_days: userData.availableDays,
+            available_times: userData.availableTimes
+              .filter((slot: any) => slot.startTime && slot.endTime)
+              .map((slot: any) => `${slot.startTime}-${slot.endTime}`),
+            on_call: userData.onCall
+          }
+        ]
+      };
+      
+      await apiService.createDoctor(doctorPayload);
     } else {
-      const apiPayload = {
+      // Use generic user endpoint for other roles
+      const userPayload = {
         email: userData.email,
         full_name: userData.fullName,
         phone: userData.phone,
         role: userData.role
       };
       
-      await apiService.createUser(apiPayload);
-      
-      await fetchUsers();
+      await apiService.createUser(userPayload);
     }
+    
+    await fetchUsers();
   };
 
   const filteredUsers = users.filter(user => {
@@ -403,9 +673,9 @@ const UserCreate = () => {
               <div className="overflow-x-auto">
                 <UsersTable 
                   users={filteredUsers} 
-                  onEdit={handleEditUser}
                   onView={handleViewUser}
                   onDelete={handleDeleteUser}
+                  currentUserId={currentUser?._id}
                 />
               </div>
             )}
@@ -416,8 +686,15 @@ const UserCreate = () => {
       <UserDialog 
         open={userDialogOpen} 
         onOpenChange={setUserDialogOpen}
-        user={selectedUser}
         onSave={handleSaveUser}
+      />
+
+      <DeleteConfirmationModal
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        user={userToDelete}
+        onConfirm={confirmDelete}
+        isDeleting={isDeleting}
       />
     </div>
     </DashboardLayout>

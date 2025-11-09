@@ -96,9 +96,57 @@ class ApiService {
     })
   }
 
+  async createDoctor(doctorData: { 
+    email: string; 
+    full_name: string; 
+    phone: string; 
+    speciality: string;
+    availability: Array<{
+      available_days: string[];
+      available_times: string[];
+      on_call: boolean;
+    }>;
+  }) {
+    return this.request('/api/v1/doctor/create-new', {
+      method: 'POST',
+      body: JSON.stringify(doctorData),
+    })
+  }
+
   async getAllUsers() {
     return this.request('/api/v1/user/get-all-users', {
       method: 'GET',
+    })
+  }
+
+  async deleteUser(userId: string) {
+    return this.request(`/api/v1/user/delete/${userId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getAllDoctors() {
+    return this.request('/api/v1/doctor/get-all-doctors', {
+      method: 'GET',
+    })
+  }
+
+  async getAllPatients() {
+    return this.request('/api/v1/patient/get-all', {
+      method: 'GET',
+    })
+  }
+
+  async getRecentPatients() {
+    return this.request('/api/v1/patient/get-recent', {
+      method: 'GET',
+    })
+  }
+
+  async assignPatientToDoctor(patientId: string, doctorId: string) {
+    return this.request(`/api/v1/patient/assign/${patientId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ doctor_id: doctorId }),
     })
   }
 }

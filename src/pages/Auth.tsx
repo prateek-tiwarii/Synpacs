@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { login } from '@/store/authSlice'
@@ -46,22 +48,20 @@ export function Auth() {
     <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
       <div className="w-full max-w-6xl">
         <div className="flex flex-col items-center justify-center w-full">
-
-          <div className="bg-white rounded-2xl shadow-xl p-8 w-1/2">
-            <div className="space-y-8">
-              {/* Header */}
-              <div className="text-center space-y-2">
-                <h2 className="text-3xl font-bold text-gray-900">
-                  Welcome to synPac
-                </h2>
-              </div>
-
+          <Card className="w-1/2 shadow-xl">
+            <CardHeader className="text-center space-y-2">
+              <CardTitle className="text-3xl font-bold text-gray-900">
+                Welcome to synPac
+              </CardTitle>
+            </CardHeader>
+            
+            <CardContent className="space-y-6">
               {/* Error Message */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 shrink-0" />
-                  <span className="text-sm">{error}</span>
-                </div>
+                <Alert variant="destructive" className="bg-red-50 border-red-200 text-red-700">
+                  <AlertCircle className="h-5 w-5" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
 
               {/* Form */}
@@ -126,8 +126,8 @@ export function Auth() {
                   </Button>
                 </form>
               </Form>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
