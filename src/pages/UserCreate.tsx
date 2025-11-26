@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { apiService } from '@/lib/api';
 import { useUser } from '@/hooks/useUser';
+import InstitutionsManager from '@/components/dashboard/CreateInstitute';
 
 const USER_ROLES = [
   { value: 'doctor', label: 'Doctor/Radiologist' },
@@ -465,6 +466,10 @@ const UsersTable = ({ users, onView, onDelete, currentUserId }: any) => {
 };
 
 
+// ...existing code...
+// Removed InstitutionDialog and InstitutionManager components
+// ...existing code...
+
 const UserCreate = () => {
   const { user: currentUser } = useUser();
   const [users, setUsers] = useState<any[]>([]);
@@ -696,6 +701,10 @@ const UserCreate = () => {
         onConfirm={confirmDelete}
         isDeleting={isDeleting}
       />
+
+      <div className="pt-12 border-t border-gray-200">
+        <InstitutionsManager />
+      </div>
     </div>
     </DashboardLayout>
   );

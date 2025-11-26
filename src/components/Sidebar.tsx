@@ -1,24 +1,25 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, 
-  ListChecks, 
   Image, 
   Settings, 
   Zap,
   HelpCircle,
   LogOut,
-  User
+  User,
+  Users,
+  Activity
 } from 'lucide-react'
 import { useAppDispatch } from '@/store/hooks'
 import { logout } from '@/store/authSlice'
 
 const sidebarItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Worklist', href: '/worklist', icon: ListChecks },
+  { label: 'Queue', href: '/dashboard', icon: LayoutDashboard },
   { label: 'PAC List', href: '/pac-list', icon: Image },
   { label: 'Automation', href: '/automation', icon: Zap },
+  { label: 'Performance', href: '/performance', icon: Activity },
   { label: 'Manage Patients', href: '/manage-patients', icon: User },
-  { label: 'Manage Users', href: '/manage-users', icon: Settings },
+  { label: 'Manage Users', href: '/manage-users', icon: Users },
 ]
 
 export function Sidebar() {
@@ -62,6 +63,18 @@ export function Sidebar() {
 
       {/* Bottom Actions */}
       <div className="p-3 border-t border-gray-200 space-y-1">
+        <Link
+          to="/settings"
+          className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${
+            location.pathname === '/settings'
+              ? 'bg-black! text-white! shadow-sm'
+              : 'text-gray-700! hover:bg-gray-100!'
+          }`}
+          title="General Settings"
+        >
+          <Settings className="h-5 w-5 shrink-0" />
+          <span className="text-sm font-medium">General Settings</span>
+        </Link>
         <Link
           to="/help"
           className="flex items-center gap-3 px-3 py-3 rounded-lg transition-all text-gray-700! hover:bg-gray-100!"
