@@ -129,6 +129,11 @@ const authSlice = createSlice({
       .addCase(fetchUser.rejected, (state, action) => {
         state.loading = false
         state.error = action.payload as string
+        // If fetching user fails (e.g., 401 Unauthorized), reset auth state
+        if (action.payload === 'Unauthorized') {
+          state.isAuthenticated = false
+          state.user = null
+        }
       })
   },
 })

@@ -47,7 +47,8 @@ class ApiService {
     }
 
     if (data.success && data.data?.token) {
-      setCookie('jwt', data.data.token, 1 / 24)
+      // Cookie expires in 1 hour to match JWT token expiry
+      setCookie('jwt', data.data.token, 1)
       return data
     }
 
