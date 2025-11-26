@@ -132,6 +132,16 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
           </div>
 
           <div>
+            <Label htmlFor="preferredName">Preferred Name</Label>
+            <Input
+              id="preferredName"
+              placeholder="Enter preferred name"
+              disabled
+              className="bg-gray-100 cursor-not-allowed"
+            />
+          </div>
+
+          <div>
             <Label htmlFor="phone">Phone Number *</Label>
             <Input
               id="phone"
@@ -179,6 +189,52 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="qualification">Qualification</Label>
+            <Input
+              id="qualification"
+              placeholder="e.g., MBBS, MD"
+              disabled
+              className="bg-gray-100 cursor-not-allowed"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="medicalRegNo">Medical Registration Number</Label>
+            <Input
+              id="medicalRegNo"
+              placeholder="Enter registration number"
+              disabled
+              className="bg-gray-100 cursor-not-allowed"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="scope">Scope</Label>
+            <Select disabled>
+              <SelectTrigger className="bg-gray-100! text-gray-500! cursor-not-allowed">
+                <SelectValue placeholder="Select scope" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="my_case">View only my case</SelectItem>
+                <SelectItem value="institution">All studies of selected institution</SelectItem>
+                <SelectItem value="personal">Personal note</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="signature">Signature</Label>
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                id="signature"
+                type="file"
+                disabled
+                className="bg-gray-100 cursor-not-allowed file:bg-gray-200 file:text-gray-500 file:border-0 file:mr-4 file:py-2 file:px-4"
+              />
+            </div>
           </div>
 
           {formData.role === 'doctor' && (

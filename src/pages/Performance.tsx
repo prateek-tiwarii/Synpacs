@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Calendar, FileText, CheckCircle, AlertCircle, FileEdit, Eye } from 'lucide-react';
 import { DashboardLayout } from '@/components/DashboardLayout';
+import { Checkbox } from '@/components/ui/checkbox';
 const Performance = () => {
   const [activeTab, setActiveTab] = useState('doctor');
   const [timeFilter, setTimeFilter] = useState('1W');
@@ -206,11 +207,10 @@ const Performance = () => {
                   key={doctor.id}
                   className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selectedDoctors.includes(doctor.id)}
-                    onChange={() => toggleDoctor(doctor.id)}
-                    className="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-900"
+                    onCheckedChange={() => toggleDoctor(doctor.id)}
+                    className="mt-1 border-gray-300 data-[state=checked]:bg-white! data-[state=checked]:text-black! data-[state=checked]:border-black!"
                   />
                   <div>
                     <div className="font-medium text-gray-900">{doctor.name}</div>
@@ -224,11 +224,10 @@ const Performance = () => {
                   key={center.id}
                   className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selectedCenters.includes(center.id)}
-                    onChange={() => toggleCenter(center.id)}
-                    className="mt-1 w-4 h-4 text-gray-900 border-gray-300 rounded focus:ring-gray-900"
+                    onCheckedChange={() => toggleCenter(center.id)}
+                    className="mt-1 border-gray-300 data-[state=checked]:bg-white! data-[state=checked]:text-black! data-[state=checked]:border-black!"
                   />
                   <div>
                     <div className="font-medium text-gray-900">{center.name}</div>
