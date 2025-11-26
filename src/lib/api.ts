@@ -47,7 +47,7 @@ class ApiService {
     }
 
     if (data.success && data.data?.token) {
-      setCookie('jwt', data.data.token, 1/24)
+      setCookie('jwt', data.data.token, 1 / 24)
       return data
     }
 
@@ -96,16 +96,18 @@ class ApiService {
     })
   }
 
-  async createDoctor(doctorData: { 
-    email: string; 
-    full_name: string; 
-    phone: string; 
+  async createDoctor(doctorData: {
+    email: string;
+    full_name: string;
+    phone: string;
+    role: string;
     speciality: string;
-    availability: Array<{
-      available_days: string[];
-      available_times: string[];
-      on_call: boolean;
-    }>;
+    qualification: string;
+    medical_registration_number: string;
+    scope: string;
+    available_days: string[];
+    available_times: Array<{ start: string; end: string }>;
+    on_call: boolean;
   }) {
     return this.request('/api/v1/doctor/create-new', {
       method: 'POST',
@@ -114,8 +116,10 @@ class ApiService {
   }
 
   async getAllUsers() {
+    const hospitalId = localStorage.getItem('active_hospital')
     return this.request('/api/v1/user/get-all-users', {
-      method: 'GET',
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: hospitalId }),
     })
   }
 
@@ -127,19 +131,23 @@ class ApiService {
 
   async getAllDoctors() {
     return this.request('/api/v1/doctor/get-all-doctors', {
-      method: 'GET',
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: localStorage.getItem('active_hospital') }),
     })
   }
 
   async getAllPatients() {
     return this.request('/api/v1/patient/get-all', {
-      method: 'GET',
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: localStorage.getItem('active_hospital') }),
     })
   }
 
   async getRecentPatients() {
+    const hospitalId = localStorage.getItem('active_hospital')
     return this.request('/api/v1/patient/get-recent', {
-      method: 'GET',
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: hospitalId }),
     })
   }
 
@@ -147,6 +155,26 @@ class ApiService {
     return this.request(`/api/v1/patient/assign/${patientId}`, {
       method: 'PUT',
       body: JSON.stringify({ doctor_id: doctorId }),
+    })
+  }
+
+  async getAllManagedHospitals() {
+    return this.request('/api/v1/auth/get-all-managed-hospitals', {
+      method: 'GET',
+    })
+  }
+
+  async updateProfile(profileData: { email: string; full_name: string; phone: string }) {
+    return this.request('/api/v1/user/update-profile', {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    })
+  }
+
+  async updatePassword(passwordData: { old_password: string; new_password: string }) {
+    return this.request('/api/v1/user/update-password', {
+      method: 'PUT',
+      body: JSON.stringify(passwordData),
     })
   }
 }

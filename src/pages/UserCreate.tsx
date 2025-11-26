@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DashboardLayout } from '@/components/DashboardLayout';
+
 import { apiService } from '@/lib/api';
 import { useUser } from '@/hooks/useUser';
 import InstitutionsManager from '@/components/dashboard/CreateInstitute';
@@ -49,9 +49,13 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
     email: '',
     phone: '',
     speciality: '',
+    qualification: '',
+    medicalRegNo: '',
+    scope: '',
     availableDays: [] as string[],
     availableTimes: [{ startTime: '', endTime: '' }],
-    onCall: false
+    onCall: false,
+    signature: null as File | null
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -63,9 +67,13 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
       email: '',
       phone: '',
       speciality: '',
+      qualification: '',
+      medicalRegNo: '',
+      scope: '',
       availableDays: [],
       availableTimes: [{ startTime: '', endTime: '' }],
-      onCall: false
+      onCall: false,
+      signature: null
     });
     setError('');
   }, [open]);
@@ -118,7 +126,7 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
             Fill in the required fields based on user role
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="fullName">Name *</Label>
@@ -126,7 +134,7 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
               id="fullName"
               placeholder="Enter full name"
               value={formData.fullName}
-              onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
               required
             />
           </div>
@@ -147,7 +155,7 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
               id="phone"
               placeholder="+91-98765-43210"
               value={formData.phone}
-              onChange={(e) => setFormData({...formData, phone: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               required
             />
           </div>
@@ -159,24 +167,28 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
               type="email"
               placeholder="user@example.com"
               value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               required
             />
           </div>
 
           <div>
             <Label htmlFor="role">Role *</Label>
-            <Select 
-              value={formData.role} 
+            <Select
+              value={formData.role}
               onValueChange={(value) => {
                 setFormData({
-                  ...formData, 
+                  ...formData,
                   role: value,
                   // Clear doctor-specific fields when changing role
                   speciality: value === 'doctor' ? formData.speciality : '',
+                  qualification: value === 'doctor' ? formData.qualification : '',
+                  medicalRegNo: value === 'doctor' ? formData.medicalRegNo : '',
+                  scope: value === 'doctor' ? formData.scope : '',
                   availableDays: value === 'doctor' ? formData.availableDays : [],
                   availableTimes: value === 'doctor' ? formData.availableTimes : [{ startTime: '', endTime: '' }],
-                  onCall: value === 'doctor' ? formData.onCall : false
+                  onCall: value === 'doctor' ? formData.onCall : false,
+                  signature: value === 'doctor' ? formData.signature : null
                 });
               }}
             >
@@ -191,51 +203,61 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
             </Select>
           </div>
 
-          <div>
-            <Label htmlFor="qualification">Qualification</Label>
-            <Input
-              id="qualification"
-              placeholder="e.g., MBBS, MD"
-              disabled
-              className="bg-gray-100 cursor-not-allowed"
-            />
-          </div>
+          {formData.role === 'doctor' && (
+            <>
+              <div>
+                <Label htmlFor="qualification">Qualification</Label>
+                <Input
+                  id="qualification"
+                  placeholder="e.g., MBBS, MD"
+                  value={formData.qualification}
+                  onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
+                />
+              </div>
 
-          <div>
-            <Label htmlFor="medicalRegNo">Medical Registration Number</Label>
-            <Input
-              id="medicalRegNo"
-              placeholder="Enter registration number"
-              disabled
-              className="bg-gray-100 cursor-not-allowed"
-            />
-          </div>
+              <div>
+                <Label htmlFor="medicalRegNo">Medical Registration Number</Label>
+                <Input
+                  id="medicalRegNo"
+                  placeholder="Enter registration number"
+                  value={formData.medicalRegNo}
+                  onChange={(e) => setFormData({ ...formData, medicalRegNo: e.target.value })}
+                />
+              </div>
 
-          <div>
-            <Label htmlFor="scope">Scope</Label>
-            <Select disabled>
-              <SelectTrigger className="bg-gray-100! text-gray-500! cursor-not-allowed">
-                <SelectValue placeholder="Select scope" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="my_case">View only my case</SelectItem>
-                <SelectItem value="institution">All studies of selected institution</SelectItem>
-                <SelectItem value="personal">Personal note</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div>
+                <Label htmlFor="scope">Scope</Label>
+                <Select
+                  value={formData.scope}
+                  onValueChange={(value) => setFormData({ ...formData, scope: value })}
+                >
+                  <SelectTrigger className="bg-white! text-gray-900!">
+                    <SelectValue placeholder="Select scope" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="my_case">View only my case</SelectItem>
+                    <SelectItem value="institution">All studies of selected institution</SelectItem>
+                    <SelectItem value="personal">Personal note</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div>
-            <Label htmlFor="signature">Signature</Label>
-            <div className="mt-1 flex items-center gap-2">
-              <Input
-                id="signature"
-                type="file"
-                disabled
-                className="bg-gray-100 cursor-not-allowed file:bg-gray-200 file:text-gray-500 file:border-0 file:mr-4 file:py-2 file:px-4"
-              />
-            </div>
-          </div>
+              <div>
+                <Label htmlFor="signature">Signature</Label>
+                <div className="mt-1 flex items-center gap-2">
+                  <Input
+                    id="signature"
+                    type="file"
+                    onChange={(e) => {
+                      const file = e.target.files ? e.target.files[0] : null;
+                      setFormData({ ...formData, signature: file });
+                    }}
+                    className="bg-white file:bg-gray-100 file:text-gray-700 file:border-0 file:mr-4 file:py-2 file:px-4 hover:file:bg-gray-200"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {formData.role === 'doctor' && (
             <>
@@ -245,7 +267,7 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
                   id="speciality"
                   placeholder="e.g., Cardiology, Radiology"
                   value={formData.speciality}
-                  onChange={(e) => setFormData({...formData, speciality: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, speciality: e.target.value })}
                   required
                 />
               </div>
@@ -343,7 +365,7 @@ const UserDialog = ({ open, onOpenChange, onSave }: any) => {
                 <Checkbox
                   id="onCall"
                   checked={formData.onCall}
-                  onCheckedChange={(checked) => setFormData({...formData, onCall: checked === true})}
+                  onCheckedChange={(checked) => setFormData({ ...formData, onCall: checked === true })}
                 />
                 <label
                   htmlFor="onCall"
@@ -390,7 +412,7 @@ const DeleteConfirmationModal = ({ open, onOpenChange, user, onConfirm, isDeleti
             Are you sure you want to delete this user? This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        
+
         {user && (
           <div className="bg-gray-50 p-4 rounded-lg space-y-2">
             <div>
@@ -411,17 +433,17 @@ const DeleteConfirmationModal = ({ open, onOpenChange, user, onConfirm, isDeleti
         )}
 
         <div className="flex gap-2 justify-end pt-4">
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={() => onOpenChange(false)} 
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
             className="bg-white! text-black! border-gray-300 hover:bg-gray-100!"
             disabled={isDeleting}
           >
             Cancel
           </Button>
-          <Button 
-            type="button" 
+          <Button
+            type="button"
             onClick={onConfirm}
             className="bg-red-600! text-white! hover:bg-red-700!"
             disabled={isDeleting}
@@ -491,9 +513,9 @@ const UsersTable = ({ users, onView, onDelete, currentUserId }: any) => {
               <TableCell className="text-sm text-gray-700">{user.addedBy || '—'}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => onView(user)}
                     disabled={isCurrentUser}
                     className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100! disabled:opacity-50 disabled:cursor-not-allowed"
@@ -501,9 +523,9 @@ const UsersTable = ({ users, onView, onDelete, currentUserId }: any) => {
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => onDelete(user)}
                     disabled={isCurrentUser}
                     className="h-8 w-8 p-0 bg-white! text-red-600! border-gray-300 hover:bg-red-50! disabled:opacity-50 disabled:cursor-not-allowed"
@@ -547,7 +569,7 @@ const UserCreate = () => {
       setIsLoading(true);
       setError('');
       const response: any = await apiService.getAllUsers();
-      
+
       if (response.success && response.data) {
         const mappedUsers = response.data.map((user: any) => ({
           id: user._id,
@@ -592,7 +614,7 @@ const UserCreate = () => {
     try {
       setIsDeleting(true);
       await apiService.deleteUser(userToDelete.id);
-      
+
       setUsers(users.filter((u: any) => u.id !== userToDelete.id));
       setDeleteDialogOpen(false);
       setUserToDelete(null);
@@ -611,18 +633,18 @@ const UserCreate = () => {
         email: userData.email,
         full_name: userData.fullName,
         phone: userData.phone,
+        role: 'doctor',
         speciality: userData.speciality,
-        availability: [
-          {
-            available_days: userData.availableDays,
-            available_times: userData.availableTimes
-              .filter((slot: any) => slot.startTime && slot.endTime)
-              .map((slot: any) => `${slot.startTime}-${slot.endTime}`),
-            on_call: userData.onCall
-          }
-        ]
+        qualification: userData.qualification,
+        medical_registration_number: userData.medicalRegNo,
+        scope: userData.scope,
+        available_days: userData.availableDays,
+        available_times: userData.availableTimes
+          .filter((slot: any) => slot.startTime && slot.endTime)
+          .map((slot: any) => ({ start: slot.startTime, end: slot.endTime })),
+        on_call: userData.onCall
       };
-      
+
       await apiService.createDoctor(doctorPayload);
     } else {
       // Use generic user endpoint for other roles
@@ -632,27 +654,26 @@ const UserCreate = () => {
         phone: userData.phone,
         role: userData.role
       };
-      
+
       await apiService.createUser(userPayload);
     }
-    
+
     await fetchUsers();
   };
 
   const filteredUsers = users.filter(user => {
-    const matchesSearch = 
+    const matchesSearch =
       user.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (user.specialty && user.specialty.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (user.department && user.department.toLowerCase().includes(searchQuery.toLowerCase()));
-    
+
     const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-    
+
     return matchesSearch && matchesRole;
   });
 
   return (
-    <DashboardLayout>
     <div className="min-h-[calc(100vh-4rem)] bg-gray-50 p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -688,7 +709,7 @@ const UserCreate = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                
+
                 <div className="relative">
                   <Input
                     type="text"
@@ -716,9 +737,9 @@ const UserCreate = () => {
                 <div className="text-red-600 text-sm bg-red-50 p-4 rounded-lg max-w-md">
                   {error}
                 </div>
-                <Button 
-                  onClick={fetchUsers} 
-                  variant="outline" 
+                <Button
+                  onClick={fetchUsers}
+                  variant="outline"
                   className="mt-4 bg-white! text-gray-900!"
                 >
                   Try Again
@@ -732,8 +753,8 @@ const UserCreate = () => {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <UsersTable 
-                  users={filteredUsers} 
+                <UsersTable
+                  users={filteredUsers}
                   onView={handleViewUser}
                   onDelete={handleDeleteUser}
                   currentUserId={currentUser?._id}
@@ -744,8 +765,8 @@ const UserCreate = () => {
         </Card>
       </div>
 
-      <UserDialog 
-        open={userDialogOpen} 
+      <UserDialog
+        open={userDialogOpen}
         onOpenChange={setUserDialogOpen}
         onSave={handleSaveUser}
       />
@@ -762,7 +783,6 @@ const UserCreate = () => {
         <InstitutionsManager />
       </div>
     </div>
-    </DashboardLayout>
   );
 };
 

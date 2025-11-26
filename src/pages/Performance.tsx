@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Calendar, FileText, CheckCircle, AlertCircle, FileEdit, Eye } from 'lucide-react';
-import { DashboardLayout } from '@/components/DashboardLayout';
+import { useState } from 'react';
+import { FileText, CheckCircle, AlertCircle, FileEdit, Eye } from 'lucide-react';
+
 import { Checkbox } from '@/components/ui/checkbox';
 const Performance = () => {
   const [activeTab, setActiveTab] = useState('doctor');
@@ -94,7 +94,7 @@ const Performance = () => {
       reviewed: 70,
       avgTAT: 35,
     },
-     {
+    {
       name: 'Clinic B',
       login: '10h 15m',
       assigned: 60,
@@ -123,7 +123,6 @@ const Performance = () => {
   };
 
   return (
-    <DashboardLayout>
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Date Range and Filters */}
@@ -152,21 +151,19 @@ const Performance = () => {
             <div className="flex gap-2">
               <button
                 onClick={() => setActiveTab('doctor')}
-                className={`px-6 py-2 rounded-md font-medium transition-colors ${
-                  activeTab === 'doctor'
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'doctor'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Doctor
               </button>
               <button
                 onClick={() => setActiveTab('center')}
-                className={`px-6 py-2 rounded-md font-medium transition-colors ${
-                  activeTab === 'center'
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'center'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Center
               </button>
@@ -178,11 +175,10 @@ const Performance = () => {
               <button
                 key={filter}
                 onClick={() => setTimeFilter(filter)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  timeFilter === filter
-                    ? 'bg-gray-900 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${timeFilter === filter
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 {filter}
               </button>
@@ -196,8 +192,8 @@ const Performance = () => {
             {activeTab === 'doctor' ? 'Select Doctor(s)' : 'Select Center(s)'}
           </h2>
           <p className="text-sm text-gray-600 mb-4">
-            {activeTab === 'doctor' 
-              ? 'Select one or more doctors to filter' 
+            {activeTab === 'doctor'
+              ? 'Select one or more doctors to filter'
               : 'Select one or more centers to filter'}
           </p>
           <div className="space-y-3">
@@ -335,7 +331,6 @@ const Performance = () => {
         </div>
       </div>
     </div>
-    </DashboardLayout>
   );
 };
 

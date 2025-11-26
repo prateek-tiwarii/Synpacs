@@ -102,7 +102,7 @@ const ShowAllPatients = () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getAllPatients() as ApiResponse;
-      
+
       if (response.success) {
         setPatients(response.data || []);
       } else {
@@ -145,7 +145,7 @@ const ShowAllPatients = () => {
     setSelectedPatient(patient);
     setIsModalOpen(true);
     fetchDoctors();
-    
+
     // Pre-select the assigned doctor if one exists
     if (isAssigned(patient.assigned_to) && patient.assigned_to !== null) {
       if (typeof patient.assigned_to === 'object' && patient.assigned_to._id) {
@@ -180,7 +180,7 @@ const ShowAllPatients = () => {
     try {
       setAssigning(true);
       await apiService.assignPatientToDoctor(selectedPatient._id, selectedDoctorId);
-      
+
       const selectedDoctor = doctors.find(d => d._id === selectedDoctorId);
       if (selectedDoctor) {
         const doctorObject: AssignedDoctor = {
@@ -188,7 +188,7 @@ const ShowAllPatients = () => {
           email: selectedDoctor.email,
           full_name: selectedDoctor.full_name
         };
-        
+
         setPatients(prevPatients =>
           prevPatients.map(patient =>
             patient._id === selectedPatient._id
@@ -196,13 +196,13 @@ const ShowAllPatients = () => {
               : patient
           )
         );
-        
+
         setSelectedPatient({
           ...selectedPatient,
           assigned_to: doctorObject
         });
       }
-      
+
       setSelectedDoctorId("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to assign doctor");
@@ -245,8 +245,8 @@ const ShowAllPatients = () => {
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
-          <Button 
-            onClick={fetchAllPatients} 
+          <Button
+            onClick={fetchAllPatients}
             className="mt-4"
             variant="outline"
           >
@@ -267,9 +267,9 @@ const ShowAllPatients = () => {
             Total: {patients.length} patient{patients.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button 
-          onClick={fetchAllPatients} 
-          variant="outline" 
+        <Button
+          onClick={fetchAllPatients}
+          variant="outline"
           size="sm"
           disabled={loading}
         >
@@ -282,7 +282,7 @@ const ShowAllPatients = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="font-semibold">Patient ID</TableHead>
+                <TableHead className="font-semibold ">Patient ID</TableHead>
                 <TableHead className="font-semibold">Name</TableHead>
                 <TableHead className="font-semibold">Email</TableHead>
                 <TableHead className="font-semibold">Phone</TableHead>
@@ -305,18 +305,16 @@ const ShowAllPatients = () => {
                 </TableRow>
               ) : (
                 patients.map((patient) => (
-                  <TableRow 
-                    key={patient._id} 
+                  <TableRow
+                    key={patient._id}
                     className="hover:bg-muted/30 cursor-pointer"
                     onClick={() => handlePatientClick(patient)}
                   >
                     <TableCell className="font-medium">
                       {patient.patient_id}
                     </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{patient.name}</p>
-                      </div>
+                    <TableCell className="whitespace-nowrap">
+                      <p className="font-medium">{patient.name}</p>
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
@@ -328,37 +326,33 @@ const ShowAllPatients = () => {
                         {patient.phone}
                       </span>
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm">
-                        {patient.age}Y / {patient.sex}
-                      </span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {patient.age}Y / {patient.sex}
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{patient.patient_type}</span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {patient.patient_type}
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{patient.center}</span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {patient.center}
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm font-medium">{patient.study}</span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {patient.study}
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{patient.images_count}</span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {patient.images_count}
                     </TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(patient.status)}>
                         {patient.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="">
+                    <TableCell className="whitespace-nowrap text-sm">
                       <Badge variant={getPriorityVariant(patient.priority)}>
                         {patient.priority}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground">
-                        {getAssignedToName(patient.assigned_to)}
-                      </span>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {getAssignedToName(patient.assigned_to)}
                     </TableCell>
                   </TableRow>
                 ))

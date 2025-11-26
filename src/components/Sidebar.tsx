@@ -1,8 +1,8 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { 
-  LayoutDashboard, 
-  Image, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Image,
+  Settings,
   Zap,
   HelpCircle,
   LogOut,
@@ -33,8 +33,8 @@ export function Sidebar() {
   }
 
   return (
-    <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-72 bg-white! border-r border-gray-200! transition-all duration-300 z-30 flex flex-col`}>
-     
+    <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-48 bg-white! border-r border-gray-200! transition-all duration-300 z-30 flex flex-col`}>
+
 
       {/* Navigation Items */}
       <nav className="p-3 space-y-1 mt-4 flex-1">
@@ -45,15 +45,14 @@ export function Sidebar() {
             <Link
               key={item.href}
               to={item.href}
-              className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${
-                isActive
-                  ? 'bg-black! text-white! shadow-sm'
-                  : 'text-gray-700! hover:bg-gray-100!'
-              }`}
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${isActive
+                ? 'bg-black! text-white! shadow-sm'
+                : 'text-gray-700! hover:bg-gray-100!'
+                }`}
               title={item.label}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              { (
+              {(
                 <span className="text-sm font-medium">{item.label}</span>
               )}
             </Link>
@@ -65,11 +64,10 @@ export function Sidebar() {
       <div className="p-3 border-t border-gray-200 space-y-1">
         <Link
           to="/settings"
-          className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${
-            location.pathname === '/settings'
-              ? 'bg-black! text-white! shadow-sm'
-              : 'text-gray-700! hover:bg-gray-100!'
-          }`}
+          className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-all ${location.pathname === '/settings'
+            ? 'bg-black! text-white! shadow-sm'
+            : 'text-gray-700! hover:bg-gray-100!'
+            }`}
           title="General Settings"
         >
           <Settings className="h-5 w-5 shrink-0" />

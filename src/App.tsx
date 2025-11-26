@@ -13,6 +13,7 @@ import UserCreate from './pages/UserCreate'
 import Patient from './pages/Patient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
+import { MainLayout } from '@/components/MainLayout'
 
 
 function RootRedirect() {
@@ -44,62 +45,20 @@ function App() {
           />
 
           <Route
-            path="/dashboard"
             element={
               <ProtectedRoute>
-                <Dashboard />
+                <MainLayout />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/pac-list"
-            element={
-              <ProtectedRoute>
-                <PacList />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/automation"
-            element={
-              <ProtectedRoute>
-                <Automation />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/performance"
-            element={
-              <ProtectedRoute>
-                <Performance />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/manage-users"
-            element={
-              <ProtectedRoute>
-                <UserCreate />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/manage-patients"
-            element={
-              <ProtectedRoute>
-                <Patient />
-              </ProtectedRoute>
-            }
-          />
+          >
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/pac-list" element={<PacList />} />
+            <Route path="/automation" element={<Automation />} />
+            <Route path="/performance" element={<Performance />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/manage-users" element={<UserCreate />} />
+            <Route path="/manage-patients" element={<Patient />} />
+          </Route>
 
           <Route path="*" element={<NotFound />} />
         </Routes>

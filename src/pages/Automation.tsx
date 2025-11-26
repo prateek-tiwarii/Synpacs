@@ -1,4 +1,4 @@
-import { DashboardLayout } from '@/components/DashboardLayout'
+
 import { useState } from 'react';
 import { X, Search, Plus, Calendar, Clock, ChevronDown, Edit2, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,14 +47,14 @@ const MultiSelectList = ({ title, items, selectedItems, setSelectedItems, search
   const [searchTerm, setSearchTerm] = useState('');
   const [newItem, setNewItem] = useState('');
 
-  const filteredItems = items.filter((item: any) => 
+  const filteredItems = items.filter((item: any) =>
     item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.code?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const toggleItem = (itemId: any) => {
-    setSelectedItems((prev: any) => 
-      prev.includes(itemId) 
+    setSelectedItems((prev: any) =>
+      prev.includes(itemId)
         ? prev.filter((id: any) => id !== itemId)
         : [...prev, itemId]
     );
@@ -137,18 +137,18 @@ const MultiSelectList = ({ title, items, selectedItems, setSelectedItems, search
 const RuleForm = ({ rule, onClose, onSave }: any) => {
   const [ruleName, setRuleName] = useState(rule?.ruleName || '');
   const [isActive, setIsActive] = useState(rule?.isActive || 'Yes');
-  
+
   const [selectedCenters, setSelectedCenters] = useState(rule?.selectedCenters || []);
   const [selectedModalities, setSelectedModalities] = useState(rule?.selectedModalities || []);
   const [selectedPriorities, setSelectedPriorities] = useState(rule?.selectedPriorities || []);
   const [selectedStudyTypes, setSelectedStudyTypes] = useState(rule?.selectedStudyTypes || []);
-  
+
   const [startDate, setStartDate] = useState(rule?.startDate || '');
   const [endDate, setEndDate] = useState(rule?.endDate || '');
   const [startTime, setStartTime] = useState(rule?.startTime || '');
   const [endTime, setEndTime] = useState(rule?.endTime || '');
   const [allTime, setAllTime] = useState(rule?.allTime || false);
-  
+
   const [selectedDoctor, setSelectedDoctor] = useState(rule?.selectedDoctor || '');
   const [caseCount, setCaseCount] = useState(rule?.caseCount || '');
   const [allCases, setAllCases] = useState(rule?.allCases || false);
@@ -179,8 +179,8 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
     onClose();
   };
 
-  const hasConditions = selectedCenters.length > 0 || selectedModalities.length > 0 || 
-                        selectedPriorities.length > 0 || selectedStudyTypes.length > 0;
+  const hasConditions = selectedCenters.length > 0 || selectedModalities.length > 0 ||
+    selectedPriorities.length > 0 || selectedStudyTypes.length > 0;
   const hasAssignment = selectedDoctor && (caseCount || allCases);
 
   return (
@@ -340,8 +340,8 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox 
-              checked={allTime} 
+            <Checkbox
+              checked={allTime}
               onCheckedChange={setAllTime}
               className="bg-white! border-gray-300! data-[state=checked]:bg-black! data-[state=checked]:border-black! data-[state=checked]:text-white!"
             />
@@ -377,8 +377,8 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
                 disabled={allCases}
               />
               <label className="flex items-center gap-2 cursor-pointer mt-2">
-                <Checkbox 
-                  checked={allCases} 
+                <Checkbox
+                  checked={allCases}
                   onCheckedChange={setAllCases}
                   className="bg-white! border-gray-300! data-[state=checked]:bg-black! data-[state=checked]:border-black! data-[state=checked]:text-white!"
                 />
@@ -400,7 +400,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
                 <p className="text-gray-600 text-xs mt-0.5">
                   {hasConditions ? (
                     <>
-                      Conditions set for {selectedCenters.length} center(s), {selectedModalities.length} modality(ies), 
+                      Conditions set for {selectedCenters.length} center(s), {selectedModalities.length} modality(ies),
                       {' '}{selectedPriorities.length} priority(ies), {selectedStudyTypes.length} study type(s)
                     </>
                   ) : (
@@ -412,8 +412,8 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
                 <span className="font-medium text-gray-900">THEN:</span>
                 <p className="text-gray-600 text-xs mt-0.5">
                   {hasAssignment ? (
-                    <>Assign to {MOCK_DATA.doctors.find(d => d.id.toString() === selectedDoctor)?.name} 
-                    {allCases ? ' (ALL cases)' : caseCount ? ` (${caseCount} cases)` : ''}</>
+                    <>Assign to {MOCK_DATA.doctors.find(d => d.id.toString() === selectedDoctor)?.name}
+                      {allCases ? ' (ALL cases)' : caseCount ? ` (${caseCount} cases)` : ''}</>
                   ) : (
                     'No assignment configured'
                   )}
@@ -428,8 +428,8 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
           <Button variant="outline" onClick={onClose} className="px-6 bg-white! text-gray-900! border-gray-300! hover:bg-gray-50!">
             Cancel
           </Button>
-          <Button 
-            onClick={handleSave} 
+          <Button
+            onClick={handleSave}
             className="px-6 bg-black! text-white! hover:bg-gray-800!"
           >
             Save Rule
@@ -446,7 +446,7 @@ const RuleCard = ({ rule, onEdit, onDelete }: any) => {
   return (
     <Card className="border hover:shadow-md transition-shadow">
       <CardContent className="p-4">
-        <div 
+        <div
           className="flex items-center justify-between cursor-pointer"
           onClick={() => setIsExpanded(!isExpanded)}
         >
@@ -547,13 +547,12 @@ export function Automation() {
   };
 
   return (
-     <DashboardLayout>
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Automation Rules</h1>
-          <Button 
+          <Button
             onClick={handleNewRule}
             className="bg-black! text-white! hover:bg-gray-800!"
           >
@@ -600,6 +599,5 @@ export function Automation() {
         </Card>
       </div>
     </div>
-    </DashboardLayout>
   );
 }

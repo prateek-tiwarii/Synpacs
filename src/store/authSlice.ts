@@ -10,7 +10,7 @@ export interface User {
   phone: string
   role: string
   is_active: boolean
-  hospital_id: string
+  hospital_id: string | { _id: string }
   created_by: string | null
   last_login: string | null
   createdAt: string
@@ -59,6 +59,16 @@ export const fetchUser = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await apiService.request<UserResponse>('/api/v1/auth/get-user')
+
+      // Check and set active_hospital in localStorage
+      const activeHospital = localStorage.getItem('active_hospital')
+      if (!activeHospital && response.data.hospital_id) {
+        const hospital = response.data.hospital_id
+        // Handle both populated object and string ID cases
+        const hospitalId = typeof hospital === 'object' ? hospital._id : hospital
+        localStorage.setItem('active_hospital', hospitalId)
+      }
+
       return response.data
     } catch (error) {
       return rejectWithValue((error as Error).message)

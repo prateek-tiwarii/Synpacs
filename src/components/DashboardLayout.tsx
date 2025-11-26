@@ -13,12 +13,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <TopBar />
 
       {/* Sidebar */}
-      <Sidebar />
+      <div className="flex w-full">
+        <Sidebar />
 
-      {/* Main Content Area */}
-      <main className="pt-16 pl-72 transition-all duration-300">
-        {children}
-      </main>
+        {/* Main Content Area */}
+        <main className="pt-16 ml-48 transition-all duration-300 w-[calc(100%-192px)]">
+          {children}
+        </main>
+      </div>
     </div>
   )
 }

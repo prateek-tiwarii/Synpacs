@@ -9,9 +9,55 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Link } from 'react-router-dom'
 import { useUser } from '@/hooks/useUser'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { useState, useEffect } from "react"
+import { apiService } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 export function TopBar() {
   const { user } = useUser()
+  interface Hospital {
+    _id: string
+    name: string
+    subscription: string
+  }
+
+  const [hospitals, setHospitals] = useState<Hospital[]>([])
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState("")
+
+  useEffect(() => {
+    const fetchHospitals = async () => {
+      try {
+        const response = await apiService.request<{ data: Hospital[] }>('/api/v1/auth/get-user-hospitals')
+        console.log('User Hospitals Response:', response)
+        if (response.data) {
+          setHospitals(response.data)
+          // Select the first hospital by default if available
+          if (response.data.length > 0 && !value) {
+            setValue(response.data[0]._id)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching hospitals:', error)
+      }
+    }
+
+    fetchHospitals()
+  }, [])
 
   console.log(user)
 
@@ -44,82 +90,127 @@ export function TopBar() {
 
       {/* Right Side Icons */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Notifications */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className="relative bg-white! border-gray-300! hover:bg-gray-50! text-gray-700!"
-            >
-              <Bell className="h-4 w-4" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500! text-white! text-xs rounded-full flex items-center justify-center font-medium">
-                3
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <div className="p-3 border-b">
-              <p className="font-semibold text-sm">Notifications</p>
-            </div>
-            <DropdownMenuItem className="p-3 cursor-pointer">
-              <div>
-                <p className="text-sm font-medium">New critical study assigned</p>
-                <p className="text-xs text-gray-500 mt-1">CT Brain - John Smith</p>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="p-3 cursor-pointer">
-              <div>
-                <p className="text-sm font-medium">Study completed</p>
-                <p className="text-xs text-gray-500 mt-1">MRI Spine - Sarah Johnson</p>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="p-3 cursor-pointer">
-              <div>
-                <p className="text-sm font-medium">New patient registered</p>
-                <p className="text-xs text-gray-500 mt-1">5 minutes ago</p>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
 
-        {/* Settings */}
-        <Link to="/settings">
-          <Button 
-            variant="outline" 
-            size="icon" 
-            className="bg-white! border-gray-300! hover:bg-gray-50! text-gray-700!  "
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-        </Link>
-
-        {/* Profile */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className="bg-white! border-gray-300! hover:bg-gray-50! text-gray-700! rounded-full"
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className="w-[200px] justify-between"
             >
-              <User className="h-4 w-4" />
+              {value
+                ? hospitals.find((hospital) => hospital._id === value)?.name
+                : "Select hospital..."}
+              <ChevronsUpDown className="opacity-50" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <div className="p-3 border-b">
-              <div className="flex items-center justify-between mb-1">
-                <p className="font-semibold text-sm">{user?.full_name || 'Guest'}</p>
-                <Badge variant="info" className="text-[10px] px-2 py-0">
-                  {formatRole(user?.role)}
-                </Badge>
+          </PopoverTrigger>
+          <PopoverContent className="w-[200px] p-0">
+            <Command>
+              <CommandInput placeholder="Search hospital..." className="h-9" />
+              <CommandList>
+                <CommandEmpty>No hospital found.</CommandEmpty>
+                <CommandGroup>
+                  {hospitals.map((hospital) => (
+                    <CommandItem
+                      key={hospital._id}
+                      value={hospital.name}
+                      onSelect={() => {
+                        setValue(hospital._id)
+                        setOpen(false)
+                      }}
+                    >
+                      {hospital.name}
+                      <Check
+                        className={cn(
+                          "ml-auto",
+                          value === hospital._id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <div className='flex items-center gap-2'>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="relative bg-white! border-gray-300! hover:bg-gray-50! text-gray-700!"
+              >
+                <Bell className="h-4 w-4" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500! text-white! text-xs rounded-full flex items-center justify-center font-medium">
+                  3
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <div className="p-3 border-b">
+                <p className="font-semibold text-sm">Notifications</p>
               </div>
-              <p className="text-xs text-gray-500">{user?.email || 'guest@synpac.com'}</p>
-            </div>
-            <DropdownMenuItem className="cursor-pointer">Profile</DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer">Account Settings</DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer text-red-600">Logout</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem className="p-3 cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium">New critical study assigned</p>
+                  <p className="text-xs text-gray-500 mt-1">CT Brain - John Smith</p>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="p-3 cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium">Study completed</p>
+                  <p className="text-xs text-gray-500 mt-1">MRI Spine - Sarah Johnson</p>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="p-3 cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium">New patient registered</p>
+                  <p className="text-xs text-gray-500 mt-1">5 minutes ago</p>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Settings */}
+          <Link to="/settings">
+            <Button
+              variant="outline"
+              size="icon"
+              className="bg-white! border-gray-300! hover:bg-gray-50! text-gray-700!  "
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </Link>
+
+          {/* Profile */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="bg-white! border-gray-300! hover:bg-gray-50! text-gray-700! rounded-full"
+              >
+                <User className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <div className="p-3 border-b">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-semibold text-sm">{user?.full_name || 'Guest'}</p>
+                  <Badge variant="info" className="text-[10px] px-2 py-0">
+                    {formatRole(user?.role)}
+                  </Badge>
+                </div>
+                <p className="text-xs text-gray-500">{user?.email || 'guest@synpac.com'}</p>
+              </div>
+              <DropdownMenuItem className="cursor-pointer">Profile</DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer">Account Settings</DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer text-red-600">Logout</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
   )
