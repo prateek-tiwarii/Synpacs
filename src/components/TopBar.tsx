@@ -59,8 +59,6 @@ export function TopBar() {
     fetchHospitals()
   }, [])
 
-  console.log(user)
-
   const formatRole = (role?: string) => {
     if (!role) return 'User'
     return role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')

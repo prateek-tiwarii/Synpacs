@@ -11,7 +11,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Filter, Loader2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Button } from "../ui/button";
 
 interface AssignedDoctor {
   _id: string;
@@ -38,6 +40,34 @@ interface ApiResponse {
   data: Patient[];
 }
 
+const Filters = ({ filters, setFilters }: { filters: any, setFilters: any }) => {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {Object.entries(filters).map(([key, value]) => (
+        <DropdownMenu key={key}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 gap-2 bg-white! text-black! border border-gray-300">
+              {value as string}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: `All ${key.charAt(0).toUpperCase() + key.slice(1)}` })}>
+              All {key.charAt(0).toUpperCase() + key.slice(1)}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: 'Option 1' })}>
+              Option 1
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: 'Option 2' })}>
+              Option 2
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ))}
+    </div>
+  )
+}
+
 const RecentPatientTable = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +82,7 @@ const RecentPatientTable = () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getRecentPatients() as ApiResponse;
-      
+
       if (response.success) {
         setPatients(response.data || []);
       } else {
@@ -125,10 +155,19 @@ const RecentPatientTable = () => {
 
   return (
     <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold">Recently Added Patients</CardTitle>
+      <CardHeader className="p-4">
+        <CardTitle className="text-xl font-bold">Recently Added Patients</CardTitle>
       </CardHeader>
-      <CardContent>
+      <div className="px-4">
+        <Filters filters={{
+          center: 'All Centers',
+          modality: 'All Modalities',
+          doctor: 'All Doctors',
+          priority: 'All Priority',
+          status: 'All Status'
+        }} setFilters={() => { }} />
+      </div>
+      <CardContent className="p-4">
         <div className="rounded-md border">
           <Table>
             <TableHeader>

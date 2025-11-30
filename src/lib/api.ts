@@ -137,10 +137,14 @@ class ApiService {
     })
   }
 
-  async getAllPatients() {
+  async getAllPatients(page: number = 1, limit: number = 10) {
     return this.request('/api/v1/patient/get-all', {
       method: 'POST',
-      body: JSON.stringify({ active_hospital: localStorage.getItem('active_hospital') }),
+      body: JSON.stringify({ 
+        active_hospital: localStorage.getItem('active_hospital'),
+        page,
+        limit,
+      }),
     })
   }
 

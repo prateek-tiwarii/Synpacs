@@ -674,7 +674,7 @@ const UserCreate = () => {
   });
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-gray-50 p-6 space-y-6">
+    <div className="min-h-[calc(100vh-4rem)] bg-gray-50 p-2 space-y-2">
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xl font-medium text-gray-900 flex items-center gap-2">

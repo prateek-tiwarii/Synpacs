@@ -5,6 +5,7 @@ import { fetchUser } from '@/store/authSlice'
 export const useUser = () => {
   const dispatch = useAppDispatch()
   const { user, loading, error, isAuthenticated } = useAppSelector((state) => state.auth)
+  const role = user?.role || 'N/A'
 
   useEffect(() => {
     if (isAuthenticated && !user && !loading) {
@@ -21,6 +22,7 @@ export const useUser = () => {
     loading,
     error,
     refetch,
+    role,
   }
 }
 

@@ -57,7 +57,7 @@ const DoctorAvailablity = () => {
 
   if (loading) {
     return (
-      <Card className="w-96 border-none shadow-md">
+      <Card className="w-96 border-none shadow-md rounded-xl">
         <CardHeader className="border-b bg-white">
           <CardTitle className="text-lg font-medium">Doctor Availability</CardTitle>
         </CardHeader>
@@ -70,7 +70,7 @@ const DoctorAvailablity = () => {
 
   return (
     <Card className="w-96 border-none shadow-md">
-      <CardHeader className="border-b bg-white">
+      <CardHeader className="border-b bg-white rounded-t-xl">
         <CardTitle className="text-lg font-medium flex items-center gap-2">
           <Stethoscope className="h-5 w-5 text-gray-600" />
           Doctor Availability
