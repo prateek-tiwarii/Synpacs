@@ -57,6 +57,7 @@ class ApiService {
 
   async logout() {
     removeCookie('jwt')
+    localStorage.clear()
   }
 
   getToken() {
