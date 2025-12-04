@@ -1,10 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Auth } from '@/pages/Auth'
 import Dashboard from './pages/Dashboard'
-import { PacList } from '@/pages/PacList'
 import { Automation } from '@/pages/Automation'
-
-
 import { NotFound } from '@/pages/NotFound'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
@@ -52,7 +49,6 @@ function App() {
             }
           >
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/pac-list" element={<PacList />} />
             <Route path="/automation" element={<Automation />} />
             <Route path="/performance" element={<Performance />} />
             <Route path="/settings" element={<Settings />} />

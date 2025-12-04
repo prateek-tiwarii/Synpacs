@@ -5,7 +5,6 @@ import { useAppSelector } from '@/store/hooks'
 const navItems = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Worklist', href: '/worklist' },
-  { label: 'PAC List', href: '/pac-list' },
   { label: 'Automation', href: '/automation' },
   { label: 'Settings', href: '/settings' },
 ]

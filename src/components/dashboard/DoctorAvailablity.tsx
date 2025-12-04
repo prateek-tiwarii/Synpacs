@@ -21,6 +21,7 @@ interface Doctor {
   email: string;
   is_active: boolean;
   doctor_details: DoctorDetails | null;
+  phone: string;
 }
 
 interface DoctorResponse {
@@ -35,21 +36,24 @@ const DoctorAvailablity = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchDoctors();
+    fetchAvailableDoctors();
   }, []);
 
-  const fetchDoctors = async () => {
+  const fetchAvailableDoctors = async () => {
     try {
-      const response = await apiService.getAllDoctors() as DoctorResponse;
+      const response = await apiService.getAvailableDoctors() as DoctorResponse;
+      console.log('response', response);
       if (response.success) {
-        setDoctors(response.data.slice(0, 5));
+        setDoctors(response.data || []);
       }
     } catch (error) {
-      console.error('Failed to fetch doctors:', error);
+      console.error('Failed to fetch available doctors:', error);
     } finally {
       setLoading(false);
     }
   };
+
+
 
   const capitalizeDay = (day: string) => {
     return day.charAt(0).toUpperCase() + day.slice(1);
@@ -93,17 +97,16 @@ const DoctorAvailablity = () => {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{doctor.full_name}</p>
                         <p className="text-xs text-gray-500">
-                          {doctor.doctor_details?.speciality || 'No specialty'}
+                          {doctor.phone || 'No phone number'}
                         </p>
                       </div>
                     </div>
                     <Badge
                       variant={doctor.is_active ? "default" : "secondary"}
-                      className={`text-xs ${
-                        doctor.is_active
-                          ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
+                      className={`text-xs ${doctor.is_active
+                        ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                        : 'bg-gray-100 text-gray-800'
+                        }`}
                     >
                       {doctor.is_active ? 'Active' : 'Inactive'}
                     </Badge>

@@ -50,6 +50,11 @@ interface AssignedDoctor {
   full_name: string;
 }
 
+interface Study {
+  study_uid: string;
+  body_part: string;
+}
+
 interface Patient {
   _id: string;
   name: string;
@@ -60,9 +65,9 @@ interface Patient {
   patient_type: string;
   priority: string;
   sex: string;
-  age: number;
+  age: string;
   center: string;
-  study: string;
+  study: Study | string;
   images_count: number;
   status: string;
   assigned_to: string | AssignedDoctor | null;
@@ -114,6 +119,7 @@ const ShowAllPatients = () => {
   // Get page and limit from URL, defaulting to 1 and 10
   const page = parseInt(searchParams.get("page") || "1", 1);
   const limit = parseInt(searchParams.get("limit") || "20", 20);
+  
 
   useEffect(() => {
     const currentPage = searchParams.get("page");
@@ -156,6 +162,7 @@ const ShowAllPatients = () => {
   };
 
   const getStatusVariant = (status: string) => {
+    if (!status || typeof status !== 'string') return "secondary";
     switch (status.toLowerCase()) {
       case "reported":
         return "success";
@@ -169,6 +176,7 @@ const ShowAllPatients = () => {
   };
 
   const getPriorityVariant = (priority: string) => {
+    if (!priority || typeof priority !== 'string') return "outline";
     switch (priority.toLowerCase()) {
       case "high":
         return "destructive";
@@ -265,6 +273,18 @@ const ShowAllPatients = () => {
     return assignedTo !== null && assignedTo !== undefined;
   };
 
+  const formatStudy = (study: Study | string | undefined): string => {
+    if (!study) return "N/A";
+    if (typeof study === 'string') return study;
+    if (typeof study === 'object' && study !== null) {
+      const parts = [];
+      if (study.study_uid) parts.push(`UID: ${study.study_uid}`);
+      if (study.body_part) parts.push(study.body_part);
+      return parts.length > 0 ? parts.join(' | ') : "N/A";
+    }
+    return "N/A";
+  };
+
   type PatientFieldConfig = {
     key: string;
     label: string;
@@ -279,11 +299,11 @@ const ShowAllPatients = () => {
     { key: "name", label: "Name", value: patient.name, valueClassName: "font-medium" },
     { key: "email", label: "Email", value: patient.email },
     { key: "phone", label: "Phone", value: patient.phone },
-    { key: "age", label: "Age", value: `${patient.age} years` },
+    { key: "age", label: "Age", value: patient.age },
     { key: "sex", label: "Sex", value: patient.sex },
     { key: "patient_type", label: "Patient Type", value: patient.patient_type },
     { key: "center", label: "Center", value: patient.center },
-    { key: "study", label: "Study", value: patient.study, valueClassName: "font-medium" },
+    { key: "study", label: "Study", value: formatStudy(patient.study), valueClassName: "font-medium" },
     { key: "images_count", label: "Images Count", value: patient.images_count, containerClassName: "" },
     {
       key: "status",
@@ -370,7 +390,7 @@ const ShowAllPatients = () => {
         header: "Age/Sex",
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-sm">
-            {row.original.age}Y / {row.original.sex}
+            {row.original.age} / {row.original.sex}
           </div>
         ),
       },
@@ -393,11 +413,11 @@ const ShowAllPatients = () => {
         ),
       },
       {
-        accessorKey: "study",
+        id: "study",
         header: "Study",
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-sm">
-            {row.getValue("study")}
+            {formatStudy(row.original.study)}
           </div>
         ),
       },

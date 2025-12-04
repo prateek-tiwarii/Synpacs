@@ -70,7 +70,7 @@ const CoordinatorDashboard = () => {
       <div className="flex gap-2 flex-col">
 
         {/* Main Content - Patients and Doctors in Flex Row */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full justify-around">
           <PatientTable />
           <DoctorAvailablity />
         </div>

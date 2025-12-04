@@ -137,6 +137,14 @@ class ApiService {
     })
   }
 
+  async getAvailableDoctors() {
+    const hospitalId = localStorage.getItem('active_hospital')
+    return this.request('/api/v1/doctor/get-available-doctors', {
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: hospitalId }),
+    })
+  }
+
   async getAllPatients(page: number = 1, limit: number = 10) {
     return this.request('/api/v1/patient/get-all', {
       method: 'POST',
