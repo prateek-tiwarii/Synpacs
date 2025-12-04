@@ -31,10 +31,10 @@ export function Sidebar({ isCollapsed, toggleSidebar }: SidebarProps) {
 
   return (
     <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] ${isCollapsed ? 'w-16' : 'w-48'} bg-white! border-r border-gray-200! transition-all duration-300 z-30 flex flex-col`}>
-      
-      <div className="flex justify-end p-2">
-        <button 
-          onClick={toggleSidebar} 
+
+      <div className={`flex ${isCollapsed ? 'justify-center' : 'justify-end'} p-2`}>
+        <button
+          onClick={toggleSidebar}
           className="p-1 hover:bg-gray-100 rounded-lg text-gray-500"
         >
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}

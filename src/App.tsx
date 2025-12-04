@@ -8,9 +8,11 @@ import { useAppSelector } from '@/store/hooks'
 import './App.css'
 import UserCreate from './pages/UserCreate'
 import Patient from './pages/Patient'
+import SinglePatient from './pages/SinglePatient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import { MainLayout } from '@/components/MainLayout'
+import { Toaster } from 'react-hot-toast'
 
 
 function RootRedirect() {
@@ -26,6 +28,7 @@ function RootRedirect() {
 function App() {
   return (
     <div className=''>
+      <Toaster position="top-right" />
       <Router>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
@@ -54,6 +57,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/manage-users" element={<UserCreate />} />
             <Route path="/manage-patients" element={<Patient />} />
+            <Route path="/patient/:id" element={<SinglePatient />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

@@ -257,15 +257,6 @@ const RecentPatientTable = () => {
       ),
     },
     {
-      accessorKey: "study.study_uid",
-      header: "Study UID",
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
-          {row.original.study?.study_uid ? `${row.original.study.study_uid.substring(0, 20)}...` : 'N/A'}
-        </span>
-      ),
-    },
-    {
       accessorKey: "treatment_type",
       header: "Treatment Type",
       cell: ({ row }) => (
@@ -394,8 +385,8 @@ const RecentPatientTable = () => {
           <p className="text-sm text-muted-foreground">View All Patients</p>
           <ArrowRight className="h-4 w-4" />
         </Link>
-      </div>  
-      <div className="px-4">
+      </div>
+      {/* <div className="px-4">
         <Filters filters={{
           center: 'All Centers',
           modality: 'All Modalities',
@@ -403,7 +394,7 @@ const RecentPatientTable = () => {
           priority: 'All Priority',
           status: 'All Status'
         }} setFilters={() => { }} />
-      </div>
+      </div> */}
       <CardContent className="p-4">
         <div className="rounded-md border overflow-x-auto">
           <Table>

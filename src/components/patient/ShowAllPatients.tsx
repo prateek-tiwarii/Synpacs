@@ -21,13 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -43,6 +36,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Loader2, RefreshCw } from "lucide-react";
+import PatientDetailsModal from "./PatientDetailsModal";
 
 interface AssignedDoctor {
   _id: string;
@@ -57,25 +51,25 @@ interface Study {
 
 interface Patient {
   _id: string;
+  pac_patinet_id: string;
   name: string;
-  email: string;
-  phone: string;
+  dob: string; // Date of birth in format YYYYMMDD
   hospital_id: string;
-  patient_id: string;
-  patient_type: string;
-  priority: string;
   sex: string;
+  study_description: string;
   age: string;
-  center: string;
   study: Study | string;
-  images_count: number;
+  treatment_type: string;
+  date_of_capture: string;
+  referring_doctor: string;
+  accession_number: string;
+  pac_images: string[]; // Array of image IDs
   status: string;
   assigned_to: string | AssignedDoctor | null;
-  notes: any[];
-  docs: any[];
-  createdAt: string;
-  updatedAt: string;
-  __v: number;
+  pac_images_count: number;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
 }
 
 interface ApiResponse {
@@ -117,14 +111,14 @@ const ShowAllPatients = () => {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   // Get page and limit from URL, defaulting to 1 and 10
-  const page = parseInt(searchParams.get("page") || "1", 1);
-  const limit = parseInt(searchParams.get("limit") || "20", 20);
-  
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const limit = parseInt(searchParams.get("limit") || "20", 10);
+
 
   useEffect(() => {
     const currentPage = searchParams.get("page");
     const currentLimit = searchParams.get("limit");
-    
+
     if (!currentPage || !currentLimit) {
       setSearchParams((prev) => {
         const newParams = new URLSearchParams(prev);
@@ -169,23 +163,10 @@ const ShowAllPatients = () => {
       case "unreported":
         return "warning";
       case "in_progress":
+      case "in progress":
         return "info";
       default:
         return "secondary";
-    }
-  };
-
-  const getPriorityVariant = (priority: string) => {
-    if (!priority || typeof priority !== 'string') return "outline";
-    switch (priority.toLowerCase()) {
-      case "high":
-        return "destructive";
-      case "medium":
-        return "warning";
-      case "low":
-        return "secondary";
-      default:
-        return "outline";
     }
   };
 
@@ -273,18 +254,6 @@ const ShowAllPatients = () => {
     return assignedTo !== null && assignedTo !== undefined;
   };
 
-  const formatStudy = (study: Study | string | undefined): string => {
-    if (!study) return "N/A";
-    if (typeof study === 'string') return study;
-    if (typeof study === 'object' && study !== null) {
-      const parts = [];
-      if (study.study_uid) parts.push(`UID: ${study.study_uid}`);
-      if (study.body_part) parts.push(study.body_part);
-      return parts.length > 0 ? parts.join(' | ') : "N/A";
-    }
-    return "N/A";
-  };
-
   type PatientFieldConfig = {
     key: string;
     label: string;
@@ -293,45 +262,6 @@ const ShowAllPatients = () => {
     containerClassName?: string;
     render?: (value: string) => ReactElement;
   };
-
-  const getPatientFieldConfig = (patient: Patient): PatientFieldConfig[] => [
-    { key: "patient_id", label: "Patient ID", value: patient.patient_id, valueClassName: "font-medium" },
-    { key: "name", label: "Name", value: patient.name, valueClassName: "font-medium" },
-    { key: "email", label: "Email", value: patient.email },
-    { key: "phone", label: "Phone", value: patient.phone },
-    { key: "age", label: "Age", value: patient.age },
-    { key: "sex", label: "Sex", value: patient.sex },
-    { key: "patient_type", label: "Patient Type", value: patient.patient_type },
-    { key: "center", label: "Center", value: patient.center },
-    { key: "study", label: "Study", value: formatStudy(patient.study), valueClassName: "font-medium" },
-    { key: "images_count", label: "Images Count", value: patient.images_count, containerClassName: "" },
-    {
-      key: "status",
-      label: "Status",
-      value: patient.status,
-      containerClassName: "",
-      render: (value: string) => (
-        <Badge variant={getStatusVariant(value)} className="mt-1">
-          {value}
-        </Badge>
-      )
-    },
-    {
-      key: "priority",
-      label: "Priority",
-      value: patient.priority,
-      containerClassName: "",
-      render: (value: string) => (
-        <Badge variant={getPriorityVariant(value)} className="mt-1">
-          {value}
-        </Badge>
-      )
-    },
-    { key: "assigned_to", label: "Assigned To", value: getAssignedToName(patient.assigned_to), containerClassName: "" },
-    { key: "hospital_id", label: "Hospital ID", value: patient.hospital_id, valueClassName: "text-xs font-mono", containerClassName: "" },
-    { key: "createdAt", label: "Created At", value: formatDate(patient.createdAt), containerClassName: "" },
-    { key: "updatedAt", label: "Updated At", value: formatDate(patient.updatedAt), containerClassName: "" },
-  ];
 
   const columns = useMemo<ColumnDef<Patient>[]>(
     () => [
@@ -368,21 +298,12 @@ const ShowAllPatients = () => {
         ),
       },
       {
-        accessorKey: "email",
-        header: "Email",
+        accessorKey: "accession_number",
+        header: "Accession #",
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {row.getValue("email")}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "phone",
-        header: "Phone",
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {row.getValue("phone")}
-          </span>
+          <div className="whitespace-nowrap text-sm font-mono">
+            {row.getValue("accession_number") || "N/A"}
+          </div>
         ),
       },
       {
@@ -395,38 +316,40 @@ const ShowAllPatients = () => {
         ),
       },
       {
-        accessorKey: "patient_type",
-        header: "Patient Type",
+        accessorKey: "study_description",
+        header: "Study Description",
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-sm">
-            {row.getValue("patient_type")}
+            {row.getValue("study_description") || "N/A"}
           </div>
         ),
       },
       {
-        accessorKey: "center",
-        header: "Center",
+        accessorKey: "treatment_type",
+        header: "Treatment Type",
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-sm">
-            {row.getValue("center")}
+            {row.getValue("treatment_type") || "N/A"}
           </div>
         ),
       },
       {
-        id: "study",
-        header: "Study",
+        id: "body_part",
+        header: "Body Part",
         cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {formatStudy(row.original.study)}
+          <div className="whitespace-nowrap text-sm font-medium">
+            {typeof row.original.study === 'object' && row.original.study !== null
+              ? row.original.study.body_part || 'N/A'
+              : 'N/A'}
           </div>
         ),
       },
       {
-        accessorKey: "images_count",
+        accessorKey: "pac_images_count",
         header: "Images",
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-sm">
-            {row.getValue("images_count")}
+            {row.getValue("pac_images_count") || 0}
           </div>
         ),
       },
@@ -436,15 +359,6 @@ const ShowAllPatients = () => {
         cell: ({ row }) => (
           <Badge variant={getStatusVariant(row.getValue("status"))}>
             {row.getValue("status")}
-          </Badge>
-        ),
-      },
-      {
-        accessorKey: "priority",
-        header: "Priority",
-        cell: ({ row }) => (
-          <Badge variant={getPriorityVariant(row.getValue("priority"))}>
-            {row.getValue("priority")}
           </Badge>
         ),
       },
@@ -506,233 +420,161 @@ const ShowAllPatients = () => {
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 px-4">
-        <div>
-          <CardTitle className="text-xl font-bold">All Patients</CardTitle>
-        </div>
-        <Button
-          onClick={fetchAllPatients}
-          variant="outline"
-          size="sm"
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </CardHeader>
-      <CardContent className="px-4">
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="bg-muted/50">
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="font-semibold">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && "selected"}
-                    className="hover:bg-muted/30 cursor-pointer"
-                    onClick={() => handlePatientClick(row.original)}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
+    <>
+      <Card className="w-full">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 px-4">
+          <div>
+            <CardTitle className="text-xl font-bold">All Patients</CardTitle>
+          </div>
+          <Button
+            onClick={fetchAllPatients}
+            variant="outline"
+            size="sm"
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent className="px-4">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id} className="bg-muted/50">
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id} className="font-semibold">
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="h-24 text-center"
-                  >
-                    <p className="text-muted-foreground">No patients found</p>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <div className="flex items-center justify-between px-2 py-4">
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-muted-foreground">Rows per page</p>
-            <Select
-              value={`${limit}`}
-              onValueChange={(value) => {
-                const newLimit = Number(value);
-                setSearchParams((prev) => {
-                  const newParams = new URLSearchParams(prev);
-                  newParams.set("limit", newLimit.toString());
-                  newParams.set("page", "1"); // Reset to page 1 when changing limit
-                  return newParams;
-                });
-              }}
-            >
-              <SelectTrigger className="h-8 w-[70px]">
-                <SelectValue placeholder={limit.toString()} />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {[20, 50, 100].map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`}>
-                    {pageSize}
-                  </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && "selected"}
+                      className="hover:bg-muted/30 cursor-pointer"
+                      onClick={() => handlePatientClick(row.original)}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length}
+                      className="h-24 text-center"
+                    >
+                      <p className="text-muted-foreground">No patients found</p>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center justify-between px-2 py-4">
             <div className="flex items-center gap-2">
-              <p className="text-sm text-muted-foreground flex whitespace-nowrap">
-                <span>Page {page}</span>
-              </p>
+              <p className="text-sm text-muted-foreground">Rows per page</p>
+              <Select
+                value={`${limit}`}
+                onValueChange={(value) => {
+                  const newLimit = Number(value);
+                  setSearchParams((prev) => {
+                    const newParams = new URLSearchParams(prev);
+                    newParams.set("limit", newLimit.toString());
+                    newParams.set("page", "1"); // Reset to page 1 when changing limit
+                    return newParams;
+                  });
+                }}
+              >
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue placeholder={limit.toString()} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[20, 50, 100].map((pageSize) => (
+                    <SelectItem key={pageSize} value={`${pageSize}`}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (page > 1) {
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground flex whitespace-nowrap">
+                  <span>Page {page}</span>
+                </p>
+              </div>
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (page > 1) {
+                          setSearchParams((prev) => {
+                            const newParams = new URLSearchParams(prev);
+                            newParams.set("page", (page - 1).toString());
+                            return newParams;
+                          });
+                        }
+                      }}
+                      className={
+                        page <= 1
+                          ? "pointer-events-none opacity-50"
+                          : "cursor-pointer"
+                      }
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
                         setSearchParams((prev) => {
                           const newParams = new URLSearchParams(prev);
-                          newParams.set("page", (page - 1).toString());
+                          newParams.set("page", (page + 1).toString());
                           return newParams;
                         });
-                      }
-                    }}
-                    className={
-                      page <= 1
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer"
-                    }
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSearchParams((prev) => {
-                        const newParams = new URLSearchParams(prev);
-                        newParams.set("page", (page + 1).toString());
-                        return newParams;
-                      });
-                    }}
-                    className="cursor-pointer"
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        </div>
-      </CardContent>
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Patient Details</DialogTitle>
-            <DialogDescription>
-              Complete information for {selectedPatient?.name}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedPatient && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                {getPatientFieldConfig(selectedPatient).map((field) => (
-                  <div
-                    key={field.key}
-                    className={field.containerClassName || "flex flex-col gap-2"}
-                  >
-                    <label className="text-sm font-medium text-muted-foreground">
-                      {field.label}
-                    </label>
-                    {field.render ? (
-                      field.render(field.value as string)
-                    ) : (
-                      <p className={`text-sm ${field.valueClassName || ""}`}>
-                        {field.value}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="border-t pt-4">
-                <label className="text-sm font-medium text-muted-foreground">Notes</label>
-                <p className="text-sm mt-1">
-                  {selectedPatient.notes && selectedPatient.notes.length > 0
-                    ? JSON.stringify(selectedPatient.notes, null, 2)
-                    : "No notes available"}
-                </p>
-              </div>
-              <div className="border-t pt-4">
-                <label className="text-sm font-medium text-muted-foreground">Documents</label>
-                <p className="text-sm mt-1">
-                  {selectedPatient.docs && selectedPatient.docs.length > 0
-                    ? `${selectedPatient.docs.length} document(s)`
-                    : "No documents available"}
-                </p>
-              </div>
-              <div className="border-t pt-4">
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  {isAssigned(selectedPatient.assigned_to) ? "Change Doctor Assignment" : "Assign to Doctor"}
-                </label>
-                <div className="flex gap-2">
-                  <Select
-                    value={selectedDoctorId}
-                    onValueChange={setSelectedDoctorId}
-                    disabled={loadingDoctors || assigning}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder={loadingDoctors ? "Loading doctors..." : "Select a doctor"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {doctors.map((doctor) => (
-                        <SelectItem key={doctor._id} value={doctor._id}>
-                          {doctor.full_name}
-                          {doctor.doctor_details?.speciality && ` - ${doctor.doctor_details.speciality}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    onClick={handleAssignDoctor}
-                    disabled={!selectedDoctorId || assigning || loadingDoctors}
-                  >
-                    {assigning ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Assigning...
-                      </>
-                    ) : (
-                      isAssigned(selectedPatient.assigned_to) ? "Reassign" : "Assign"
-                    )}
-                  </Button>
-                </div>
-              </div>
+                      }}
+                      className="cursor-pointer"
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      <PatientDetailsModal
+        isOpen={isModalOpen}
+        onClose={setIsModalOpen}
+        patient={selectedPatient}
+        doctors={doctors}
+        selectedDoctorId={selectedDoctorId}
+        onDoctorSelect={setSelectedDoctorId}
+        onAssignDoctor={handleAssignDoctor}
+        isAssigning={assigning}
+        isLoadingDoctors={loadingDoctors}
+      />
+    </>
   );
 };
 

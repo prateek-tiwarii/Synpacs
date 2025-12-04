@@ -89,49 +89,51 @@ export function TopBar() {
       {/* Right Side Icons */}
       <div className="flex items-center gap-2 shrink-0">
 
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              className="w-[200px] justify-between"
-            >
-              {value
-                ? hospitals.find((hospital) => hospital._id === value)?.name
-                : "Select hospital..."}
-              <ChevronsUpDown className="opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-0">
-            <Command>
-              <CommandInput placeholder="Search hospital..." className="h-9" />
-              <CommandList>
-                <CommandEmpty>No hospital found.</CommandEmpty>
-                <CommandGroup>
-                  {hospitals.map((hospital) => (
-                    <CommandItem
-                      key={hospital._id}
-                      value={hospital.name}
-                      onSelect={() => {
-                        setValue(hospital._id)
-                        setOpen(false)
-                      }}
-                    >
-                      {hospital.name}
-                      <Check
-                        className={cn(
-                          "ml-auto",
-                          value === hospital._id ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        {(user?.role === 'coordinator' || user?.role === 'super_coordinator') && (
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={open}
+                className="w-[200px] justify-between"
+              >
+                {value
+                  ? hospitals.find((hospital) => hospital._id === value)?.name
+                  : "Select hospital..."}
+                <ChevronsUpDown className="opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-0">
+              <Command>
+                <CommandInput placeholder="Search hospital..." className="h-9" />
+                <CommandList>
+                  <CommandEmpty>No hospital found.</CommandEmpty>
+                  <CommandGroup>
+                    {hospitals.map((hospital) => (
+                      <CommandItem
+                        key={hospital._id}
+                        value={hospital.name}
+                        onSelect={() => {
+                          setValue(hospital._id)
+                          setOpen(false)
+                        }}
+                      >
+                        {hospital.name}
+                        <Check
+                          className={cn(
+                            "ml-auto",
+                            value === hospital._id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
         <div className='flex items-center gap-2'>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

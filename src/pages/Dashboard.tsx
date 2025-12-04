@@ -1,4 +1,4 @@
-import { useUser } from '@/hooks/useUser';  
+import { useUser } from '@/hooks/useUser';
 import CoordinatorDashboard from '@/components/dashboard/coordinatorDashboard/coordinatorDashboard';
 import DoctorDashboard from '@/components/dashboard/doctorDashboard/doctorDashboard';
 
