@@ -20,9 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowRight, ChevronDown, Loader2 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Button } from "../ui/button";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface AssignedDoctor {
@@ -62,34 +60,6 @@ interface ApiResponse {
   message: string;
   count: number;
   data: Patient[];
-}
-
-const Filters = ({ filters, setFilters }: { filters: any, setFilters: any }) => {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      {Object.entries(filters).map(([key, value]) => (
-        <DropdownMenu key={key}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 gap-2 bg-white! text-black! border border-gray-300">
-              {value as string}
-              <ChevronDown className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: `All ${key.charAt(0).toUpperCase() + key.slice(1)}` })}>
-              All {key.charAt(0).toUpperCase() + key.slice(1)}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: 'Option 1' })}>
-              Option 1
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilters({ ...filters, [key]: 'Option 2' })}>
-              Option 2
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ))}
-    </div>
-  )
 }
 
 const RecentPatientTable = () => {

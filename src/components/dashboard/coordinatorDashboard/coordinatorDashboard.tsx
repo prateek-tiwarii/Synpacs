@@ -1,12 +1,9 @@
 import { Activity, AlertCircle, CheckCircle2, Clock, FileText, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Filter } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import PatientTable from '@/components/dashboard/RecentPatientTable';
 import DoctorAvailablity from '@/components/dashboard/DoctorAvailablity';
 import { useState, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
 
 const CoordinatorDashboard = () => {
   const stats = [

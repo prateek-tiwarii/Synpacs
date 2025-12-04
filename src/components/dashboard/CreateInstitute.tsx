@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Building2, Plus, X, Edit2, Trash2, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Building2, X, Edit2, Trash2, ChevronDown } from 'lucide-react';
 import { apiService } from '@/lib/api';
 
 const InstitutionsManager = () => {
@@ -41,7 +41,7 @@ const InstitutionsManager = () => {
     fetchInstitutions();
   }, []);
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: any) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -62,7 +62,7 @@ const InstitutionsManager = () => {
     handleReset();
   };
 
-  const handleHeaderUpload = (id: string | number, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleHeaderUpload = (id: string | number, e: any) => {
     const file = e.target.files?.[0];
     if (file) {
       setInstitutions(institutions.map(inst =>

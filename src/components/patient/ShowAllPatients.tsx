@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type ReactElement } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiService } from "@/lib/api";
 import {
@@ -240,10 +240,6 @@ const ShowAllPatients = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
   const getAssignedToName = (assignedTo: string | AssignedDoctor | null): string => {
     if (!assignedTo) return "Unassigned";
     if (typeof assignedTo === 'string') return assignedTo;
@@ -252,15 +248,6 @@ const ShowAllPatients = () => {
 
   const isAssigned = (assignedTo: string | AssignedDoctor | null): boolean => {
     return assignedTo !== null && assignedTo !== undefined;
-  };
-
-  type PatientFieldConfig = {
-    key: string;
-    label: string;
-    value: string | number;
-    valueClassName?: string;
-    containerClassName?: string;
-    render?: (value: string) => ReactElement;
   };
 
   const columns = useMemo<ColumnDef<Patient>[]>(
