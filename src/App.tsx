@@ -11,6 +11,7 @@ import Patient from './pages/Patient'
 import SinglePatient from './pages/SinglePatient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
+import ViewerSettings from './pages/ViewerSettings'
 import { MainLayout } from '@/components/MainLayout'
 import { Toaster } from 'react-hot-toast'
 
@@ -55,6 +56,7 @@ function App() {
             <Route path="/automation" element={<Automation />} />
             <Route path="/performance" element={<Performance />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/viewer-settings" element={<ViewerSettings />} />
             <Route path="/manage-users" element={<UserCreate />} />
             <Route path="/manage-patients" element={<Patient />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
