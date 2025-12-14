@@ -495,7 +495,7 @@ const ShowAllPatients = () => {
 
   return (
     <>
-      <div className="w-full space-y-2 border rounded-md p-4 bg-white">
+      <div className="w-full space-y-2 border rounded-md p-2 bg-white">
         <Heading title="Manage PACs" subtitle="Manage all PACs in the system" />
         <DataTable
           data={flattenedCases}
@@ -514,9 +514,9 @@ const ShowAllPatients = () => {
           showDoctorsOnSelect={true}
           manualPagination={true}
         />
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-2 py-3">
           <div className="flex items-center gap-2">
-            <p className="text-sm text-muted-foreground">Rows per page</p>
+            <p className="text-xs text-muted-foreground">Rows per page</p>
             <Select
               value={`${limit}`}
               onValueChange={(value) => {
@@ -529,21 +529,21 @@ const ShowAllPatients = () => {
                 });
               }}
             >
-              <SelectTrigger className="h-8 w-[70px]">
+              <SelectTrigger className="h-7 w-[60px] text-xs">
                 <SelectValue placeholder={limit.toString()} />
               </SelectTrigger>
               <SelectContent side="top">
                 {[20, 50, 100].map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`}>
+                  <SelectItem key={pageSize} value={`${pageSize}`} className="text-xs">
                     {pageSize}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <p className="text-sm text-muted-foreground flex whitespace-nowrap">
+              <p className="text-xs text-muted-foreground flex whitespace-nowrap">
                 <span>Page {page} {pagination ? `of ${pagination.totalPages}` : ''}</span>
               </p>
             </div>

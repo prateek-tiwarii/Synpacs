@@ -66,10 +66,10 @@ const AssignedPatientsTable = ({
             try {
                 setIsLoading(true);
                 setError(null);
-                const response = await apiService.getAssignedCases() as AssignedCasesResponse;
+                const response = await apiService.getAssignedCases() as any;
                 if (response.success && response.data?.cases) {
                     // Map API response to match Patient interface
-                    const mappedPatients: Patient[] = response.data.cases.map((caseItem) => {
+                    const mappedPatients: Patient[] = response.data.cases.map((caseItem: any) => {
                         // Calculate age from date_of_birth (format: YYYYMMDD)
                         const calculateAge = (dob: string): string => {
                             if (!dob || dob.length !== 8) return '';

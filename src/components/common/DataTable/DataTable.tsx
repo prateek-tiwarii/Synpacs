@@ -353,7 +353,7 @@ export function DataTable<TData>({
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <TableRow key={headerGroup.id} className={headerClassName}>
                                     {headerGroup.headers.map((header) => (
-                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap">
+                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-xs px-2 py-2">
                                             {header.isPlaceholder
                                                 ? null
                                                 : flexRender(
@@ -374,7 +374,7 @@ export function DataTable<TData>({
                                     data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                 >
                                     {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id} className="whitespace-nowrap">
+                                        <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-2">
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                         </TableCell>
                                     ))}
