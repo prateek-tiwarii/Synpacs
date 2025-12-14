@@ -7,8 +7,16 @@ import {
     DialogTitle,
     DialogDescription,
 } from '@/components/ui/dialog';
-import type { Patient, PatientDocument } from '@/components/patient/PatientDetailsModal';
+import type { Patient } from '@/components/patient/PacDetailsModal';
 
+interface PatientDocument {
+    _id: string;
+    title: string;
+    description: string;
+    createdAt: string;
+    signed_url: string;
+    file_url: string;
+}
 interface DocumentDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;

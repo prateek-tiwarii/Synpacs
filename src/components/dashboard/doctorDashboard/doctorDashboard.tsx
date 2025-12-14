@@ -3,10 +3,8 @@ import DoctorDashboardHeader from './molecules/DoctorDashboardHeader';
 import MessageDialog from './molecules/MessageDialog';
 import DocumentDialog from './molecules/DocumentDialog';
 import AssignedPatientsTable from './molecules/AssignedPatientsTable';
-import ColumnVisibilityModal from './molecules/ColumnVisibilityModal';
-import type { Patient } from '@/components/patient/PatientDetailsModal';
+import type { Patient } from '@/components/patient/PacDetailsModal';
 import type { VisibilityState } from '@tanstack/react-table';
-import { Settings } from 'lucide-react';
 
 interface FilterState {
   patientName: string;
@@ -44,7 +42,6 @@ const DoctorDashboard = () => {
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
-  const [columnVisibilityModalOpen, setColumnVisibilityModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [activePeriod, setActivePeriod] = useState<string>('1D');
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
@@ -125,18 +122,6 @@ const DoctorDashboard = () => {
       />
 
       <div className='flex flex-col gap-2 p-4 rounded-2xl bg-white'>
-        <div className='flex justify-between items-center'>
-          <div className='flex flex-col gap-1'>
-            <span className='text-black font-bold'>Patients</span>
-          </div>
-
-          <div 
-            className='p-2 hover:bg-gray-100 rounded cursor-pointer'
-            onClick={() => setColumnVisibilityModalOpen(true)}
-          >
-            <Settings className='w-4 h-4 text-gray-500' />
-          </div>
-        </div>
         <AssignedPatientsTable
           setSelectedPatient={setSelectedPatient}
           setMessageDialogOpen={setMessageDialogOpen}
@@ -160,14 +145,6 @@ const DoctorDashboard = () => {
         open={documentDialogOpen}
         onOpenChange={setDocumentDialogOpen}
         patient={selectedPatient}
-      />
-
-      {/* Column Visibility Modal */}
-      <ColumnVisibilityModal
-        open={columnVisibilityModalOpen}
-        onOpenChange={setColumnVisibilityModalOpen}
-        columnVisibility={columnVisibility}
-        onColumnVisibilityChange={setColumnVisibility}
       />
     </div>
   );

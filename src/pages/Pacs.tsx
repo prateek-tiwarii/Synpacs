@@ -1,7 +1,7 @@
 
 import ShowAllPatients from "@/components/patient/ShowAllPatients";
 
-const Patient = () => {
+const Pacs = () => {
   return (
     <div className="space-y-2 p-2">
       <ShowAllPatients />
@@ -9,4 +9,4 @@ const Patient = () => {
   );
 };
 
-export default Patient;
+export default Pacs;

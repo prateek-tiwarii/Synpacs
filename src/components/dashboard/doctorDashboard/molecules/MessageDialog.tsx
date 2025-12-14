@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { apiService } from '@/lib/api';
-import type { Patient } from '@/components/patient/PatientDetailsModal';
+import type { Patient } from '@/components/patient/PacDetailsModal';
 import { Loader2, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 
 interface MessageDialogProps {

@@ -1,10 +1,10 @@
-import { Activity, LayoutDashboard, User, Users, Zap, FileImage, Settings } from "lucide-react"
+import { Activity, LayoutDashboard, Users, Zap, FileImage, Settings, ClipboardMinus } from "lucide-react"
 
 export const sidebarItems = [
     { label: 'Queue', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Automation', href: '/automation', icon: Zap },
     { label: 'Performance', href: '/performance', icon: Activity },
-    { label: 'Manage Patients', href: '/manage-patients', icon: User },
+    { label: 'Manage PACs', href: '/manage-pacs', icon: ClipboardMinus },
     { label: 'Manage Users', href: '/manage-users', icon: Users },
   ]
   

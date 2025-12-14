@@ -7,7 +7,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
 import UserCreate from './pages/UserCreate'
-import Patient from './pages/Patient'
+import Pacs from './pages/Pacs'
 import SinglePatient from './pages/SinglePatient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
@@ -58,7 +58,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/viewer-settings" element={<ViewerSettings />} />
             <Route path="/manage-users" element={<UserCreate />} />
-            <Route path="/manage-patients" element={<Patient />} />
+            <Route path="/manage-pacs" element={<Pacs />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
           </Route>
 

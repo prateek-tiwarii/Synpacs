@@ -2,22 +2,11 @@ import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiService } from "@/lib/api";
 import {
-  useReactTable,
-  getCoreRowModel,
-  flexRender,
-  type ColumnDef,
   type RowSelectionState,
+  type VisibilityState,
 } from "@tanstack/react-table";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,8 +24,12 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Loader2, RefreshCw } from "lucide-react";
-import PatientDetailsModal from "./PatientDetailsModal";
+import { RefreshCw } from "lucide-react";
+import { Heading } from "@/components/common/Heading";
+import PatientDetailsModal from "./PacDetailsModal";
+import { DataTable } from "@/components/common/DataTable";
+import { createColumnHelper } from "@tanstack/react-table";
+import { formatDate, formatTime } from "@/lib/helperFunctions";
 
 interface AssignedDoctor {
   _id: string;
@@ -61,6 +54,7 @@ interface Patient {
   study: Study | string;
   treatment_type: string;
   date_of_capture: string;
+  time_of_capture: string;
   referring_doctor: string;
   accession_number: string;
   pac_images: string[]; // Array of image IDs
@@ -72,11 +66,46 @@ interface Patient {
   __v?: number;
 }
 
+interface CasePatient {
+  _id: string;
+  patient_id: string;
+  date_of_birth: string;
+  name: string;
+  sex: string;
+}
+
+interface PacCase {
+  _id: string;
+  study_uid: string;
+  accession_number: string;
+  body_part: string;
+  description: string;
+  hospital_id: string;
+  modality: string;
+  patient_id: string;
+  study_date: string;
+  study_time: string;
+  patient: CasePatient;
+  [key: string]: any; // Allow dynamic fields
+}
+
+interface PaginationInfo {
+  currentPage: number;
+  pageSize: number;
+  totalCases: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
 interface ApiResponse {
   success: boolean;
   message: string;
   count: number;
-  data: Patient[];
+  pagination: PaginationInfo;
+  data: {
+    cases: PacCase[];
+  };
 }
 
 interface Doctor {
@@ -97,18 +126,72 @@ interface DoctorResponse {
   data: Doctor[];
 }
 
+// Helper function to calculate age from date of birth (YYYYMMDD format)
+const calculateAge = (dob: string): string => {
+  if (!dob || dob.length !== 8) return "N/A";
+  const year = parseInt(dob.substring(0, 4));
+  const month = parseInt(dob.substring(4, 6)) - 1;
+  const day = parseInt(dob.substring(6, 8));
+  const birthDate = new Date(year, month, day);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age.toString();
+};
+
+// Helper function to flatten case data and merge patient info
+const flattenCaseData = (cases: PacCase[]): any[] => {
+  return cases.map((caseItem) => {
+    const flattened: any = {
+      ...caseItem,
+      // Flatten patient data to top level
+      name: caseItem.patient?.name || "N/A",
+      sex: caseItem.patient?.sex || "N/A",
+      date_of_birth: caseItem.patient?.date_of_birth || "",
+      age: calculateAge(caseItem.patient?.date_of_birth || ""),
+      // Map description to study_description for compatibility
+      study_description: caseItem.description || "N/A",
+    };
+    return flattened;
+  });
+};
+
+// Helper function to get all unique keys from data
+const getAllKeys = (data: any[]): string[] => {
+  const keys = new Set<string>();
+  data.forEach((item) => {
+    Object.keys(item).forEach((key) => {
+      // Skip nested objects and functions
+      if (item[key] !== null && typeof item[key] === 'object' && !Array.isArray(item[key])) {
+        // Flatten nested objects
+        Object.keys(item[key]).forEach((nestedKey) => {
+          keys.add(`${key}.${nestedKey}`);
+        });
+      } else if (typeof item[key] !== 'function') {
+        keys.add(key);
+      }
+    });
+  });
+  return Array.from(keys).sort();
+};
+
 const ShowAllPatients = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [cases, setCases] = useState<PacCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedCase, setSelectedCase] = useState<PacCase | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
 
   // Get page and limit from URL, defaulting to 1 and 10
   const page = parseInt(searchParams.get("page") || "1", 10);
@@ -134,26 +217,46 @@ const ShowAllPatients = () => {
   }, []); // Only run on mount
 
   useEffect(() => {
-    fetchAllPatients();
+    fetchAllPacCases();
   }, [page, limit]);
 
-  const fetchAllPatients = async () => {
+  const fetchAllPacCases = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getAllPatients(page, limit) as ApiResponse;
+      const response = await apiService.getAllPacCases(page, limit) as ApiResponse;
 
       if (response.success) {
-        setPatients(response.data || []);
+        const casesData = response.data?.cases || [];
+        setCases(casesData);
+        setPagination(response.pagination || null);
+
+        // Initialize column visibility for all columns
+        if (casesData.length > 0) {
+          const flattened = flattenCaseData(casesData);
+          const allKeys = getAllKeys(flattened);
+          const initialVisibility: VisibilityState = {};
+          allKeys.forEach((key) => {
+            // Hide some technical/internal fields by default
+            if (!['_id', 'patient_id', 'hospital_id', '__v', 'patient'].includes(key)) {
+              initialVisibility[key] = true;
+            } else {
+              initialVisibility[key] = false;
+            }
+          });
+          // Always show select column
+          initialVisibility['select'] = true;
+          setColumnVisibility(initialVisibility);
+        }
       } else {
-        setError(response.message || "Failed to fetch patients");
+        setError(response.message || "Failed to fetch cases");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred while fetching patients");
+      setError(err instanceof Error ? err.message : "An error occurred while fetching cases");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const getStatusVariant = (status: string) => {
     if (!status || typeof status !== 'string') return "secondary";
@@ -170,21 +273,13 @@ const ShowAllPatients = () => {
     }
   };
 
-  const handlePatientClick = (patient: Patient) => {
-    setSelectedPatient(patient);
-    setIsModalOpen(true);
-    fetchDoctors();
-
-    // Pre-select the assigned doctor if one exists
-    if (isAssigned(patient.assigned_to) && patient.assigned_to !== null) {
-      if (typeof patient.assigned_to === 'object' && patient.assigned_to._id) {
-        setSelectedDoctorId(patient.assigned_to._id);
-      } else if (typeof patient.assigned_to === 'string') {
-        setSelectedDoctorId(patient.assigned_to);
-      } else {
-        setSelectedDoctorId("");
-      }
-    } else {
+  const handleCaseClick = (caseItem: any) => {
+    // Find the original case from cases array
+    const originalCase = cases.find(c => c._id === caseItem._id);
+    if (originalCase) {
+      setSelectedCase(originalCase);
+      setIsModalOpen(true);
+      fetchDoctors();
       setSelectedDoctorId("");
     }
   };
@@ -204,32 +299,23 @@ const ShowAllPatients = () => {
   };
 
   const handleAssignDoctor = async () => {
-    if (!selectedPatient || !selectedDoctorId) return;
+    if (!selectedCase || !selectedDoctorId) return;
 
     try {
       setAssigning(true);
-      await apiService.assignPatientToDoctor(selectedPatient._id, selectedDoctorId);
+      await apiService.assignCaseToDoctor(selectedCase._id, selectedDoctorId);
 
       const selectedDoctor = doctors.find(d => d._id === selectedDoctorId);
       if (selectedDoctor) {
-        const doctorObject: AssignedDoctor = {
-          _id: selectedDoctor._id,
-          email: selectedDoctor.email,
-          full_name: selectedDoctor.full_name
-        };
-
-        setPatients(prevPatients =>
-          prevPatients.map(patient =>
-            patient._id === selectedPatient._id
-              ? { ...patient, assigned_to: doctorObject }
-              : patient
+        // Update the case in the state if needed
+        // Note: The API response structure may need to be updated to include assigned_to
+        setCases(prevCases =>
+          prevCases.map(caseItem =>
+            caseItem._id === selectedCase._id
+              ? { ...caseItem } // Update with assigned doctor if API returns it
+              : caseItem
           )
         );
-
-        setSelectedPatient({
-          ...selectedPatient,
-          assigned_to: doctorObject
-        });
       }
 
       setSelectedDoctorId("");
@@ -240,19 +326,24 @@ const ShowAllPatients = () => {
     }
   };
 
-  const getAssignedToName = (assignedTo: string | AssignedDoctor | null): string => {
-    if (!assignedTo) return "Unassigned";
-    if (typeof assignedTo === 'string') return assignedTo;
-    return assignedTo.full_name || "Unassigned";
-  };
 
-  const isAssigned = (assignedTo: string | AssignedDoctor | null): boolean => {
-    return assignedTo !== null && assignedTo !== undefined;
-  };
+  // Generate dynamic columns based on the data
+  const columns = useMemo(() => {
+    if (cases.length === 0) return [];
 
-  const columns = useMemo<ColumnDef<Patient>[]>(
-    () => [
-      {
+    const flattened = flattenCaseData(cases);
+    const allKeys = getAllKeys(flattened);
+
+    // Filter out technical/internal fields and nested objects
+    const displayKeys = allKeys.filter(key =>
+      !['_id', 'patient_id', 'hospital_id', '__v', 'patient'].includes(key) &&
+      !key.includes('.') // Exclude nested object paths
+    );
+
+    const columnHelper = createColumnHelper<any>();
+
+    const dynamicColumns = [
+      columnHelper.display({
         id: "select",
         header: ({ table }) => (
           <Checkbox
@@ -274,118 +365,109 @@ const ShowAllPatients = () => {
         ),
         enableSorting: false,
         enableHiding: false,
-      },
-      {
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap font-medium">
-            {row.getValue("name")}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "accession_number",
-        header: "Accession #",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm font-mono">
-            {row.getValue("accession_number") || "N/A"}
-          </div>
-        ),
-      },
-      {
-        id: "age_sex",
-        header: "Age/Sex",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {row.original.age} / {row.original.sex}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "study_description",
-        header: "Study Description",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {row.getValue("study_description") || "N/A"}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "treatment_type",
-        header: "Treatment Type",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {row.getValue("treatment_type") || "N/A"}
-          </div>
-        ),
-      },
-      {
-        id: "body_part",
-        header: "Body Part",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm font-medium">
-            {typeof row.original.study === 'object' && row.original.study !== null
-              ? row.original.study.body_part || 'N/A'
-              : 'N/A'}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "pac_images_count",
-        header: "Images",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {row.getValue("pac_images_count") || 0}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={getStatusVariant(row.getValue("status"))}>
-            {row.getValue("status")}
-          </Badge>
-        ),
-      },
-      {
-        id: "assigned_to",
-        header: "Assigned To",
-        cell: ({ row }) => (
-          <div className="whitespace-nowrap text-sm">
-            {getAssignedToName(row.original.assigned_to)}
-          </div>
-        ),
-      },
-    ],
-    []
-  );
+      }),
+    ];
 
-  const table = useReactTable({
-    data: patients,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
-    onRowSelectionChange: setRowSelection,
-    state: {
-      rowSelection,
-    },
-  });
+    // Check if both age and sex exist to combine them
+    const hasAge = displayKeys.includes('age');
+    const hasSex = displayKeys.includes('sex');
+    const shouldCombineAgeSex = hasAge && hasSex;
+    const processedKeys = new Set<string>();
 
-  if (loading) {
-    return (
-      <Card className="w-full">
-        <CardContent className="flex items-center justify-center py-20">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading all patients...</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+    // Generate columns for each key
+    displayKeys.forEach((key) => {
+      // Skip if already processed (for age/sex combination)
+      if (processedKeys.has(key)) return;
 
+      const headerLabel = key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase());
+
+      // Special handling for age/sex combination
+      if (shouldCombineAgeSex && (key === 'age' || key === 'sex')) {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: "age_sex",
+            header: "Age/Sex",
+            cell: ({ row }) => (
+              <div className="whitespace-nowrap text-xs">
+                {row.original.age || "N/A"} / {row.original.sex || "N/A"}
+              </div>
+            ),
+          })
+        );
+        processedKeys.add('age');
+        processedKeys.add('sex');
+        return;
+      }
+
+      // Special handling for status field
+      if (key === 'status') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: headerLabel,
+            cell: ({ row }) => {
+              const value = (row.original as any)[key];
+              return (
+                <Badge variant={getStatusVariant(String(value || ""))}>
+                  {String(value || "N/A")}
+                </Badge>
+              );
+            },
+          })
+        );
+      } else {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: headerLabel,
+            cell: ({ row }) => {
+              const value = (row.original as any)[key];
+              // Format based on value type
+              if (value === null || value === undefined) {
+                return <div className="whitespace-nowrap text-xs text-muted-foreground">N/A</div>;
+              }
+              if (typeof value === 'boolean') {
+                return <div className="whitespace-nowrap text-xs">{value ? 'Yes' : 'No'}</div>;
+              }
+              if (Array.isArray(value)) {
+                return <div className="whitespace-nowrap text-xs">{value.length}</div>;
+              }
+
+              // Format time fields
+              if (key === 'study_time' || key === 'time_of_capture' || key.toLowerCase().includes('time')) {
+                return (
+                  <div className="whitespace-nowrap text-xs">
+                    {formatTime(String(value))}
+                  </div>
+                );
+              }
+
+              // Format date fields
+              if (key === 'study_date' || key === 'date_of_birth' || key === 'date_of_capture' || key.toLowerCase().includes('date')) {
+                return (
+                  <div className="whitespace-nowrap text-xs">
+                    {formatDate(String(value))}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="whitespace-nowrap text-xs">
+                  {String(value)}
+                </div>
+              );
+            },
+          })
+        );
+      }
+    });
+
+    return dynamicColumns;
+  }, [cases]);
+
+  // Error state
   if (error) {
     return (
       <Card className="w-full">
@@ -394,7 +476,7 @@ const ShowAllPatients = () => {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
           <Button
-            onClick={fetchAllPatients}
+            onClick={fetchAllPacCases}
             className="mt-4"
             variant="outline"
           >
@@ -406,154 +488,138 @@ const ShowAllPatients = () => {
     );
   }
 
+  // Flatten cases data for display
+  const flattenedCases = useMemo(() => {
+    return flattenCaseData(cases);
+  }, [cases]);
+
   return (
     <>
-      <Card className="w-full">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 px-4">
-          <div>
-            <CardTitle className="text-xl font-bold">All Patients</CardTitle>
-          </div>
-          <Button
-            onClick={fetchAllPatients}
-            variant="outline"
-            size="sm"
-            disabled={loading}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </CardHeader>
-        <CardContent className="px-4">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id} className="bg-muted/50">
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} className="font-semibold">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
+      <div className="w-full space-y-2 border rounded-md p-4 bg-white">
+        <Heading title="Manage PACs" subtitle="Manage all PACs in the system" />
+        <DataTable
+          data={flattenedCases}
+          columns={columns}
+          isLoading={loading}
+          emptyMessage="No cases found"
+          loadingMessage="Loading all cases..."
+          onRowClick={handleCaseClick}
+          containerClassName="flex flex-col gap-0"
+          showColumnToggle={true}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          enableRowSelection={true}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          showDoctorsOnSelect={true}
+          manualPagination={true}
+        />
+        <div className="flex items-center justify-between px-2 py-4">
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">Rows per page</p>
+            <Select
+              value={`${limit}`}
+              onValueChange={(value) => {
+                const newLimit = Number(value);
+                setSearchParams((prev) => {
+                  const newParams = new URLSearchParams(prev);
+                  newParams.set("limit", newLimit.toString());
+                  newParams.set("page", "1"); // Reset to page 1 when changing limit
+                  return newParams;
+                });
+              }}
+            >
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue placeholder={limit.toString()} />
+              </SelectTrigger>
+              <SelectContent side="top">
+                {[20, 50, 100].map((pageSize) => (
+                  <SelectItem key={pageSize} value={`${pageSize}`}>
+                    {pageSize}
+                  </SelectItem>
                 ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      data-state={row.getIsSelected() && "selected"}
-                      className="hover:bg-muted/30 cursor-pointer"
-                      onClick={() => handlePatientClick(row.original)}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="h-24 text-center"
-                    >
-                      <p className="text-muted-foreground">No patients found</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+              </SelectContent>
+            </Select>
           </div>
-          <div className="flex items-center justify-between px-2 py-4">
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <p className="text-sm text-muted-foreground">Rows per page</p>
-              <Select
-                value={`${limit}`}
-                onValueChange={(value) => {
-                  const newLimit = Number(value);
-                  setSearchParams((prev) => {
-                    const newParams = new URLSearchParams(prev);
-                    newParams.set("limit", newLimit.toString());
-                    newParams.set("page", "1"); // Reset to page 1 when changing limit
-                    return newParams;
-                  });
-                }}
-              >
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue placeholder={limit.toString()} />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  {[20, 50, 100].map((pageSize) => (
-                    <SelectItem key={pageSize} value={`${pageSize}`}>
-                      {pageSize}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <p className="text-sm text-muted-foreground flex whitespace-nowrap">
+                <span>Page {page} {pagination ? `of ${pagination.totalPages}` : ''}</span>
+              </p>
             </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-muted-foreground flex whitespace-nowrap">
-                  <span>Page {page}</span>
-                </p>
-              </div>
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (page > 1) {
-                          setSearchParams((prev) => {
-                            const newParams = new URLSearchParams(prev);
-                            newParams.set("page", (page - 1).toString());
-                            return newParams;
-                          });
-                        }
-                      }}
-                      className={
-                        page <= 1
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer"
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (pagination?.hasPrevPage || page > 1) {
+                        setSearchParams((prev) => {
+                          const newParams = new URLSearchParams(prev);
+                          newParams.set("page", (page - 1).toString());
+                          return newParams;
+                        });
                       }
-                    />
-                  </PaginationItem>
-                  <PaginationItem>
-                    <PaginationNext
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
+                    }}
+                    className={
+                      !pagination?.hasPrevPage && page <= 1
+                        ? "pointer-events-none opacity-50"
+                        : "cursor-pointer"
+                    }
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (pagination?.hasNextPage) {
                         setSearchParams((prev) => {
                           const newParams = new URLSearchParams(prev);
                           newParams.set("page", (page + 1).toString());
                           return newParams;
                         });
-                      }}
-                      className="cursor-pointer"
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
+                      }
+                    }}
+                    className={
+                      !pagination?.hasNextPage
+                        ? "pointer-events-none opacity-50"
+                        : "cursor-pointer"
+                    }
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <PatientDetailsModal
         isOpen={isModalOpen}
         onClose={setIsModalOpen}
-        patient={selectedPatient}
+        patient={selectedCase ? {
+          _id: selectedCase.patient_id,
+          pac_patinet_id: selectedCase.patient?.patient_id || "",
+          name: selectedCase.patient?.name || "",
+          dob: selectedCase.patient?.date_of_birth || "",
+          hospital_id: selectedCase.hospital_id,
+          sex: selectedCase.patient?.sex || "",
+          study_description: selectedCase.description || "",
+          age: calculateAge(selectedCase.patient?.date_of_birth || ""),
+          study: { study_uid: selectedCase.study_uid, body_part: selectedCase.body_part },
+          treatment_type: "",
+          date_of_capture: formatDate(selectedCase.study_date || ""),
+          time_of_capture: formatTime(selectedCase.study_time || ""),
+          referring_doctor: "",
+          accession_number: selectedCase.accession_number || "",
+          pac_images: [],
+          status: "",
+          study_date: selectedCase.study_date || "",
+          modality: selectedCase.modality || "",
+          assigned_to: null,
+          pac_images_count: 0,
+        } as Patient : null}
         doctors={doctors}
         selectedDoctorId={selectedDoctorId}
         onDoctorSelect={setSelectedDoctorId}

@@ -157,6 +157,17 @@ class ApiService {
     })
   }
 
+  async getAllPacCases(page: number = 1, limit: number = 10) {
+    return this.request('/api/v1/cases/get-all-cases', {
+      method: 'POST',
+      body: JSON.stringify({
+        active_hospital: localStorage.getItem('active_hospital'),
+        page,
+        limit,
+      }),
+    })
+  }
+
   async getRecentPatients() {
     const hospitalId = localStorage.getItem('active_hospital')
     return this.request('/api/v1/patient/get-recent', {
@@ -165,10 +176,10 @@ class ApiService {
     })
   }
 
-  async assignPatientToDoctor(patientId: string, doctorId: string) {
-    return this.request(`/api/v1/patient/assign-to-doctor/${patientId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ doctor_id: doctorId }),
+  async assignCaseToDoctor(case_id: string, assigned_to : string ) {
+    return this.request(`/api/v1/cases/assign-case`, {
+      method: 'POST',
+      body: JSON.stringify({ assigned_to: assigned_to, case_id: case_id }),
     })
   }
 
@@ -192,8 +203,8 @@ class ApiService {
     })
   }
 
-  async getAssignedPatients() {
-    return this.request('/api/v1/doctor/assigned-patients', {
+  async getAssignedCases() {
+    return this.request('/api/v1/cases/get-assigned-cases', {
       method: 'GET',
     })
   }
