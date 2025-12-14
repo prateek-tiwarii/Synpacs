@@ -55,11 +55,45 @@ interface Patient {
   assigned_to: string | AssignedDoctor | null;
 }
 
+interface Case {
+  _id: string;
+  study_uid: string;
+  accession_number: string;
+  body_part: string;
+  description: string;
+  hospital_id: string;
+  modality: string;
+  patient_id: string;
+  study_date: string;
+  study_time: string;
+  assigned_to: AssignedDoctor | null;
+  case_type: string;
+  priority: string;
+  status: string;
+  patient: {
+    _id: string;
+    patient_id: string;
+    date_of_birth: string;
+    name: string;
+    sex: string;
+  };
+}
+
 interface ApiResponse {
   success: boolean;
   message: string;
   count: number;
-  data: Patient[];
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+    totalCases: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+  data: {
+    cases: Case[];
+  };
 }
 
 const RecentPatientTable = () => {
@@ -76,10 +110,46 @@ const RecentPatientTable = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getRecentPatients() as ApiResponse;
+      const response = await apiService.getAllCases(1, 10) as ApiResponse;
 
-      if (response.success) {
-        setPatients(response.data || []);
+      if (response.success && response.data?.cases) {
+        // Map cases to Patient format
+        const mappedPatients: Patient[] = response.data.cases.map((caseItem) => {
+          const calculateAge = (dob: string): string => {
+            if (!dob || dob.length !== 8) return '';
+            const year = parseInt(dob.substring(0, 4));
+            const month = parseInt(dob.substring(4, 6)) - 1;
+            const day = parseInt(dob.substring(6, 8));
+            const birthDate = new Date(year, month, day);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            return age.toString();
+          };
+
+          return {
+            _id: caseItem._id,
+            name: caseItem.patient?.name || 'N/A',
+            pac_patinet_id: caseItem.patient?.patient_id || '',
+            dob: caseItem.patient?.date_of_birth || '',
+            hospital_id: caseItem.hospital_id,
+            priority: caseItem.priority || 'Normal',
+            sex: caseItem.patient?.sex || '',
+            age: calculateAge(caseItem.patient?.date_of_birth || ''),
+            study_description: caseItem.description || '',
+            study: {
+              study_uid: caseItem.study_uid,
+              body_part: caseItem.body_part,
+            },
+            accession_number: caseItem.accession_number || '',
+            status: caseItem.status || 'Unassigned',
+            assigned_to: caseItem.assigned_to,
+          };
+        });
+        setPatients(mappedPatients);
       } else {
         setError(response.message || "Failed to fetch patients");
       }
@@ -176,7 +246,7 @@ const RecentPatientTable = () => {
       accessorKey: "pac_patinet_id",
       header: "Patient ID",
       cell: ({ row }) => (
-        <span className="font-medium whitespace-nowrap">
+        <span className="font-medium text-xs">
           {row.original.pac_patinet_id}
         </span>
       ),
@@ -185,7 +255,7 @@ const RecentPatientTable = () => {
       accessorKey: "name",
       header: "Name",
       cell: ({ row }) => (
-        <span className="font-medium whitespace-nowrap">
+        <span className="font-medium text-xs">
           {row.original.name || 'N/A'}
         </span>
       ),
@@ -194,7 +264,7 @@ const RecentPatientTable = () => {
       accessorKey: "dob",
       header: "DOB",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {formatDOB(row.original.dob)}
         </span>
       ),
@@ -203,7 +273,7 @@ const RecentPatientTable = () => {
       id: "age_sex",
       header: "Age/Sex",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {row.original.age} / {row.original.sex}
         </span>
       ),
@@ -212,7 +282,7 @@ const RecentPatientTable = () => {
       accessorKey: "study_description",
       header: "Study Description",
       cell: ({ row }) => (
-        <span className="text-sm font-medium whitespace-nowrap">
+        <span className="text-xs font-medium">
           {row.original.study_description || 'N/A'}
         </span>
       ),
@@ -221,7 +291,7 @@ const RecentPatientTable = () => {
       accessorKey: "study.body_part",
       header: "Body Part",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {row.original.study?.body_part || 'N/A'}
         </span>
       ),
@@ -230,7 +300,7 @@ const RecentPatientTable = () => {
       accessorKey: "treatment_type",
       header: "Treatment Type",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {row.original.treatment_type || 'N/A'}
         </span>
       ),
@@ -239,7 +309,7 @@ const RecentPatientTable = () => {
       accessorKey: "date_of_capture",
       header: "Date of Capture",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {formatDate(row.original.date_of_capture)}
         </span>
       ),
@@ -248,7 +318,7 @@ const RecentPatientTable = () => {
       accessorKey: "referring_doctor",
       header: "Referring Doctor",
       cell: ({ row }) => (
-        <span className="text-sm whitespace-nowrap">
+        <span className="text-xs">
           {row.original.referring_doctor || 'N/A'}
         </span>
       ),
@@ -257,7 +327,7 @@ const RecentPatientTable = () => {
       accessorKey: "accession_number",
       header: "Accession Number",
       cell: ({ row }) => (
-        <span className="text-sm font-mono whitespace-nowrap">
+        <span className="text-xs font-mono">
           {row.original.accession_number || 'N/A'}
         </span>
       ),
@@ -266,7 +336,7 @@ const RecentPatientTable = () => {
       id: "pac_images",
       header: "PAC Images",
       cell: ({ row }) => (
-        <Badge variant="outline" className="font-semibold whitespace-nowrap">
+        <Badge variant="outline" className="font-semibold text-xs px-2 py-0">
           {row.original.pac_images_count ?? row.original.pac_images?.length ?? 0}
         </Badge>
       ),
@@ -275,7 +345,7 @@ const RecentPatientTable = () => {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge variant={getStatusVariant(row.original.status)} className="whitespace-nowrap">
+        <Badge variant={getStatusVariant(row.original.status)} className="text-xs px-2 py-0">
           {row.original.status}
         </Badge>
       ),
@@ -285,11 +355,11 @@ const RecentPatientTable = () => {
       header: "Priority",
       cell: ({ row }) => (
         row.original.priority ? (
-          <Badge variant={getPriorityVariant(row.original.priority)} className="whitespace-nowrap">
+          <Badge variant={getPriorityVariant(row.original.priority)} className="text-xs px-2 py-0">
             {row.original.priority}
           </Badge>
         ) : (
-          <span className="text-sm text-muted-foreground">-</span>
+          <span className="text-xs text-muted-foreground">-</span>
         )
       ),
     },
@@ -297,7 +367,7 @@ const RecentPatientTable = () => {
       id: "assigned_to",
       header: "Assigned To",
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground whitespace-nowrap">
+        <span className="text-xs text-muted-foreground">
           {getAssignedToName(row.original.assigned_to)}
         </span>
       ),
@@ -365,14 +435,14 @@ const RecentPatientTable = () => {
           status: 'All Status'
         }} setFilters={() => { }} />
       </div> */}
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="bg-muted/50">
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="font-semibold whitespace-nowrap">
+                    <TableHead key={header.id} className="font-semibold text-xs px-2 py-2">
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -393,7 +463,7 @@ const RecentPatientTable = () => {
                     className="hover:bg-muted/30"
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="whitespace-nowrap">
+                      <TableCell key={cell.id} className="px-2 py-2">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}

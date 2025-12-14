@@ -12,6 +12,7 @@ import SinglePatient from './pages/SinglePatient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import ViewerSettings from './pages/ViewerSettings'
+import Research from './pages/Research'
 import { MainLayout } from '@/components/MainLayout'
 import { Toaster } from 'react-hot-toast'
 
@@ -57,6 +58,7 @@ function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/viewer-settings" element={<ViewerSettings />} />
+            <Route path="/research" element={<Research />} />
             <Route path="/manage-users" element={<UserCreate />} />
             <Route path="/manage-pacs" element={<Pacs />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
