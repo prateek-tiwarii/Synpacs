@@ -253,7 +253,7 @@ const ShowAllPatients = () => {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
-  const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [filters, setFilters] = useState<FilterState | null>(null);
 
   // Get page and limit from URL, defaulting to 1 and 20
