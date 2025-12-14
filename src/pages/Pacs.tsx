@@ -1,4 +1,3 @@
-
 import ShowAllPatients from "@/components/patient/ShowAllPatients";
 
 const Pacs = () => {

@@ -157,14 +157,28 @@ class ApiService {
     })
   }
 
-  async getAllPacCases(page: number = 1, limit: number = 10) {
+  async getAllPacCases(page: number = 1, limit: number = 10, filters?: {
+    start_date?: string;
+    end_date?: string;
+    patient_name?: string;
+    body_part?: string;
+    gender?: string;
+    hospital?: string;
+    modality?: string;
+  }) {
+    const requestBody: any = {
+      active_hospital: localStorage.getItem('active_hospital'),
+      page,
+      limit,
+    };
+
+    if (filters) {
+      requestBody.filters = filters;
+    }
+
     return this.request('/api/v1/cases/get-all-cases', {
       method: 'POST',
-      body: JSON.stringify({
-        active_hospital: localStorage.getItem('active_hospital'),
-        page,
-        limit,
-      }),
+      body: JSON.stringify(requestBody),
     })
   }
 

@@ -5,37 +5,7 @@ import DocumentDialog from './molecules/DocumentDialog';
 import AssignedPatientsTable from './molecules/AssignedPatientsTable';
 import type { Patient } from '@/components/patient/PacDetailsModal';
 import type { VisibilityState } from '@tanstack/react-table';
-
-interface FilterState {
-  patientName: string;
-  patientId: string;
-  bodyPart: string;
-  hospital: string;
-  startDate: string;
-  endDate: string;
-  gender: {
-    M: boolean;
-    F: boolean;
-  };
-  modalities: {
-    ALL: boolean;
-    DT: boolean;
-    SC: boolean;
-    AN: boolean;
-    US: boolean;
-    ECHO: boolean;
-    CR: boolean;
-    XA: boolean;
-    MR: boolean;
-    CTMR: boolean;
-    PX: boolean;
-    DX: boolean;
-    MR2: boolean;
-    NM: boolean;
-    RF: boolean;
-    CT: boolean;
-  };
-}
+import type { FilterState } from '@/components/common/FilterPanel';
 
 const DoctorDashboard = () => {
   const [activeTab, setActiveTab] = useState<'Unreported' | 'Reported' | 'All Cases' | 'Drafted'>('Unreported');
