@@ -18,6 +18,7 @@ export interface FilterState {
     hospital: string;
     startDate: string;
     endDate: string;
+    status: string; // 'all', 'assigned', 'unassigned'
     gender: {
         M: boolean;
         F: boolean;
@@ -64,6 +65,7 @@ const FilterPanel = ({
         hospital: '',
         startDate: '',
         endDate: '',
+        status: 'all',
         gender: { M: false, F: false },
         modalities: {
             ALL: false, DT: false, SC: false, AN: false,
@@ -109,6 +111,7 @@ const FilterPanel = ({
             hospital: '',
             startDate: '',
             endDate: '',
+            status: 'all',
             gender: { M: false, F: false },
             modalities: {
                 ALL: false, DT: false, SC: false, AN: false,
@@ -217,6 +220,25 @@ const FilterPanel = ({
                                 <SelectContent>
                                     <SelectItem value="hospital_a" className="text-xs">Hospital A</SelectItem>
                                     <SelectItem value="hospital_b" className="text-xs">Hospital B</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                Case Status
+                            </label>
+                            <Select
+                                value={filters.status}
+                                onValueChange={(value) => setFilters({ ...filters, status: value })}
+                            >
+                                <SelectTrigger className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200">
+                                    <SelectValue placeholder="All Cases" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all" className="text-xs">All Cases</SelectItem>
+                                    <SelectItem value="assigned" className="text-xs">Assigned</SelectItem>
+                                    <SelectItem value="unassigned" className="text-xs">Unassigned</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

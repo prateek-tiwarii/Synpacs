@@ -36,6 +36,7 @@ const DoctorDashboard = () => {
     hospital: '',
     startDate: '',
     endDate: '',
+    status: 'all',
     gender: { M: false, F: false },
     modalities: {
       ALL: false, DT: false, SC: false, AN: false,
@@ -58,6 +59,7 @@ const DoctorDashboard = () => {
       hospital: '',
       startDate: '',
       endDate: '',
+      status: 'all',
       gender: { M: false, F: false },
       modalities: {
         ALL: false, DT: false, SC: false, AN: false,
@@ -98,6 +100,7 @@ const DoctorDashboard = () => {
           setDocumentDialogOpen={setDocumentDialogOpen}
           columnVisibility={columnVisibility}
           onColumnVisibilityChange={setColumnVisibility}
+          filters={_filters}
         />
       </div>
 

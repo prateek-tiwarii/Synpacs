@@ -47,21 +47,6 @@ interface StatusCellProps {
 }
 
 export const StatusCell = ({ status }: StatusCellProps) => {
-    const getStatusVariant = (status: string) => {
-        if (!status || typeof status !== 'string') return "secondary";
-        switch (status.toLowerCase()) {
-            case "reported":
-                return "success";
-            case "unreported":
-                return "destructive";
-            case "in_progress":
-            case "in progress":
-                return "default";
-            default:
-                return "secondary";
-        }
-    };
-
     return (
         <span
             className={`inline-flex items-center gap-1 ${

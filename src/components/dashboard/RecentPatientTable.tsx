@@ -20,8 +20,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
+import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
+import { format } from "date-fns";
 
 interface AssignedDoctor {
   _id: string;
@@ -101,16 +103,124 @@ const RecentPatientTable = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
+  
+  // Helper function to get default date range (last 1 month)
+  const getDefaultDateRange = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+    return {
+      start: format(startDate, "yyyy-MM-dd"),
+      end: format(endDate, "yyyy-MM-dd"),
+    };
+  };
+
+  const defaultDates = getDefaultDateRange();
+  const [filters, setFilters] = useState<FilterState>({
+    patientName: "",
+    patientId: "",
+    bodyPart: "",
+    hospital: "",
+    startDate: defaultDates.start,
+    endDate: defaultDates.end,
+    status: "all",
+    gender: { M: false, F: false },
+    modalities: {
+      ALL: false,
+      DT: false,
+      SC: false,
+      AN: false,
+      US: false,
+      ECHO: false,
+      CR: false,
+      XA: false,
+      MR: false,
+      CTMR: false,
+      PX: false,
+      DX: false,
+      MR2: false,
+      NM: false,
+      RF: false,
+      CT: false,
+    },
+  });
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
+
+  const handleFilterChange = (newFilters: FilterState) => {
+    setFilters(newFilters);
+  };
+
+  const handleFilterReset = () => {
+    const defaultDates = getDefaultDateRange();
+    setFilters({
+      patientName: "",
+      patientId: "",
+      bodyPart: "",
+      hospital: "",
+      startDate: defaultDates.start,
+      endDate: defaultDates.end,
+      status: "all",
+      gender: { M: false, F: false },
+      modalities: {
+        ALL: false,
+        DT: false,
+        SC: false,
+        AN: false,
+        US: false,
+        ECHO: false,
+        CR: false,
+        XA: false,
+        MR: false,
+        CTMR: false,
+        PX: false,
+        DX: false,
+        MR2: false,
+        NM: false,
+        RF: false,
+        CT: false,
+      },
+    });
+  };
 
   const fetchPatients = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getAllCases(1, 10) as ApiResponse;
+
+      // Build filters object for API
+      const apiFilters: any = {
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+      };
+
+      // Add optional filters if they have values
+      if (filters.patientName) apiFilters.patient_name = filters.patientName;
+      if (filters.patientId) apiFilters.patient_id = filters.patientId;
+      if (filters.bodyPart) apiFilters.body_part = filters.bodyPart;
+      if (filters.hospital) apiFilters.hospital = filters.hospital;
+      if (filters.status && filters.status !== "all") apiFilters.status = filters.status;
+
+      // Handle gender filter
+      if (filters.gender.M && !filters.gender.F) {
+        apiFilters.gender = "M";
+      } else if (filters.gender.F && !filters.gender.M) {
+        apiFilters.gender = "F";
+      }
+
+      // Handle modality filter
+      const selectedModality = Object.entries(filters.modalities).find(
+        ([_, isSelected]) => isSelected && _ !== "ALL"
+      );
+      if (selectedModality) {
+        apiFilters.modality = selectedModality[0];
+      }
+
+      const response = await apiService.getAllCasesWithFilters(1, 10, apiFilters) as ApiResponse;
 
       if (response.success && response.data?.cases) {
         // Map cases to Patient format
@@ -426,15 +536,37 @@ const RecentPatientTable = () => {
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
-      {/* <div className="px-4">
-        <Filters filters={{
-          center: 'All Centers',
-          modality: 'All Modalities',
-          doctor: 'All Doctors',
-          priority: 'All Priority',
-          status: 'All Status'
-        }} setFilters={() => { }} />
-      </div> */}
+      
+      {/* Filter Panel */}
+      <div className="px-4 pb-3">
+        <div className="border rounded-lg bg-slate-50/50">
+          <button
+            onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-100/50 transition-colors rounded-t-lg"
+          >
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-slate-600" />
+              <span className="font-semibold text-sm text-slate-700">Filters</span>
+            </div>
+            {isFilterCollapsed ? (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronUp className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+          
+          {!isFilterCollapsed && (
+            <div className="px-4 pb-4">
+              <FilterPanel
+                onFilterChange={handleFilterChange}
+                onFilterReset={handleFilterReset}
+                initialFilters={filters}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       <CardContent className="p-3">
         <div className="rounded-md border overflow-x-auto">
           <Table>
