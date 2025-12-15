@@ -218,9 +218,10 @@ class ApiService {
   }
 
  
-  async getAssignedCases() {
+  async getAssignedCases(filters?: any) {
     return this.request('/api/v1/cases/get-assigned-cases', {
-      method: 'GET',
+      method: 'POST',
+      body: JSON.stringify({ filters }),
     })
   }
 
@@ -232,6 +233,19 @@ class ApiService {
         active_hospital: hospitalId,
         page,
         limit,
+      }),
+    })
+  }
+
+  async getAllCasesWithFilters(page: number = 1, limit: number = 20, filters: any = {}) {
+    const hospitalId = localStorage.getItem('active_hospital')
+    return this.request('/api/v1/cases/get-all-cases', {
+      method: 'POST',
+      body: JSON.stringify({
+        active_hospital: hospitalId,
+        page,
+        limit,
+        filters,
       }),
     })
   }

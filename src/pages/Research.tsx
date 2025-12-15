@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { SearchOptions } from '@/components/research/SearchOptions';
 import { SearchResults } from '@/components/research/SearchResults';
 import { ExportModal } from '@/components/research/ExportModal';

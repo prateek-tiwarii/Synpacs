@@ -143,9 +143,9 @@ const StatusCellWithCopy = ({ value, cellId }: { value: any; cellId: string }) =
   const getStatusVariant = (status: string) => {
     if (!status || typeof status !== 'string') return "secondary";
     switch (status.toLowerCase()) {
-      case "reported":
+      case "assigned":
         return "success";
-      case "unreported":
+      case "unassigned":
         return "warning";
       case "in_progress":
       case "in progress":
@@ -254,12 +254,7 @@ const ShowAllPatients = () => {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
-  const [filters, setFilters] = useState<FilterState | null>(null);
-
-  // Get page and limit from URL, defaulting to 1 and 20
-  const page = parseInt(searchParams.get("page") || "1", 10);
-  const limit = parseInt(searchParams.get("limit") || "20", 10);
-
+  
   // Helper function to get default date range (last 1 month)
   const getDefaultDateRange = () => {
     const endDate = new Date();
@@ -270,6 +265,41 @@ const ShowAllPatients = () => {
       end: format(endDate, "yyyy-MM-dd"),
     };
   };
+
+  // Initialize filters with default values instead of null
+  const defaultDates = getDefaultDateRange();
+  const [filters, setFilters] = useState<FilterState>({
+    patientName: "",
+    patientId: "",
+    bodyPart: "",
+    hospital: "",
+    startDate: defaultDates.start,
+    endDate: defaultDates.end,
+    status: "all",
+    gender: { M: false, F: false },
+    modalities: {
+      ALL: false,
+      DT: false,
+      SC: false,
+      AN: false,
+      US: false,
+      ECHO: false,
+      CR: false,
+      XA: false,
+      MR: false,
+      CTMR: false,
+      PX: false,
+      DX: false,
+      MR2: false,
+      NM: false,
+      RF: false,
+      CT: false,
+    },
+  });
+
+  // Get page and limit from URL, defaulting to 1 and 20
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const limit = parseInt(searchParams.get("limit") || "20", 10);
 
   // Initialize default dates in URL on mount
   useEffect(() => {
@@ -301,6 +331,7 @@ const ShowAllPatients = () => {
       hospital: searchParams.get("hospital") || "",
       startDate: searchParams.get("start_date") || defaultDates.start,
       endDate: searchParams.get("end_date") || defaultDates.end,
+      status: searchParams.get("status") || "all",
       gender: {
         M: searchParams.get("gender") === "M",
         F: searchParams.get("gender") === "F",
@@ -365,18 +396,18 @@ const ShowAllPatients = () => {
       hospital: searchParams.get("hospital"),
       gender: searchParams.get("gender"),
       modality: searchParams.get("modality"),
+      status: searchParams.get("status"),
     });
   }, [page, limit, searchParams]);
 
   useEffect(() => {
-    if (filters !== null) {
+    if (filters) {
       fetchAllPacCases();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
   const fetchAllPacCases = async () => {
-    if (filters === null) return; // Wait for filters to be initialized
 
     try {
       setLoading(true);
@@ -387,10 +418,12 @@ const ShowAllPatients = () => {
         start_date: string;
         end_date: string;
         patient_name?: string;
+        patient_id?: string;
         body_part?: string;
         gender?: string;
         hospital?: string;
         modality?: string;
+        status?: string;
       } = {
         start_date: filters.startDate,
         end_date: filters.endDate,
@@ -400,11 +433,17 @@ const ShowAllPatients = () => {
       if (filters.patientName) {
         apiFilters.patient_name = filters.patientName;
       }
+      if (filters.patientId) {
+        apiFilters.patient_id = filters.patientId;
+      }
       if (filters.bodyPart) {
         apiFilters.body_part = filters.bodyPart;
       }
       if (filters.hospital) {
         apiFilters.hospital = filters.hospital;
+      }
+      if (filters.status && filters.status !== "all") {
+        apiFilters.status = filters.status;
       }
 
       // Handle gender filter
@@ -575,6 +614,7 @@ const ShowAllPatients = () => {
       hospital: "",
       startDate: defaultDates.start,
       endDate: defaultDates.end,
+      status: "all",
       gender: { M: false, F: false },
       modalities: {
         ALL: false,

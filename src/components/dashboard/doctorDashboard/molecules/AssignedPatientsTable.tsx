@@ -7,47 +7,50 @@ import type { Patient } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy, StatusCell, formatDate } from "@/components/common/DataTable";
 
+import type { FilterState } from "@/components/common/FilterPanel";
+
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
     setMessageDialogOpen: (open: boolean) => void;
     setDocumentDialogOpen: (open: boolean) => void;
     columnVisibility: VisibilityState;
     onColumnVisibilityChange: (visibility: VisibilityState) => void;
+    filters?: FilterState;
 }
 
-interface Case {
-    _id: string;
-    study_uid: string;
-    accession_number: string;
-    body_part: string;
-    description: string;
-    hospital_id: string;
-    modality: string;
-    patient_id: string;
-    study_date: string;
-    study_time: string;
-    assigned_to: string;
-    case_type: string;
-    priority: string;
-    status: string;
-    updatedAt: string;
-    patient: {
-        _id: string;
-        patient_id: string;
-        date_of_birth: string;
-        name: string;
-        sex: string;
-    };
-}
+// interface Case {
+//     _id: string;
+//     study_uid: string;
+//     accession_number: string;
+//     body_part: string;
+//     description: string;
+//     hospital_id: string;
+//     modality: string;
+//     patient_id: string;
+//     study_date: string;
+//     study_time: string;
+//     assigned_to: string;
+//     case_type: string;
+//     priority: string;
+//     status: string;
+//     updatedAt: string;
+//     patient: {
+//         _id: string;
+//         patient_id: string;
+//         date_of_birth: string;
+//         name: string;
+//         sex: string;
+//     };
+// }
 
-interface AssignedCasesResponse {
-    success: boolean;
-    message: string;
-    count: number;
-    data: {
-        cases: Case[];
-    };
-}
+// interface AssignedCasesResponse {
+//     success: boolean;
+//     message: string;
+//     count: number;
+//     data: {
+//         cases: Case[];
+//     };
+// }
 
 const AssignedPatientsTable = ({
     setSelectedPatient,
@@ -55,6 +58,7 @@ const AssignedPatientsTable = ({
     setDocumentDialogOpen,
     columnVisibility,
     onColumnVisibilityChange,
+    filters,
 }: AssignedPatientsTableProps) => {
     const navigate = useNavigate();
     const [patients, setPatients] = useState<Patient[]>([]);
@@ -66,7 +70,34 @@ const AssignedPatientsTable = ({
             try {
                 setIsLoading(true);
                 setError(null);
-                const response = await apiService.getAssignedCases() as any;
+                
+                // Build API filters from FilterState
+                const apiFilters: any = {};
+                
+                if (filters) {
+                    if (filters.startDate) apiFilters.start_date = filters.startDate;
+                    if (filters.endDate) apiFilters.end_date = filters.endDate;
+                    if (filters.patientName) apiFilters.patient_name = filters.patientName;
+                    if (filters.bodyPart) apiFilters.body_part = filters.bodyPart;
+                    if (filters.status && filters.status !== 'all') apiFilters.status = filters.status;
+                    
+                    // Handle gender
+                    if (filters.gender.M && !filters.gender.F) {
+                        apiFilters.gender = 'M';
+                    } else if (filters.gender.F && !filters.gender.M) {
+                        apiFilters.gender = 'F';
+                    }
+                    
+                    // Handle modality
+                    const selectedModality = Object.entries(filters.modalities).find(
+                        ([_, isSelected]) => isSelected && _ !== 'ALL'
+                    );
+                    if (selectedModality) {
+                        apiFilters.modality = selectedModality[0];
+                    }
+                }
+                
+                const response = await apiService.getAssignedCases(apiFilters) as any;
                 if (response.success && response.data?.cases) {
                     // Map API response to match Patient interface
                     const mappedPatients: Patient[] = response.data.cases.map((caseItem: any) => {
@@ -129,7 +160,7 @@ const AssignedPatientsTable = ({
         };
 
         fetchAssignedPatients();
-    }, []);
+    }, [filters]);
 
 
 
