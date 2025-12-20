@@ -12,7 +12,7 @@ import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { DataTable } from "@/components/common/DataTable/DataTable";
-import { type FilterState } from "@/components/common/FilterPanel";
+import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
 
 interface AssignedDoctor {
   _id: string;
@@ -112,7 +112,6 @@ const RecentPatientTable = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -181,42 +180,6 @@ const RecentPatientTable = () => {
     fetchPatients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
-
-  const handleFilterChange = (newFilters: FilterState) => {
-    setFilters(newFilters);
-  };
-
-  const handleFilterReset = () => {
-    const defaultDates = getDefaultDateRange();
-    setFilters({
-      patientName: "",
-      patientId: "",
-      bodyPart: "",
-      hospital: "",
-      startDate: defaultDates.start,
-      endDate: defaultDates.end,
-      status: "all",
-      gender: { M: false, F: false },
-      modalities: {
-        ALL: false,
-        DT: false,
-        SC: false,
-        AN: false,
-        US: false,
-        ECHO: false,
-        CR: false,
-        XA: false,
-        MR: false,
-        CTMR: false,
-        PX: false,
-        DX: false,
-        MR2: false,
-        NM: false,
-        RF: false,
-        CT: false,
-      },
-    });
-  };
 
   const fetchPatients = async () => {
     try {
@@ -361,6 +324,44 @@ const RecentPatientTable = () => {
       return `${year}-${month}-${day}`;
     }
     return dob;
+  };
+
+  // Handle filter changes from FilterPanel
+  const handleFilterChange = (newFilters: FilterState) => {
+    setFilters(newFilters);
+  };
+
+  // Handle filter reset
+  const handleFilterReset = () => {
+    const defaultFilters: FilterState = {
+      patientName: "",
+      patientId: "",
+      bodyPart: "",
+      hospital: "",
+      startDate: defaultDates.start,
+      endDate: defaultDates.end,
+      status: "all",
+      gender: { M: false, F: false },
+      modalities: {
+        ALL: false,
+        DT: false,
+        SC: false,
+        AN: false,
+        US: false,
+        ECHO: false,
+        CR: false,
+        XA: false,
+        MR: false,
+        CTMR: false,
+        PX: false,
+        DX: false,
+        MR2: false,
+        NM: false,
+        RF: false,
+        CT: false,
+      },
+    };
+    setFilters(defaultFilters);
   };
 
   const columns = useMemo<ColumnDef<Patient>[]>(() => [
@@ -534,6 +535,13 @@ const RecentPatientTable = () => {
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
+
+      {/* Filter Panel */}
+      <FilterPanel
+        onFilterChange={handleFilterChange}
+        onFilterReset={handleFilterReset}
+        initialFilters={filters}
+      />
 
       <CardContent className="px-3">
         <DataTable

@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, Users, Zap, FileImage, Settings, ClipboardMinus, Search, Bookmark } from "lucide-react"
+import { Activity, LayoutDashboard, Users, Zap, Settings, ClipboardMinus, Search, Bookmark } from "lucide-react"
 
 export const sidebarItems = [
   { label: 'Queue', href: '/dashboard', icon: LayoutDashboard },

@@ -1,6 +1,6 @@
-import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Save } from "lucide-react";
+import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import type { Patient } from "@/components/patient/PacDetailsModal";
@@ -41,7 +41,6 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 };
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
-const BOOKMARKS_STORAGE_KEY = 'synpacs_bookmarks';
 
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
@@ -90,7 +89,6 @@ const AssignedPatientsTable = ({
     setDocumentDialogOpen,
     filters,
 }: AssignedPatientsTableProps) => {
-    const navigate = useNavigate();
     const [patients, setPatients] = useState<Patient[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -443,10 +441,6 @@ const AssignedPatientsTable = ({
         setDocumentDialogOpen(true);
     };
 
-    const handleRowClick = (patient: Patient) => {
-        navigate(`/patient/${patient._id}`);
-    };
-
     return (
         <DataTable
             data={patients}
@@ -458,7 +452,6 @@ const AssignedPatientsTable = ({
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
             showColumnToggle={true}
-            // onRowClick={handleRowClick}
             tableTitle="Patients"
         />
     );

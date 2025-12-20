@@ -122,13 +122,13 @@ const SinglePatient = () => {
     const [patient, setPatient] = useState<PatientData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    
+
     // Notes state
     const [notes, setNotes] = useState<Note[]>([]);
     const [newNote, setNewNote] = useState("");
     const [noteFlagType, setNoteFlagType] = useState("info");
     const [isAddingNote, setIsAddingNote] = useState(false);
-    
+
     // Documents state
     const [documents, setDocuments] = useState<Doc[]>([]);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -248,7 +248,7 @@ const SinglePatient = () => {
 
         try {
             setIsAddingNote(true);
-            const response = await apiService.createPatientNote(id, {
+            const response = await apiService.createCaseNote(id, {
                 note: newNote,
                 flag_type: noteFlagType,
             }) as NoteResponse;
@@ -308,7 +308,7 @@ const SinglePatient = () => {
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 0) return "Today";
         if (diffDays === 1) return "Yesterday";
         if (diffDays < 7) return `${diffDays} days ago`;
@@ -625,14 +625,14 @@ const SinglePatient = () => {
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
-                            
+
                             <input
                                 type="file"
                                 ref={fileInputRef}
                                 className="hidden"
                                 onChange={handleFileSelect}
                             />
-                            
+
                             {!uploadFile ? (
                                 <button
                                     onClick={() => fileInputRef.current?.click()}

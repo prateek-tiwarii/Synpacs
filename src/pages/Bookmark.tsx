@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Bookmark as BookmarkIcon, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare } from "lucide-react";
@@ -45,7 +45,6 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 };
 
 const Bookmark = () => {
-    const navigate = useNavigate();
     const [bookmarks, setBookmarks] = useState<BookmarkedCase[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
