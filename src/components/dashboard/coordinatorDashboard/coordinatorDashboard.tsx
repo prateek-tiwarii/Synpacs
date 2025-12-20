@@ -4,24 +4,86 @@ import { Card, CardContent } from '@/components/ui/card';
 import PatientTable from '@/components/dashboard/RecentPatientTable';
 import DoctorAvailablity from '@/components/dashboard/DoctorAvailablity';
 import { useState, useEffect } from 'react';
+import { apiService } from '@/lib/api';
+
+interface HospitalStats {
+  total_assigned_cases: number;
+  total_unassigned_cases: number;
+  total_critical_cases: number;
+}
 
 const CoordinatorDashboard = () => {
-  const stats = [
-    { title: 'Assigned', value: '124', icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50' },
-    { title: 'Unassigned', value: '18', icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { title: 'Critical', value: '7', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
-    { title: 'Unreported', value: '32', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Routine', value: '89', icon: Activity, color: 'text-purple-600', bg: 'bg-purple-50' },
-  ];
-
+  const [statsData, setStatsData] = useState<HospitalStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState<string>('');
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiService.getHospitalStats();
+      if (response.success && response.data) {
+        setStatsData(response.data);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch stats');
+      console.error('Error fetching hospital stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fix hydration issue by setting date on client side only
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    fetchStats();
   }, []);
+
+  const stats = [
+    {
+      title: 'Assigned',
+      value: loading ? '...' : (statsData?.total_assigned_cases?.toString() || '0'),
+      icon: CheckCircle2,
+      color: 'text-green-600',
+      bg: 'bg-green-50'
+    },
+    {
+      title: 'Unassigned',
+      value: loading ? '...' : (statsData?.total_unassigned_cases?.toString() || '0'),
+      icon: Clock,
+      color: 'text-orange-600',
+      bg: 'bg-orange-50'
+    },
+    {
+      title: 'Critical',
+      value: loading ? '...' : (statsData?.total_critical_cases?.toString() || '0'),
+      icon: AlertCircle,
+      color: 'text-red-600',
+      bg: 'bg-red-50'
+    },
+    {
+      title: 'Unreported',
+      value: 'N/A',
+      icon: FileText,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50'
+    },
+    {
+      title: 'Routine',
+      value: 'N/A',
+      icon: Activity,
+      color: 'text-purple-600',
+      bg: 'bg-purple-50'
+    },
+  ];
+
+  const handleRefresh = () => {
+    fetchStats();
+  };
+
   return (
-    <div>
+    <div className='flex flex-col gap-2'>
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-medium text-gray-900">Overview</h1>
@@ -37,12 +99,24 @@ const CoordinatorDashboard = () => {
               {currentDate || 'Loading...'}
             </p>
           </div>
-          <Button variant="outline" size="sm" className="bg-white! text-black! border border-gray-300 gap-2">
-            <RefreshCw className="h-4 w-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-white! text-black! border border-gray-300 gap-2"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       <div className="flex gap-3 overflow-x-auto pb-2 w-full justify-between">
         {stats.map((stat: any, index: number) => (

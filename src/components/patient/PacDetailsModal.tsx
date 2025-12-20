@@ -80,10 +80,13 @@ export interface Patient {
     priority?: string;
     case_type?: string;
     patient?: PacPatient;
+    series_count?: number;
+    instance_count?: number;
     docs?: any[];
     createdAt?: string;
     updatedAt?: string;
     __v?: number;
+    isBookmarked?: boolean;
 }
 
 export interface Doctor {
@@ -139,7 +142,7 @@ const PacDetailsModal = ({
         if (patient) {
             const patientData = patient.patient || patient;
             const dob = patient.patient?.date_of_birth || patient.dob || patient.date_of_birth || "";
-            
+
             setFormData({
                 name: patientData.name || patient.name || "",
                 dob: formatDOB(dob) || "",
@@ -216,7 +219,7 @@ const PacDetailsModal = ({
                 <DialogHeader className="pb-2">
                     <DialogTitle className="text-xl font-semibold">PAC Study Details</DialogTitle>
                 </DialogHeader>
-                
+
                 {patient && (
                     <div className="space-y-3 py-2">
                         {/* Doctor Assignment Section - At the Top */}
@@ -438,7 +441,7 @@ const PacDetailsModal = ({
                             <Button variant="outline" onClick={() => onClose(false)} size="sm" className="min-w-[80px]">
                                 Close
                             </Button>
-                            <Button 
+                            <Button
                                 onClick={() => {
                                     console.log("Saving patient data:", formData);
                                     // TODO: Add API call to save updated patient data

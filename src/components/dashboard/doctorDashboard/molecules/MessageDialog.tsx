@@ -46,7 +46,7 @@ const MessageDialog = ({
         setError(null);
 
         try {
-            await apiService.createPatientNote(patient._id, {
+            await apiService.createCaseNote(patient._id, {
                 note: message,
                 flag_type: messageFlag,
             });
@@ -74,21 +74,21 @@ const MessageDialog = ({
     };
 
     const flags: { type: FlagType; label: string; icon: React.ReactNode; activeClass: string }[] = [
-        { 
-            type: 'error', 
-            label: 'Urgent', 
+        {
+            type: 'error',
+            label: 'Urgent',
             icon: <AlertCircle className="w-3.5 h-3.5" />,
             activeClass: 'bg-red-500 text-white border-red-500'
         },
-        { 
-            type: 'warning', 
-            label: 'Warning', 
+        {
+            type: 'warning',
+            label: 'Warning',
             icon: <AlertTriangle className="w-3.5 h-3.5" />,
             activeClass: 'bg-amber-500 text-white border-amber-500'
         },
-        { 
-            type: 'info', 
-            label: 'Info', 
+        {
+            type: 'info',
+            label: 'Info',
             icon: <Info className="w-3.5 h-3.5" />,
             activeClass: 'bg-blue-500 text-white border-blue-500'
         },

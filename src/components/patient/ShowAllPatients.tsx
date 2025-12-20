@@ -239,6 +239,30 @@ const getAllKeys = (data: any[]): string[] => {
   return Array.from(keys).sort();
 };
 
+// Default column visibility configuration for ShowAllPatients
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  select: true,
+  name: true,
+  date_of_birth: true,
+  age_sex: true,
+  study_description: true,
+  body_part: true,
+  accession_number: false,
+  modality: true,
+  study_date: true,
+  study_time: false, // Hidden by default
+  status: true,
+  assigned_to: true,
+  // Hide technical/internal fields
+  _id: false,
+  patient_id: false,
+  hospital_id: false,
+  __v: false,
+  patient: false,
+};
+
+const STORAGE_KEY_ALL_PATIENTS = 'all_patients_table_columns';
+
 const ShowAllPatients = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [cases, setCases] = useState<PacCase[]>([]);
@@ -251,10 +275,22 @@ const ShowAllPatients = () => {
   const [assigning, setAssigning] = useState(false);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
-  
+
+  // Initialize column visibility from localStorage or use default
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_ALL_PATIENTS);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load column visibility from localStorage:', error);
+    }
+    return DEFAULT_COLUMN_VISIBILITY;
+  });
+
   // Helper function to get default date range (last 1 month)
   const getDefaultDateRange = () => {
     const endDate = new Date();
@@ -297,6 +333,15 @@ const ShowAllPatients = () => {
     },
   });
 
+  // Save column visibility to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ALL_PATIENTS, JSON.stringify(columnVisibility));
+    } catch (error) {
+      console.error('Failed to save column visibility to localStorage:', error);
+    }
+  }, [columnVisibility]);
+
   // Get page and limit from URL, defaulting to 1 and 20
   const page = parseInt(searchParams.get("page") || "1", 10);
   const limit = parseInt(searchParams.get("limit") || "20", 10);
@@ -323,7 +368,7 @@ const ShowAllPatients = () => {
   // Sync filters from URL params
   useEffect(() => {
     const defaultDates = getDefaultDateRange();
-    
+
     const urlFilters: FilterState = {
       patientName: searchParams.get("patient_name") || "",
       patientId: searchParams.get("patient_id") || "",
@@ -469,22 +514,30 @@ const ShowAllPatients = () => {
         setCases(casesData);
         setPagination(response.pagination || null);
 
-        // Initialize column visibility for all columns
+        // Merge default visibility with any new columns from data
         if (casesData.length > 0) {
           const flattened = flattenCaseData(casesData);
           const allKeys = getAllKeys(flattened);
-          const initialVisibility: VisibilityState = {};
-          allKeys.forEach((key) => {
-            // Hide some technical/internal fields by default
-            if (!['_id', 'patient_id', 'hospital_id', '__v', 'patient'].includes(key)) {
-              initialVisibility[key] = true;
-            } else {
-              initialVisibility[key] = false;
-            }
+
+          setColumnVisibility((prevVisibility) => {
+            const updatedVisibility: VisibilityState = { ...prevVisibility };
+
+            // Add any new columns that aren't in the current visibility state
+            allKeys.forEach((key) => {
+              if (!(key in updatedVisibility)) {
+                // Use default visibility if defined, otherwise show non-technical fields
+                if (key in DEFAULT_COLUMN_VISIBILITY) {
+                  updatedVisibility[key] = DEFAULT_COLUMN_VISIBILITY[key];
+                } else if (['_id', 'patient_id', 'hospital_id', '__v', 'patient'].includes(key)) {
+                  updatedVisibility[key] = false;
+                } else {
+                  updatedVisibility[key] = true;
+                }
+              }
+            });
+
+            return updatedVisibility;
           });
-          // Always show select column
-          initialVisibility['select'] = true;
-          setColumnVisibility(initialVisibility);
         }
       } else {
         setError(response.message || "Failed to fetch cases");
@@ -551,34 +604,34 @@ const ShowAllPatients = () => {
 
   const handleFilterChange = (newFilters: FilterState) => {
     setFilters(newFilters);
-    
+
     // Update URL with filter values
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
-      
+
       // Always set dates
       newParams.set("start_date", newFilters.startDate);
       newParams.set("end_date", newFilters.endDate);
-      
+
       // Set optional filters
       if (newFilters.patientName) {
         newParams.set("patient_name", newFilters.patientName);
       } else {
         newParams.delete("patient_name");
       }
-      
+
       if (newFilters.bodyPart) {
         newParams.set("body_part", newFilters.bodyPart);
       } else {
         newParams.delete("body_part");
       }
-      
+
       if (newFilters.hospital) {
         newParams.set("hospital", newFilters.hospital);
       } else {
         newParams.delete("hospital");
       }
-      
+
       // Handle gender
       if (newFilters.gender.M && !newFilters.gender.F) {
         newParams.set("gender", "M");
@@ -587,7 +640,7 @@ const ShowAllPatients = () => {
       } else {
         newParams.delete("gender");
       }
-      
+
       // Handle modality
       const selectedModality = Object.entries(newFilters.modalities).find(
         ([_, isSelected]) => isSelected && _ !== "ALL"
@@ -597,10 +650,10 @@ const ShowAllPatients = () => {
       } else {
         newParams.delete("modality");
       }
-      
+
       // Reset to page 1 when filters change
       newParams.set("page", "1");
-      
+
       return newParams;
     });
   };
@@ -635,9 +688,9 @@ const ShowAllPatients = () => {
         CT: false,
       },
     };
-    
+
     setFilters(resetFilters);
-    
+
     // Reset URL params to defaults
     setSearchParams((prev) => {
       const newParams = new URLSearchParams(prev);
@@ -854,8 +907,8 @@ const ShowAllPatients = () => {
 
         {!isFilterCollapsed && filters && (
           <div className="border rounded-md p-2">
-            <FilterPanel 
-              onFilterChange={handleFilterChange} 
+            <FilterPanel
+              onFilterChange={handleFilterChange}
               onFilterReset={handleFilterReset}
               initialFilters={filters}
             />

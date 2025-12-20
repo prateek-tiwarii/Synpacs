@@ -4,8 +4,8 @@ import MessageDialog from './molecules/MessageDialog';
 import DocumentDialog from './molecules/DocumentDialog';
 import AssignedPatientsTable from './molecules/AssignedPatientsTable';
 import type { Patient } from '@/components/patient/PacDetailsModal';
-import type { VisibilityState } from '@tanstack/react-table';
 import type { FilterState } from '@/components/common/FilterPanel';
+import { toast } from 'react-hot-toast';
 
 const DoctorDashboard = () => {
   const [activeTab, setActiveTab] = useState<'Unreported' | 'Reported' | 'All Cases' | 'Drafted'>('Unreported');
@@ -14,20 +14,6 @@ const DoctorDashboard = () => {
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [activePeriod, setActivePeriod] = useState<string>('1D');
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    name: true,
-    pac_patinet_id: true,
-    age: true,
-    sex: true,
-    study_description: true,
-    treatment_type: true,
-    status: true,
-    referring_doctor: true,
-    date_of_capture: true,
-    pac_images_count: true,
-    hospital_id: false,
-    accession_number: true,
-  });
 
   const [_filters, setFilters] = useState<FilterState>({
     patientName: '',
@@ -75,8 +61,7 @@ const DoctorDashboard = () => {
 
 
   const handleNoteSuccess = () => {
-    console.log('Note added successfully for patient:', selectedPatient?.name);
-    // You can add a toast notification here or refresh patient data
+    toast.success('Note added successfully for patient');
   };
 
   return (
@@ -98,8 +83,6 @@ const DoctorDashboard = () => {
           setSelectedPatient={setSelectedPatient}
           setMessageDialogOpen={setMessageDialogOpen}
           setDocumentDialogOpen={setDocumentDialogOpen}
-          columnVisibility={columnVisibility}
-          onColumnVisibilityChange={setColumnVisibility}
           filters={_filters}
         />
       </div>

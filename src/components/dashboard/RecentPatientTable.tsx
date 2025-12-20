@@ -1,29 +1,18 @@
 import { useEffect, useState, useMemo } from "react";
 import { apiService } from "@/lib/api";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  flexRender,
   type ColumnDef,
   type RowSelectionState,
+  type VisibilityState,
 } from "@tanstack/react-table";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowRight, Loader2, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
 import { format } from "date-fns";
+import { DataTable } from "@/components/common/DataTable/DataTable";
+import { type FilterState } from "@/components/common/FilterPanel";
 
 interface AssignedDoctor {
   _id: string;
@@ -98,13 +87,46 @@ interface ApiResponse {
   };
 }
 
+// Default column visibility configuration
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  select: true,
+  name: true,
+  dob: true,
+  age_sex: true,
+  study_description: true,
+  "study.body_part": true,
+  treatment_type: false, // Hidden by default
+  date_of_capture: false, // Hidden by default
+  referring_doctor: false, // Hidden by default
+  accession_number: true,
+  pac_images: true,
+  status: true,
+  priority: true,
+  assigned_to: true,
+};
+
+const STORAGE_KEY = 'recent_pacs_table_columns';
+
 const RecentPatientTable = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
-  
+
+  // Initialize column visibility from localStorage or use default
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load column visibility from localStorage:', error);
+    }
+    return DEFAULT_COLUMN_VISIBILITY;
+  });
+
   // Helper function to get default date range (last 1 month)
   const getDefaultDateRange = () => {
     const endDate = new Date();
@@ -145,6 +167,15 @@ const RecentPatientTable = () => {
       CT: false,
     },
   });
+
+  // Save column visibility to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(columnVisibility));
+    } catch (error) {
+      console.error('Failed to save column visibility to localStorage:', error);
+    }
+  }, [columnVisibility]);
 
   useEffect(() => {
     fetchPatients();
@@ -352,15 +383,15 @@ const RecentPatientTable = () => {
       enableSorting: false,
       enableHiding: false,
     },
-    {
-      accessorKey: "pac_patinet_id",
-      header: "Patient ID",
-      cell: ({ row }) => (
-        <span className="font-medium text-xs">
-          {row.original.pac_patinet_id}
-        </span>
-      ),
-    },
+    // {
+    //   accessorKey: "pac_patinet_id",
+    //   header: "Patient ID",
+    //   cell: ({ row }) => (
+    //     <span className="font-medium text-xs">
+    //       {row.original.pac_patinet_id}
+    //     </span>
+    //   ),
+    // },
     {
       accessorKey: "name",
       header: "Name",
@@ -484,42 +515,9 @@ const RecentPatientTable = () => {
     },
   ], []);
 
-  const table = useReactTable({
-    data: patients,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onRowSelectionChange: setRowSelection,
-    state: {
-      rowSelection,
-    },
-    enableRowSelection: true,
-  });
 
-  if (loading) {
-    return (
-      <Card className="w-full">
-        <CardContent className="flex items-center justify-center py-20">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading patients...</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
-  if (error) {
-    return (
-      <Card className="w-full">
-        <CardContent className="py-6">
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
+
 
   return (
     <Card className="overflow-hidden">
@@ -531,86 +529,30 @@ const RecentPatientTable = () => {
           </CardTitle>
         </CardHeader>
 
-        <Link to="/manage-patients" className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/manage-pacs" className="flex items-center gap-2 text-sm text-muted-foreground">
           <p className="text-sm text-muted-foreground">View All Patients</p>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
-      
-      {/* Filter Panel */}
-      <div className="px-4 pb-3">
-        <div className="border rounded-lg bg-slate-50/50">
-          <button
-            onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
-            className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-100/50 transition-colors rounded-t-lg"
-          >
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="w-4 h-4 text-slate-600" />
-              <span className="font-semibold text-sm text-slate-700">Filters</span>
-            </div>
-            {isFilterCollapsed ? (
-              <ChevronDown className="w-4 h-4 text-slate-500" />
-            ) : (
-              <ChevronUp className="w-4 h-4 text-slate-500" />
-            )}
-          </button>
-          
-          {!isFilterCollapsed && (
-            <div className="px-4 pb-4">
-              <FilterPanel
-                onFilterChange={handleFilterChange}
-                onFilterReset={handleFilterReset}
-                initialFilters={filters}
-              />
-            </div>
-          )}
-        </div>
-      </div>
 
-      <CardContent className="p-3">
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="bg-muted/50">
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="font-semibold text-xs px-2 py-2">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && "selected"}
-                    className="hover:bg-muted/30"
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-2 py-2">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center">
-                    <p className="text-muted-foreground">No patients found</p>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+      <CardContent className="px-3">
+        <DataTable
+          data={patients}
+          columns={columns}
+          isLoading={loading}
+          error={error}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          enableRowSelection={true}
+          emptyMessage="No patients found"
+          loadingMessage="Loading patients..."
+          showBorder={true}
+          containerClassName=""
+          showColumnToggle={true}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          showDoctorsOnSelect={true}
+        />
       </CardContent>
     </Card>
   );

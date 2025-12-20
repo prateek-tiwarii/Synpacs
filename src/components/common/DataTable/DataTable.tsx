@@ -61,6 +61,7 @@ export interface DataTableProps<TData> {
     tableTitle?: string;
     manualPagination?: boolean;
     showDoctorsOnSelect?: boolean;
+    showEmptyTable?: boolean;
 }
 
 export function DataTable<TData>({
@@ -86,6 +87,7 @@ export function DataTable<TData>({
     tableTitle,
     manualPagination = false,
     showDoctorsOnSelect = false,
+    showEmptyTable = false,
 }: DataTableProps<TData>) {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -93,7 +95,7 @@ export function DataTable<TData>({
     const [availableDoctors, setAvailableDoctors] = useState<Doctor[]>([]);
     const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false); 
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     const table = useReactTable({
         data,
@@ -147,8 +149,8 @@ export function DataTable<TData>({
         );
     }
 
-    // Empty state
-    if (data.length === 0) {
+    // Empty state (only if showEmptyTable is false)
+    if (data.length === 0 && !showEmptyTable) {
         return (
             <div className="flex items-center justify-center py-12">
                 <p className="text-gray-500">{emptyMessage}</p>
@@ -185,8 +187,8 @@ export function DataTable<TData>({
             const selectedRowIndices = Object.keys(rowSelection).filter(
                 key => rowSelection[key] === true
             );
-            
-            const selectedRows = selectedRowIndices.map(index => 
+
+            const selectedRows = selectedRowIndices.map(index =>
                 data[parseInt(index)]
             );
 
@@ -201,12 +203,12 @@ export function DataTable<TData>({
             });
 
             await Promise.all(assignPromises);
-            
+
             // Clear selection after successful assignment
             if (onRowSelectionChange) {
                 onRowSelectionChange({});
             }
-            
+
             setIsDropdownOpen(false);
         } catch (error) {
             console.error('Failed to assign doctor:', error);
@@ -267,14 +269,14 @@ export function DataTable<TData>({
                                         </DropdownMenuItem>
                                     ) : (
                                         availableDoctors.map((doctor) => (
-                                            <DropdownMenuItem 
+                                            <DropdownMenuItem
                                                 key={doctor._id}
                                                 onClick={() => handleAssignDoctor(doctor._id)}
                                                 disabled={isAssigning}
                                                 className="flex flex-col items-start gap-0"
                                             >
                                                 <div className="text-sm font-medium">
-                                                {doctor.full_name}
+                                                    {doctor.full_name}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground">{doctor.email}</p>
                                             </DropdownMenuItem>
@@ -366,20 +368,31 @@ export function DataTable<TData>({
                             ))}
                         </TableHeader>
                         <TableBody>
-                            {table.getRowModel().rows.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    className={getRowClassName(row.original)}
-                                    onClick={() => onRowClick?.(row.original)}
-                                    data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-2">
-                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                        </TableCell>
-                                    ))}
+                            {table.getRowModel().rows.length > 0 ? (
+                                table.getRowModel().rows.map((row) => (
+                                    <TableRow
+                                        key={row.id}
+                                        className={getRowClassName(row.original)}
+                                        onClick={() => onRowClick?.(row.original)}
+                                        data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
+                                    >
+                                        {row.getVisibleCells().map((cell) => (
+                                            <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-2">
+                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                            </TableCell>
+                                        ))}
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell
+                                        colSpan={columns.length}
+                                        className="h-24 text-center text-gray-500"
+                                    >
+                                        {emptyMessage}
+                                    </TableCell>
                                 </TableRow>
-                            ))}
+                            )}
                         </TableBody>
                     </Table>
                 </div>

@@ -22,36 +22,33 @@ const ViewerSettings = () => {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 mx-auto">
       {/* Tabs Header */}
       <div className="flex gap-4 mb-6">
         <button
           onClick={() => setActiveTab('viewer')}
-          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
-            activeTab === 'viewer' 
-              ? 'bg-black text-white' 
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
+          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === 'viewer'
+            ? 'bg-black text-white'
+            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
         >
           Viewer Settings
         </button>
         <button
           onClick={() => setActiveTab('templates')}
-          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
-            activeTab === 'templates' 
-              ? 'bg-black text-white' 
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
+          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === 'templates'
+            ? 'bg-black text-white'
+            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
         >
           Templates
         </button>
         <button
           onClick={() => setActiveTab('macros')}
-          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
-            activeTab === 'macros' 
-              ? 'bg-black text-white' 
-              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-          }`}
+          className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${activeTab === 'macros'
+            ? 'bg-black text-white'
+            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+            }`}
         >
           Macros
         </button>

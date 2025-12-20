@@ -16,6 +16,16 @@ interface LoginResponse {
   error?: string
 }
 
+interface HospitalStatsResponse {
+  success: boolean
+  message: string
+  data: {
+    total_assigned_cases: number
+    total_unassigned_cases: number
+    total_critical_cases: number
+  }
+}
+
 class ApiService {
   private baseUrl: string
 
@@ -190,7 +200,7 @@ class ApiService {
     })
   }
 
-  async assignCaseToDoctor(case_id: string, assigned_to : string ) {
+  async assignCaseToDoctor(case_id: string, assigned_to: string) {
     return this.request(`/api/v1/cases/assign-case`, {
       method: 'POST',
       body: JSON.stringify({ assigned_to: assigned_to, case_id: case_id }),
@@ -217,7 +227,7 @@ class ApiService {
     })
   }
 
- 
+
   async getAssignedCases(filters?: any) {
     return this.request('/api/v1/cases/get-assigned-cases', {
       method: 'POST',
@@ -256,10 +266,10 @@ class ApiService {
     })
   }
 
-  async createPatientNote(patientId: string, noteData: { note: string; flag_type: string }) {
-    return this.request(`/api/v1/patient/${patientId}/notes`, {
+  async createCaseNote(caseId: string, noteData: { note: string; flag_type: string }) {
+    return this.request(`/api/v1/cases/add-note`, {
       method: 'POST',
-      body: JSON.stringify(noteData),
+      body: JSON.stringify({ case_id: caseId, note: noteData.note, flag_type: noteData.flag_type }),
     })
   }
 
@@ -290,6 +300,34 @@ class ApiService {
     }
 
     return response.json()
+  }
+
+  async getHospitalStats(): Promise<HospitalStatsResponse> {
+    const hospitalId = localStorage.getItem('active_hospital')
+    return this.request<HospitalStatsResponse>('/api/v1/hospital/get-stats', {
+      method: 'POST',
+      body: JSON.stringify({ active_hospital: hospitalId }),
+    })
+  }
+
+  async bookmarkCase(caseId: string) {
+    return this.request('/api/v1/cases/bookmark', {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId }),
+    })
+  }
+
+  async deleteBookmark(caseId: string) {
+    return this.request('/api/v1/cases/bookmark', {
+      method: 'DELETE',
+      body: JSON.stringify({ case_id: caseId }),
+    })
+  }
+
+  async getBookmarkedCases() {
+    return this.request('/api/v1/cases/bookmark', {
+      method: 'GET',
+    })
   }
 }
 

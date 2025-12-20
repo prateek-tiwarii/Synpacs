@@ -1,20 +1,52 @@
-import { ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Save } from "lucide-react";
+import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Save } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import type { Patient } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
-import { DataTable, CellWithCopy, StatusCell, formatDate } from "@/components/common/DataTable";
+import { DataTable, CellWithCopy } from "@/components/common/DataTable";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { FilterState } from "@/components/common/FilterPanel";
+import toast from "react-hot-toast";
+
+// Default column visibility configuration for AssignedPatientsTable
+const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+    actions: true, // Always visible, cannot be hidden
+    name: true,
+    age_sex: true,
+    body_part: true,
+    description: true,
+    modality: true,
+    accession_number: true,
+    study_date_time: true,
+    case_type: true,
+    priority: true,
+    series_count: true,
+    instance_count: true,
+    // Hide all other columns
+    pac_patinet_id: false,
+    age: false,
+    sex: false,
+    study_description: false,
+    treatment_type: false,
+    status: false,
+    referring_doctor: false,
+    date_of_capture: false,
+    pac_images_count: false,
+    hospital_id: false,
+    study_date: false,
+    study_time: false,
+};
+
+const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
+const BOOKMARKS_STORAGE_KEY = 'synpacs_bookmarks';
 
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
     setMessageDialogOpen: (open: boolean) => void;
     setDocumentDialogOpen: (open: boolean) => void;
-    columnVisibility: VisibilityState;
-    onColumnVisibilityChange: (visibility: VisibilityState) => void;
     filters?: FilterState;
 }
 
@@ -56,8 +88,6 @@ const AssignedPatientsTable = ({
     setSelectedPatient,
     setMessageDialogOpen,
     setDocumentDialogOpen,
-    columnVisibility,
-    onColumnVisibilityChange,
     filters,
 }: AssignedPatientsTableProps) => {
     const navigate = useNavigate();
@@ -65,29 +95,53 @@ const AssignedPatientsTable = ({
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Initialize column visibility from localStorage or use default
+    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_ASSIGNED_PATIENTS);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                // Always ensure actions column is visible
+                return { ...parsed, actions: true };
+            }
+        } catch (error) {
+            console.error('Failed to load column visibility from localStorage:', error);
+        }
+        return DEFAULT_COLUMN_VISIBILITY;
+    });
+
+    // Save column visibility to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY_ASSIGNED_PATIENTS, JSON.stringify(columnVisibility));
+        } catch (error) {
+            console.error('Failed to save column visibility to localStorage:', error);
+        }
+    }, [columnVisibility]);
+
     useEffect(() => {
         const fetchAssignedPatients = async () => {
             try {
                 setIsLoading(true);
                 setError(null);
-                
+
                 // Build API filters from FilterState
                 const apiFilters: any = {};
-                
+
                 if (filters) {
                     if (filters.startDate) apiFilters.start_date = filters.startDate;
                     if (filters.endDate) apiFilters.end_date = filters.endDate;
                     if (filters.patientName) apiFilters.patient_name = filters.patientName;
                     if (filters.bodyPart) apiFilters.body_part = filters.bodyPart;
                     if (filters.status && filters.status !== 'all') apiFilters.status = filters.status;
-                    
+
                     // Handle gender
                     if (filters.gender.M && !filters.gender.F) {
                         apiFilters.gender = 'M';
                     } else if (filters.gender.F && !filters.gender.M) {
                         apiFilters.gender = 'F';
                     }
-                    
+
                     // Handle modality
                     const selectedModality = Object.entries(filters.modalities).find(
                         ([_, isSelected]) => isSelected && _ !== 'ALL'
@@ -96,11 +150,11 @@ const AssignedPatientsTable = ({
                         apiFilters.modality = selectedModality[0];
                     }
                 }
-                
+
                 const response = await apiService.getAssignedCases(apiFilters) as any;
-                if (response.success && response.data?.cases) {
+                if (response.success && response.data) {
                     // Map API response to match Patient interface
-                    const mappedPatients: Patient[] = response.data.cases.map((caseItem: any) => {
+                    const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
                         // Calculate age from date_of_birth (format: YYYYMMDD)
                         const calculateAge = (dob: string): string => {
                             if (!dob || dob.length !== 8) return '';
@@ -145,8 +199,11 @@ const AssignedPatientsTable = ({
                             case_type: caseItem.case_type,
                             assigned_to: caseItem.assigned_to,
                             patient: caseItem.patient,
+                            series_count: caseItem.series_count || 0,
+                            instance_count: caseItem.instance_count || 0,
                             pac_images_count: 0, // Not provided in API response
                             updatedAt: caseItem.updatedAt,
+                            isBookmarked: caseItem.isBookmarked || false,
                         } as Patient;
                     });
                     setPatients(mappedPatients);
@@ -162,7 +219,43 @@ const AssignedPatientsTable = ({
         fetchAssignedPatients();
     }, [filters]);
 
+    const handleZipDownload = (case_id: string) => {
+        console.log('Downloading Case:', case_id);
+    };
 
+    // Save a patient case to bookmarks
+    const handleSaveBookmark = async (patient: Patient) => {
+        try {
+            await apiService.bookmarkCase(patient._id);
+            // Update local state to reflect the change immediately
+            setPatients(prevPatients =>
+                prevPatients.map(p =>
+                    p._id === patient._id ? { ...p, isBookmarked: true } : p
+                )
+            );
+            toast.success('Case bookmarked successfully');
+        } catch (error) {
+            console.error('Failed to bookmark case:', error);
+            toast.error('Failed to bookmark case');
+        }
+    };
+
+    // Remove a patient case from bookmarks
+    const handleDeleteBookmark = async (patient: Patient) => {
+        try {
+            await apiService.deleteBookmark(patient._id);
+            // Update local state to reflect the change immediately
+            setPatients(prevPatients =>
+                prevPatients.map(p =>
+                    p._id === patient._id ? { ...p, isBookmarked: false } : p
+                )
+            );
+            toast.success('Bookmark removed successfully');
+        } catch (error) {
+            console.error('Failed to remove bookmark:', error);
+            toast.error('Failed to remove bookmark');
+        }
+    };
 
     const columnHelper = createColumnHelper<Patient>();
 
@@ -170,84 +263,173 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'actions',
             header: 'Action',
+            enableHiding: false, // Always visible, cannot be hidden
             cell: (props) => (
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button className="p-1 hover:bg-blue-50 rounded" title="Verify">
-                        <ClipboardCheck className="w-4 h-4 text-blue-500" />
-                    </button>
-                    <button className="p-1 hover:bg-yellow-50 rounded" title="Open Folder">
-                        <FolderOpen className="w-4 h-4 text-yellow-500" />
-                    </button>
-                    <button
-                        className="p-1 hover:bg-blue-50 rounded"
-                        title="Message"
-                        onClick={() => handleMessageClick(props.row.original)}
-                    >
-                        <MessageSquare className="w-4 h-4 text-blue-500" />
-                    </button>
-                    <button
-                        className="p-1 hover:bg-yellow-50 rounded"
-                        title="Download"
-                        onClick={() => handleDocumentClick(props.row.original)}
-                    >
-                        <Download className="w-4 h-4 text-yellow-500" />
-                    </button>
-                    <button className="p-1 hover:bg-blue-50 rounded" title="View Images">
-                        <ImageIcon className="w-4 h-4 text-blue-500" />
-                    </button>
-                    <button className="p-1 hover:bg-yellow-50 rounded" title="Save">
-                        <Save className="w-4 h-4 text-yellow-500" />
-                    </button>
-                </div>
+                <TooltipProvider>
+                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                    <ClipboardCheck className="w-4 h-4 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>???</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button className="p-1 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => handleDocumentClick(props.row.original)}>
+                                    <FolderOpen className="w-4 h-4 text-yellow-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Attached Documents</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => handleMessageClick(props.row.original)}
+                                >
+                                    <MessageSquare className="w-4 h-4 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Message</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    onClick={() => handleZipDownload(props.row.original._id)}
+                                    className="p-1 hover:bg-yellow-50 rounded cursor-pointer"
+                                >
+                                    <Download className="w-4 h-4 text-yellow-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Download</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Link to={`/viewer/${props.row.original._id}`} className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                    <ImageIcon className="w-4 h-4 text-blue-500" />
+                                </Link>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>View Images</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-1 hover:bg-yellow-50 rounded cursor-pointer"
+                                    onClick={() => props.row.original.isBookmarked
+                                        ? handleDeleteBookmark(props.row.original)
+                                        : handleSaveBookmark(props.row.original)
+                                    }
+                                >
+                                    {props.row.original.isBookmarked ? (
+                                        <Bookmark className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                                    ) : (
+                                        <Bookmark className="w-4 h-4 text-yellow-500" />
+                                    )}
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{props.row.original.isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                </TooltipProvider>
             ),
         }),
         columnHelper.accessor('name', {
             header: 'Patient Name',
             cell: (info) => <CellWithCopy content={info.getValue()} cellId={`${info.row.id}-name`} />,
         }),
-        columnHelper.accessor('pac_patinet_id', {
-            header: 'Patient ID',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-id`} />,
+        columnHelper.display({
+            id: 'age_sex',
+            header: 'Age/Sex',
+            cell: (props) => {
+                const age = props.row.original.age || '-';
+                const sex = props.row.original.sex || '-';
+                return <CellWithCopy content={`${age} / ${sex}`} cellId={`${props.row.id}-age-sex`} />;
+            },
         }),
-        columnHelper.accessor('age', {
-            header: 'Age',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-age`} />,
+        columnHelper.accessor('body_part', {
+            header: 'Body Part',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-body`} />,
         }),
-        columnHelper.accessor('sex', {
-            header: 'Sex',
-            cell: (info) => <CellWithCopy content={info.getValue()} cellId={`${info.row.id}-sex`} />,
+        columnHelper.accessor('description', {
+            header: 'Description',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
-        columnHelper.accessor('study_description', {
-            header: 'Study Description',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-study`} />,
-        }),
-        columnHelper.accessor('treatment_type', {
-            header: 'Treatment Type',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-treatment`} />,
-        }),
-        columnHelper.accessor('status', {
-            header: 'Status',
-            cell: (info) => <StatusCell status={info.getValue()} />,
-        }),
-        columnHelper.accessor('referring_doctor', {
-            header: 'Referring Doctor',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-doc`} />,
-        }),
-        columnHelper.accessor('date_of_capture', {
-            header: 'Date of Capture',
-            cell: (info) => <div className="whitespace-pre-line text-xs"><CellWithCopy content={formatDate(info.getValue() || '')} cellId={`${info.row.id}-capture`} /></div>,
-        }),
-        columnHelper.accessor('pac_images_count', {
-            header: 'Images Count',
-            cell: (info) => <CellWithCopy content={(info.getValue() ?? 0).toString()} cellId={`${info.row.id}-images`} />,
-        }),
-        columnHelper.accessor('hospital_id', {
-            header: 'Hospital ID',
-            cell: (info) => <CellWithCopy content={info.getValue()} cellId={`${info.row.id}-hospital`} />,
+        columnHelper.accessor('modality', {
+            header: 'Modality',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
-            cell: (info) => <CellWithCopy content={info.getValue() || ''} cellId={`${info.row.id}-acc`} />,
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-acc`} />,
+        }),
+        columnHelper.display({
+            id: 'study_date_time',
+            header: 'Study Date/Time',
+            cell: (props) => {
+                // Format date from YYYYMMDD to readable format
+                const dateStr = props.row.original.study_date || '';
+                let formattedDate = '-';
+                if (dateStr && dateStr.length === 8) {
+                    const year = dateStr.substring(0, 4);
+                    const month = dateStr.substring(4, 6);
+                    const day = dateStr.substring(6, 8);
+                    formattedDate = `${year}-${month}-${day}`;
+                }
+
+                // Format time from HHMMSS.milliseconds to HH:MM:SS
+                const timeStr = props.row.original.study_time || '';
+                let formattedTime = '';
+                if (timeStr) {
+                    const timePart = timeStr.split('.')[0];
+                    if (timePart.length >= 6) {
+                        formattedTime = `${timePart.substring(0, 2)}:${timePart.substring(2, 4)}:${timePart.substring(4, 6)}`;
+                    }
+                }
+
+                return (
+                    <div className="whitespace-pre-line text-xs">
+                        <CellWithCopy
+                            content={`${formattedDate}\n${formattedTime}`}
+                            cellId={`${props.row.id}-datetime`}
+                        />
+                    </div>
+                );
+            },
+        }),
+        columnHelper.accessor('case_type', {
+            header: 'Case Type',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
+        }),
+        columnHelper.accessor('priority', {
+            header: 'Priority',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-priority`} />,
+        }),
+        columnHelper.accessor('series_count', {
+            header: 'Series Count',
+            cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-series`} />,
+        }),
+        columnHelper.accessor('instance_count', {
+            header: 'Instance Count',
+            cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-instance`} />,
         }),
     ], []);
 
@@ -274,8 +456,9 @@ const AssignedPatientsTable = ({
             emptyMessage="No patients assigned to you yet."
             loadingMessage="Loading assigned patients..."
             columnVisibility={columnVisibility}
-            onColumnVisibilityChange={onColumnVisibilityChange}
-            onRowClick={handleRowClick}
+            onColumnVisibilityChange={setColumnVisibility}
+            showColumnToggle={true}
+            // onRowClick={handleRowClick}
             tableTitle="Patients"
         />
     );
