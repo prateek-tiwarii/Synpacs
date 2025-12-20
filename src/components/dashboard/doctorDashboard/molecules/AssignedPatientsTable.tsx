@@ -3,10 +3,11 @@ import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import type { Patient } from "@/components/patient/PacDetailsModal";
+import type { Patient, Note } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 import type { FilterState } from "@/components/common/FilterPanel";
 import toast from "react-hot-toast";
@@ -202,6 +203,7 @@ const AssignedPatientsTable = ({
                             pac_images_count: 0, // Not provided in API response
                             updatedAt: caseItem.updatedAt,
                             isBookmarked: caseItem.isBookmarked || false,
+                            notes: caseItem.notes || [],
                         } as Patient;
                     });
                     setPatients(mappedPatients);
@@ -287,19 +289,48 @@ const AssignedPatientsTable = ({
                             </TooltipContent>
                         </Tooltip>
 
-                        <Tooltip>
-                            <TooltipTrigger asChild>
+                        {/* Message icon with notes indicator and hover popup */}
+                        <HoverCard openDelay={200} closeDelay={100}>
+                            <HoverCardTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer relative"
                                     onClick={() => handleMessageClick(props.row.original)}
                                 >
                                     <MessageSquare className="w-4 h-4 text-blue-500" />
+                                    {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                        <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white" />
+                                    )}
                                 </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Message</p>
-                            </TooltipContent>
-                        </Tooltip>
+                            </HoverCardTrigger>
+                            {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                <HoverCardContent className="w-80 max-h-60 overflow-y-auto" align="start">
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-gray-900">Notes ({props.row.original.notes.length})</h4>
+                                        <div className="space-y-2">
+                                            {props.row.original.notes.map((note: Note) => (
+                                                <div key={note._id} className="p-2 bg-gray-50 rounded-md border border-gray-100">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className={`w-2 h-2 rounded-full ${note.flag_type === 'info' ? 'bg-blue-500' :
+                                                            note.flag_type === 'warning' ? 'bg-yellow-500' :
+                                                                note.flag_type === 'error' ? 'bg-red-500' : 'bg-gray-500'
+                                                            }`} />
+                                                        <span className="text-xs text-gray-500">
+                                                            {new Date(note.created_at).toLocaleDateString('en-US', {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700">{note.note}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </HoverCardContent>
+                            )}
+                        </HoverCard>
 
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -317,7 +348,7 @@ const AssignedPatientsTable = ({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Link to={`/viewer/${props.row.original._id}`} className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                <Link to={`/studies/${props.row.original._id}/viewer`} target="_blank" className="p-1 hover:bg-blue-50 rounded cursor-pointer">
                                     <ImageIcon className="w-4 h-4 text-blue-500" />
                                 </Link>
                             </TooltipTrigger>
@@ -452,7 +483,7 @@ const AssignedPatientsTable = ({
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
             showColumnToggle={true}
-            tableTitle="Patients"
+            tableTitle="Cases"
         />
     );
 };

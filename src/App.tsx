@@ -14,9 +14,10 @@ import Settings from './pages/Settings'
 import ViewerSettings from './pages/ViewerSettings'
 import Research from './pages/Research'
 import { MainLayout } from '@/components/MainLayout'
+import { ViewerLayout } from '@/components/ViewerLayout'
 import { Toaster } from 'react-hot-toast'
-import DiacomViewer from './pages/DiacomViewer'
 import Bookmark from './pages/Bookmark'
+import StudyViewer from './pages/StudyViewer'
 
 
 function RootRedirect() {
@@ -48,6 +49,17 @@ function App() {
             }
           />
 
+          {/* Viewer Layout - separate fullscreen layout for study viewer */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <ViewerLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/studies/:id/viewer" element={<StudyViewer />} />
+          </Route>
+
           <Route
             element={
               <ProtectedRoute>
@@ -65,7 +77,6 @@ function App() {
             <Route path="/manage-users" element={<UserCreate />} />
             <Route path="/manage-pacs" element={<Pacs />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
-            <Route path="/viewer/:id" element={<DiacomViewer />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

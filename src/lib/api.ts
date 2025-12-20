@@ -329,6 +329,12 @@ class ApiService {
       method: 'GET',
     })
   }
+
+  async getCaseById(caseId: string) {
+    return this.request(`/api/v1/cases/${caseId}`, {
+      method: 'GET',
+    })
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL)

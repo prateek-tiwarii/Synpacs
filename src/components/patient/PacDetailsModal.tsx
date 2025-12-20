@@ -33,6 +33,16 @@ export interface PacPatient {
     sex: string;
 }
 
+export interface Note {
+    _id: string;
+    study_id: string;
+    note: string;
+    flag_type: string;
+    user_id: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface PacData {
     _id: string;
     study_uid: string;
@@ -86,6 +96,7 @@ export interface Patient {
     createdAt?: string;
     updatedAt?: string;
     __v?: number;
+    notes?: Note[];
     isBookmarked?: boolean;
 }
 
