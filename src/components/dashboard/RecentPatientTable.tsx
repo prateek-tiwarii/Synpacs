@@ -475,15 +475,6 @@ const RecentPatientTable = () => {
       ),
     },
     {
-      id: "pac_images",
-      header: "PAC Images",
-      cell: ({ row }) => (
-        <Badge variant="outline" className="font-semibold text-xs px-2 py-0">
-          {row.original.pac_images_count ?? row.original.pac_images?.length ?? 0}
-        </Badge>
-      ),
-    },
-    {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
