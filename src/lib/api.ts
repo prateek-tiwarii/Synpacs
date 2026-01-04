@@ -335,6 +335,25 @@ class ApiService {
       method: 'GET',
     })
   }
+
+  async getSeriesImages(seriesId: string) {
+    return this.request(`/api/v1/series/${seriesId}/instances`, {
+      method: 'GET',
+    })
+  }
+
+  async getImageUrl(s3Key: string): Promise<{ success: boolean; data: { url: string } }> {
+    return this.request(`/api/v1/images/presigned-url`, {
+      method: 'POST',
+      body: JSON.stringify({ s3_key: s3Key }),
+    })
+  }
+
+  async getInstanceDicomUrl(instanceUid: string): Promise<{ success: boolean; data: { url: string } }> {
+    return this.request(`/api/v1/instances/${instanceUid}/dicom`, {
+      method: 'GET',
+    })
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL)

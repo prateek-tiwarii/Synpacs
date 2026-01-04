@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Image, Loader2 } from 'lucide-react';
-import { apiService } from '@/lib/api';
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Image } from 'lucide-react';
+import { useViewerContext } from '@/components/ViewerLayout';
 
 interface Series {
     _id: string;
@@ -11,27 +10,6 @@ interface Series {
     series_number: number;
     study_id: string;
     image_count: number;
-}
-
-interface Patient {
-    _id: string;
-    patient_id: string;
-    date_of_birth: string;
-    name: string;
-    sex: string;
-}
-
-interface CaseData {
-    _id: string;
-    study_uid: string;
-    body_part: string;
-    description: string;
-    modality: string;
-    study_date: string;
-    patient: Patient;
-    series: Series[];
-    series_count: number;
-    instance_count: number;
 }
 
 const formatStudyDate = (dateStr: string) => {
@@ -65,7 +43,6 @@ const SeriesThumbnail = ({ series, isSelected, onClick }: SeriesThumbnailProps) 
         className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-gray-700 hover:border-gray-500'
             }`}
     >
-        {/* Mock CT Image Thumbnail */}
         <div
             className="h-24 flex items-center justify-center relative"
             style={{ backgroundColor: getSeriesColor(series.description) }}
@@ -132,53 +109,12 @@ const StudyAccordion = ({ title, studyDate, seriesCount, children, defaultOpen =
 };
 
 const ViewerSidebar = () => {
-    const { id } = useParams();
-    const [selectedSeries, setSelectedSeries] = useState<string>('');
-    const [caseData, setCaseData] = useState<CaseData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { caseData, selectedSeries, setSelectedSeries } = useViewerContext();
 
-    useEffect(() => {
-        const fetchCaseData = async () => {
-            if (!id) return;
-
-            try {
-                setLoading(true);
-                setError(null);
-                const response = await apiService.getCaseById(id) as { success: boolean; data: CaseData };
-                if (response.success && response.data) {
-                    setCaseData(response.data);
-                    // Select the first series with the most images by default
-                    if (response.data.series && response.data.series.length > 0) {
-                        const sortedSeries = [...response.data.series].sort((a, b) => b.image_count - a.image_count);
-                        setSelectedSeries(sortedSeries[0]._id);
-                    }
-                }
-            } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to fetch case data');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCaseData();
-    }, [id]);
-
-    const selectedSeriesData = caseData?.series.find(s => s._id === selectedSeries);
-
-    if (loading) {
-        return (
-            <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col h-[calc(100vh-88px)] items-center justify-center">
-                <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                <p className="text-gray-400 text-sm mt-2">Loading...</p>
-            </aside>
-        );
-    }
-
-    if (error || !caseData) {
+    if (!caseData) {
         return (
             <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col h-[calc(100vh-88px)] items-center justify-center p-4">
-                <p className="text-red-400 text-sm text-center">{error || 'No data available'}</p>
+                <p className="text-red-400 text-sm text-center">No data available</p>
             </aside>
         );
     }
@@ -206,8 +142,8 @@ const ViewerSidebar = () => {
                                 <SeriesThumbnail
                                     key={series._id}
                                     series={series}
-                                    isSelected={selectedSeries === series._id}
-                                    onClick={() => setSelectedSeries(series._id)}
+                                    isSelected={selectedSeries?._id === series._id}
+                                    onClick={() => setSelectedSeries(series)}
                                 />
                             ))}
                     </div>
@@ -220,16 +156,16 @@ const ViewerSidebar = () => {
                     <div className="flex justify-between">
                         <span>Selected:</span>
                         <span className="text-white truncate ml-2">
-                            {selectedSeriesData?.description || 'None'}
+                            {selectedSeries?.description || 'None'}
                         </span>
                     </div>
                     <div className="flex justify-between">
                         <span>Images:</span>
-                        <span className="text-white">{selectedSeriesData?.image_count || 0}</span>
+                        <span className="text-white">{selectedSeries?.image_count || 0}</span>
                     </div>
                     <div className="flex justify-between">
                         <span>Modality:</span>
-                        <span className="text-white">{selectedSeriesData?.modality || 'N/A'}</span>
+                        <span className="text-white">{selectedSeries?.modality || 'N/A'}</span>
                     </div>
                 </div>
             </div>

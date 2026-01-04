@@ -50,13 +50,14 @@ interface Case {
   _id: string;
   study_uid: string;
   accession_number: string;
-  body_part: string;
   description: string;
   hospital_id: string;
-  modality: string;
+  hospital_name: string;
   patient_id: string;
+  referring_physician: string | null;
   study_date: string;
   study_time: string;
+  body_part: string;
   assigned_to: AssignedDoctor | null;
   case_type: string;
   priority: string;
@@ -64,7 +65,7 @@ interface Case {
   patient: {
     _id: string;
     patient_id: string;
-    date_of_birth: string;
+    dob: string;
     name: string;
     sex: string;
   };
@@ -234,20 +235,32 @@ const RecentPatientTable = () => {
             return age.toString();
           };
 
+          // Format study date from YYYYMMDD to readable format
+          const formatStudyDate = (studyDate: string): string => {
+            if (!studyDate || studyDate.length !== 8) return studyDate || '';
+            const year = studyDate.substring(0, 4);
+            const month = studyDate.substring(4, 6);
+            const day = studyDate.substring(6, 8);
+            return `${year}-${month}-${day}`;
+          };
+
           return {
             _id: caseItem._id,
             name: caseItem.patient?.name || 'N/A',
             pac_patinet_id: caseItem.patient?.patient_id || '',
-            dob: caseItem.patient?.date_of_birth || '',
+            dob: caseItem.patient?.dob || '',
             hospital_id: caseItem.hospital_id,
             priority: caseItem.priority || 'Normal',
             sex: caseItem.patient?.sex || '',
-            age: calculateAge(caseItem.patient?.date_of_birth || ''),
+            age: calculateAge(caseItem.patient?.dob || ''),
             study_description: caseItem.description || '',
             study: {
               study_uid: caseItem.study_uid,
-              body_part: caseItem.body_part,
+              body_part: caseItem.body_part || '',
             },
+            treatment_type: caseItem.case_type || '',
+            date_of_capture: formatStudyDate(caseItem.study_date),
+            referring_doctor: caseItem.referring_physician || '',
             accession_number: caseItem.accession_number || '',
             status: caseItem.status || 'Unassigned',
             assigned_to: caseItem.assigned_to,
@@ -516,8 +529,8 @@ const RecentPatientTable = () => {
       <div className="flex justify-between items-center p-4">
         <CardHeader className="p-0 flex flex-col gap-1">
           <CardTitle className="">
-            <p className="text-xl font-bold">Recently Added Patients</p>
-            <p className="text-sm text-muted-foreground">The Recent Patients added to the system</p>
+            <p className="text-xl font-bold">Recently Added Cases</p>
+            <p className="text-sm text-muted-foreground">The Recent Cases added to the system</p>
           </CardTitle>
         </CardHeader>
 

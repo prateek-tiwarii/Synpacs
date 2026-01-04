@@ -154,8 +154,19 @@ const AssignedPatientsTable = ({
                 if (response.success && response.data) {
                     // Map API response to match Patient interface
                     const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
-                        // Calculate age from date_of_birth (format: YYYYMMDD)
-                        const calculateAge = (dob: string): string => {
+                        // Format study_date to readable format (YYYYMMDD -> YYYY-MM-DD)
+                        const formatStudyDate = (dateStr: string): string => {
+                            if (!dateStr || dateStr.length !== 8) return dateStr;
+                            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+                        };
+
+                        // Use pre-calculated age from API if available, otherwise calculate from dob
+                        const getAge = (): string => {
+                            if (caseItem.patient?.age !== undefined && caseItem.patient?.age !== null) {
+                                return caseItem.patient.age.toString();
+                            }
+                            // Fallback: calculate from dob if age not provided
+                            const dob = caseItem.patient?.dob || caseItem.patient?.date_of_birth;
                             if (!dob || dob.length !== 8) return '';
                             const year = parseInt(dob.substring(0, 4));
                             const month = parseInt(dob.substring(4, 6)) - 1;
@@ -170,38 +181,34 @@ const AssignedPatientsTable = ({
                             return age.toString();
                         };
 
-                        // Format study_date to readable format (YYYYMMDD -> YYYY-MM-DD)
-                        const formatStudyDate = (dateStr: string): string => {
-                            if (!dateStr || dateStr.length !== 8) return dateStr;
-                            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-                        };
-
                         return {
                             _id: caseItem._id,
-                            name: caseItem.patient.name,
-                            sex: caseItem.patient.sex,
-                            pac_patinet_id: caseItem.patient.patient_id,
-                            date_of_birth: caseItem.patient.date_of_birth,
-                            age: calculateAge(caseItem.patient.date_of_birth),
-                            hospital_id: caseItem.hospital_id,
-                            status: caseItem.status,
-                            study_description: caseItem.description,
-                            description: caseItem.description,
-                            body_part: caseItem.body_part,
-                            accession_number: caseItem.accession_number,
-                            study_uid: caseItem.study_uid,
-                            modality: caseItem.modality,
-                            study_date: caseItem.study_date,
-                            study_time: caseItem.study_time,
+                            name: caseItem.patient?.name || '',
+                            sex: caseItem.patient?.sex || '',
+                            pac_patinet_id: caseItem.patient?.patient_id || '',
+                            date_of_birth: caseItem.patient?.dob || caseItem.patient?.date_of_birth || '',
+                            age: getAge(),
+                            hospital_id: caseItem.hospital_id || '',
+                            hospital_name: caseItem.hospital_name || '',
+                            status: caseItem.status || '',
+                            study_description: caseItem.description || '',
+                            description: caseItem.description || '',
+                            body_part: caseItem.body_part || '',
+                            accession_number: caseItem.accession_number || '',
+                            study_uid: caseItem.study_uid || '',
+                            modality: caseItem.modality || '',
+                            study_date: caseItem.study_date || '',
+                            study_time: caseItem.study_time || '',
                             date_of_capture: formatStudyDate(caseItem.study_date),
-                            priority: caseItem.priority,
-                            case_type: caseItem.case_type,
-                            assigned_to: caseItem.assigned_to,
+                            priority: caseItem.priority || '',
+                            case_type: caseItem.case_type || '',
+                            assigned_to: caseItem.assigned_to || '',
+                            referring_physician: caseItem.referring_physician || '',
                             patient: caseItem.patient,
                             series_count: caseItem.series_count || 0,
                             instance_count: caseItem.instance_count || 0,
                             pac_images_count: 0, // Not provided in API response
-                            updatedAt: caseItem.updatedAt,
+                            updatedAt: caseItem.updatedAt || '',
                             isBookmarked: caseItem.isBookmarked || false,
                             notes: caseItem.notes || [],
                         } as Patient;
