@@ -113,14 +113,14 @@ const ViewerSidebar = () => {
 
     if (!caseData) {
         return (
-            <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col h-[calc(100vh-88px)] items-center justify-center p-4">
+            <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col items-center justify-center p-4">
                 <p className="text-red-400 text-sm text-center">No data available</p>
             </aside>
         );
     }
 
     return (
-        <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col h-[calc(100vh-88px)] overflow-hidden">
+        <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-3 border-b border-gray-700">
                 <h2 className="text-sm font-semibold text-white">Study Navigator</h2>

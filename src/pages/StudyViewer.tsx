@@ -86,14 +86,12 @@ const StudyViewer = () => {
 
     console.log('instances', instances);
 
-    // Calculate viewport height (full height minus header)
-    const viewportHeight = 'calc(100vh - 64px)';
+
 
     if (isLoading) {
         return (
             <div
                 className="flex-1 flex items-center justify-center bg-black"
-                style={{ height: viewportHeight }}
             >
                 <div className="flex flex-col items-center gap-3">
                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -107,7 +105,6 @@ const StudyViewer = () => {
         return (
             <div
                 className="flex-1 flex items-center justify-center bg-black"
-                style={{ height: viewportHeight }}
             >
                 <div className="text-center">
                     <p className="text-red-400 mb-2">Error loading images</p>
@@ -127,7 +124,6 @@ const StudyViewer = () => {
         return (
             <div
                 className="flex-1 flex items-center justify-center bg-black"
-                style={{ height: viewportHeight }}
             >
                 <p className="text-gray-400">Select a series from the sidebar to view images</p>
             </div>
@@ -135,7 +131,7 @@ const StudyViewer = () => {
     }
 
     return (
-        <div className="flex-1 flex flex-col bg-black" style={{ height: viewportHeight }}>
+        <div className="flex-1 flex flex-col bg-black h-full">
             {/* Series info header */}
             <div className="flex items-center justify-between px-4 py-2 bg-gray-900/50 border-b border-gray-800">
                 <div className="flex items-center gap-4">

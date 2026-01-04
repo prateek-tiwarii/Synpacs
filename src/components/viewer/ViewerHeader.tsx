@@ -1,6 +1,5 @@
 import {
     ZoomIn,
-    ZoomOut,
     Move,
     Contrast,
     Ruler,
@@ -14,7 +13,6 @@ import {
     Printer,
     Undo2,
     Redo2,
-    MousePointer,
     Pencil,
     Circle,
     Square,
@@ -22,7 +20,8 @@ import {
     SlidersHorizontal,
     LayoutGrid,
     RefreshCw,
-    Crosshair
+    Crosshair,
+    Layers
 } from 'lucide-react';
 
 interface ToolButtonProps {
@@ -30,13 +29,15 @@ interface ToolButtonProps {
     label: string;
     active?: boolean;
     onClick?: () => void;
+    disabled?: boolean;
 }
 
-const ToolButton = ({ icon, label, active = false, onClick }: ToolButtonProps) => (
+const ToolButton = ({ icon, label, active = false, onClick, disabled = false }: ToolButtonProps) => (
     <button
-        onClick={onClick}
-        className={`flex flex-col items-center justify-center p-2 rounded hover:bg-gray-700 transition-colors min-w-[48px] ${active ? 'bg-blue-600 text-white' : 'text-gray-300'
-            }`}
+        onClick={disabled ? undefined : onClick}
+        disabled={disabled}
+        className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'
+            } ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
         title={label}
     >
         {icon}
@@ -46,22 +47,87 @@ const ToolButton = ({ icon, label, active = false, onClick }: ToolButtonProps) =
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
+import { useViewerContext, type ViewerTool } from '../ViewerLayout';
+import { formatDate } from '@/lib/helperFunctions';
+
+
+
 const ViewerHeader = () => {
+    const {
+        caseData,
+        selectedSeries,
+        currentImageIndex,
+        activeTool,
+        setActiveTool,
+        setViewTransform,
+        annotations,
+        setAnnotations,
+        undo,
+        redo,
+        canUndo,
+        canRedo,
+        saveToHistory
+    } = useViewerContext();
+
+    if (!caseData) return null;
+
+    const patientName = caseData.patient?.name || 'Unknown';
+    const mrn = caseData.patient?.patient_id || 'N/A';
+    const dob = formatDate(caseData.patient?.date_of_birth || '');
+    const studyDesc = caseData.description || 'N/A';
+    const studyDate = formatDate(caseData.study_date || '');
+
+    // Format DOB if it's YYYYMMDD or similar, depending on API. Assuming string for now.
+    // Format Date if needed.
+
+    const seriesNumber = selectedSeries?.series_number || 0;
+    const totalSeries = caseData.series_count || 0;
+    const imageCount = selectedSeries?.image_count || 0;
+    const currentImage = imageCount > 0 ? currentImageIndex + 1 : 0;
+
+    const handleRotate = () => {
+        setViewTransform(prev => ({ ...prev, rotation: (prev.rotation + 90) % 360 }));
+        saveToHistory();
+    };
+
+    const handleFlipH = () => {
+        setViewTransform(prev => ({ ...prev, flipH: !prev.flipH }));
+        saveToHistory();
+    };
+
+    const handleFlipV = () => {
+        setViewTransform(prev => ({ ...prev, flipV: !prev.flipV }));
+        saveToHistory();
+    };
+
+    const handleReset = () => {
+        setViewTransform({
+            x: 0,
+            y: 0,
+            scale: 1,
+            rotation: 0,
+            flipH: false,
+            flipV: false
+        });
+        setAnnotations([]);
+        saveToHistory();
+    };
+
     return (
         <header className="bg-gray-900 border-b border-gray-700 px-4 py-1">
             {/* Top bar with patient info */}
             <div className="flex items-center justify-between text-sm text-gray-400 mb-2 pt-2">
                 <div className="flex items-center gap-6">
-                    <span className="text-white font-semibold">PATIENT: DOE, JOHN</span>
-                    <span>MRN: 12345678</span>
-                    <span>DOB: 01/15/1985</span>
-                    <span>Study: CT CHEST W/CONTRAST</span>
-                    <span>Date: 12/20/2024</span>
+                    <span className="text-white font-semibold">PATIENT: {patientName.toUpperCase()}</span>
+                    <span>MRN: {mrn}</span>
+                    <span>DOB: {dob}</span>
+                    <span>Study: {studyDesc}</span>
+                    <span>Date: {studyDate}</span>
                 </div>
                 <div className="flex items-center gap-4">
                     <span className="text-green-400">● Connected</span>
-                    <span>Series: 1/4</span>
-                    <span>Image: 45/256</span>
+                    <span>Series: {seriesNumber}/{totalSeries}</span>
+                    <span>Image: {currentImage}/{imageCount}</span>
                 </div>
             </div>
 
@@ -69,57 +135,100 @@ const ViewerHeader = () => {
             <div className="flex items-center gap-1 overflow-x-auto pb-1">
                 {/* Navigation Group */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<MousePointer size={18} />} label="Select" active />
-                    <ToolButton icon={<Move size={18} />} label="Pan" />
-                    <ToolButton icon={<ZoomIn size={18} />} label="Zoom" />
-                    <ToolButton icon={<ZoomOut size={18} />} label="Zoom Out" />
-                    <ToolButton icon={<Maximize2 size={18} />} label="Fit" />
+                    <ToolButton
+                        icon={<Layers size={18} />}
+                        label="Stack"
+                        active={activeTool === 'Stack'}
+                        onClick={() => setActiveTool('Stack')}
+                    />
+                    <ToolButton
+                        icon={<Move size={18} />}
+                        label="Pan"
+                        active={activeTool === 'Pan'}
+                        onClick={() => setActiveTool('Pan')}
+                    />
+                    <ToolButton
+                        icon={<ZoomIn size={18} />}
+                        label="Zoom"
+                        active={activeTool === 'Zoom'}
+                        onClick={() => setActiveTool('Zoom')}
+                    />
+                    <ToolButton
+                        icon={<Maximize2 size={18} />}
+                        label="Fit"
+                        onClick={() => setViewTransform(prev => ({ ...prev, x: 0, y: 0, scale: 1 }))}
+                    />
                 </div>
 
                 <ToolDivider />
 
                 {/* Window/Level Group */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<Contrast size={18} />} label="W/L" />
-                    <ToolButton icon={<SlidersHorizontal size={18} />} label="Presets" />
-                    <ToolButton icon={<RefreshCw size={18} />} label="Reset" />
+                    <ToolButton icon={<Contrast size={18} />} label="W/L" disabled />
+                    <ToolButton icon={<SlidersHorizontal size={18} />} label="Presets" disabled />
+                    <ToolButton icon={<RefreshCw size={18} />} label="Reset" onClick={handleReset} />
                 </div>
 
                 <ToolDivider />
 
                 {/* Transform Group */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<RotateCw size={18} />} label="Rotate" />
-                    <ToolButton icon={<FlipHorizontal size={18} />} label="Flip H" />
-                    <ToolButton icon={<FlipVertical size={18} />} label="Flip V" />
+                    <ToolButton icon={<RotateCw size={18} />} label="Rotate" onClick={handleRotate} />
+                    <ToolButton icon={<FlipHorizontal size={18} />} label="Flip H" onClick={handleFlipH} />
+                    <ToolButton icon={<FlipVertical size={18} />} label="Flip V" onClick={handleFlipV} />
                 </div>
 
                 <ToolDivider />
 
                 {/* Annotation Group */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<Ruler size={18} />} label="Length" />
-                    <ToolButton icon={<Circle size={18} />} label="Ellipse" />
-                    <ToolButton icon={<Square size={18} />} label="Rectangle" />
-                    <ToolButton icon={<Pencil size={18} />} label="Freehand" />
-                    <ToolButton icon={<Type size={18} />} label="Text" />
-                    <ToolButton icon={<Crosshair size={18} />} label="Probe" />
+                    <ToolButton
+                        icon={<Ruler size={18} />}
+                        label="Length"
+                        active={activeTool === 'Length'}
+                        onClick={() => setActiveTool('Length')}
+                    />
+                    <ToolButton
+                        icon={<Circle size={18} />}
+                        label="Ellipse"
+                        active={activeTool === 'Ellipse'}
+                        onClick={() => setActiveTool('Ellipse')}
+                    />
+                    <ToolButton
+                        icon={<Square size={18} />}
+                        label="Rectangle"
+                        active={activeTool === 'Rectangle'}
+                        onClick={() => setActiveTool('Rectangle')}
+                    />
+                    <ToolButton
+                        icon={<Pencil size={18} />}
+                        label="Freehand"
+                        active={activeTool === 'Freehand'}
+                        onClick={() => setActiveTool('Freehand')}
+                    />
+                    <ToolButton
+                        icon={<Type size={18} />}
+                        label="Text"
+                        active={activeTool === 'Text'}
+                        onClick={() => setActiveTool('Text')}
+                    />
+                    <ToolButton icon={<Crosshair size={18} />} label="Probe" disabled />
                 </div>
 
                 <ToolDivider />
 
                 {/* Layout Group */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<Grid3X3 size={18} />} label="MPR" />
-                    <ToolButton icon={<LayoutGrid size={18} />} label="Layout" />
+                    <ToolButton icon={<Grid3X3 size={18} />} label="MPR" disabled />
+                    <ToolButton icon={<LayoutGrid size={18} />} label="Layout" disabled />
                 </div>
 
                 <ToolDivider />
 
                 {/* Undo/Redo */}
                 <div className="flex items-center gap-0.5">
-                    <ToolButton icon={<Undo2 size={18} />} label="Undo" />
-                    <ToolButton icon={<Redo2 size={18} />} label="Redo" />
+                    <ToolButton icon={<Undo2 size={18} />} label="Undo" onClick={undo} disabled={!canUndo} />
+                    <ToolButton icon={<Redo2 size={18} />} label="Redo" onClick={redo} disabled={!canRedo} />
                 </div>
 
                 <div className="flex-1" />

@@ -53,12 +53,47 @@ interface CaseData {
     instance_count: number;
 }
 
+export type ViewerTool = 'Stack' | 'Pan' | 'Zoom' | 'Length' | 'Ellipse' | 'Rectangle' | 'Freehand' | 'Text';
+
+export interface ViewTransform {
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+    flipH: boolean;
+    flipV: boolean;
+}
+
+export interface Annotation {
+    id: string;
+    type: 'Length' | 'Ellipse' | 'Rectangle' | 'Freehand' | 'Text';
+    points: { x: number, y: number }[];
+    text?: string;
+    color: string;
+}
+
 interface ViewerContextType {
     caseData: CaseData | null;
     selectedSeries: Series | null;
     setSelectedSeries: (series: Series | null) => void;
     loading: boolean;
     error: string | null;
+    currentImageIndex: number;
+    setCurrentImageIndex: (index: number) => void;
+    activeTool: ViewerTool;
+    setActiveTool: (tool: ViewerTool) => void;
+    viewTransform: ViewTransform;
+    setViewTransform: (transform: ViewTransform | ((prev: ViewTransform) => ViewTransform)) => void;
+    annotations: Annotation[];
+    setAnnotations: (annotations: Annotation[] | ((prev: Annotation[]) => Annotation[])) => void;
+    undo: () => void;
+    redo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+    saveToHistory: () => void;
+    isFullscreen: boolean;
+    setIsFullscreen: (full: boolean) => void;
+    toggleFullscreen: () => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -77,6 +112,69 @@ export function ViewerLayout() {
     const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [activeTool, setActiveTool] = useState<ViewerTool>('Stack');
+    const [viewTransform, setViewTransform] = useState<ViewTransform>({
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        flipH: false,
+        flipV: false
+    });
+    const [annotations, setAnnotations] = useState<Annotation[]>([]);
+    const [history, setHistory] = useState<{ annotations: Annotation[], transform: ViewTransform }[]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    };
+
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    const saveToHistory = () => {
+        const newState = { annotations: [...annotations], transform: { ...viewTransform } };
+        setHistory(prev => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            return [...newHistory, newState];
+        });
+        setHistoryIndex(prev => prev + 1);
+    };
+
+    const undo = () => {
+        if (historyIndex > 0) {
+            const prevState = history[historyIndex - 1];
+            setAnnotations(prevState.annotations);
+            setViewTransform(prevState.transform);
+            setHistoryIndex(prev => prev - 1);
+        } else if (historyIndex === 0) {
+            setAnnotations([]);
+            setViewTransform({ x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false });
+            setHistoryIndex(-1);
+        }
+    };
+
+    const redo = () => {
+        if (historyIndex < history.length - 1) {
+            const nextState = history[historyIndex + 1];
+            setAnnotations(nextState.annotations);
+            setViewTransform(nextState.transform);
+            setHistoryIndex(prev => prev + 1);
+        }
+    };
 
     useEffect(() => {
         const fetchCaseData = async () => {
@@ -111,6 +209,22 @@ export function ViewerLayout() {
         setSelectedSeries,
         loading,
         error,
+        currentImageIndex,
+        setCurrentImageIndex,
+        activeTool,
+        setActiveTool,
+        viewTransform,
+        setViewTransform,
+        annotations,
+        setAnnotations,
+        undo,
+        redo,
+        canUndo: historyIndex >= 0,
+        canRedo: historyIndex < history.length - 1,
+        saveToHistory,
+        isFullscreen,
+        setIsFullscreen,
+        toggleFullscreen,
     };
 
     if (loading) {
@@ -137,11 +251,13 @@ export function ViewerLayout() {
 
     return (
         <ViewerContext.Provider value={contextValue}>
-            <div className="min-h-screen w-full bg-black text-white">
+            <div className="min-h-screen w-full bg-black text-white flex flex-col h-screen overflow-hidden">
                 <ViewerHeader />
-                <div className='flex h-full'>
-                    <ViewerSidebar />
-                    <Outlet />
+                <div className='flex flex-1 min-h-0 overflow-hidden'>
+                    {!isFullscreen && <ViewerSidebar />}
+                    <main className="flex-1 min-w-0">
+                        <Outlet />
+                    </main>
                 </div>
             </div>
         </ViewerContext.Provider>
