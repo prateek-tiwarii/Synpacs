@@ -355,12 +355,20 @@ const AssignedPatientsTable = ({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Link to={`/studies/${props.row.original._id}/viewer`} target="_blank" className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                <button 
+                                    onClick={() => {
+                                        const id = props.row.original._id;
+                                        // Open both tabs synchronously with named targets
+                                        window.open(`/studies/${id}/viewer`, `viewer_${id}`);
+                                        window.open(`/studies/${id}/report`, `report_${id}`);
+                                    }}
+                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                >
                                     <ImageIcon className="w-4 h-4 text-blue-500" />
-                                </Link>
+                                </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>View Images</p>
+                                <p>View Images & Report</p>
                             </TooltipContent>
                         </Tooltip>
 

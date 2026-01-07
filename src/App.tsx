@@ -15,9 +15,11 @@ import ViewerSettings from './pages/ViewerSettings'
 import Research from './pages/Research'
 import { MainLayout } from '@/components/MainLayout'
 import { ViewerLayout } from '@/components/ViewerLayout'
+import { ReportLayout } from '@/components/ReportLayout'
 import { Toaster } from 'react-hot-toast'
 import Bookmark from './pages/Bookmark'
 import StudyViewer from './pages/StudyViewer'
+import Report from './pages/Report'
 
 
 function RootRedirect() {
@@ -58,6 +60,17 @@ function App() {
             }
           >
             <Route path="/studies/:id/viewer" element={<StudyViewer />} />
+          </Route>
+
+          {/* Report Layout - separate layout for report editor */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <ReportLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/studies/:id/report" element={<Report />} />
           </Route>
 
           <Route
