@@ -354,6 +354,47 @@ class ApiService {
       method: 'GET',
     })
   }
+
+  async createReport(reportData: {
+    case_id: string;
+    study_uid: string;
+    patient_id: string;
+    assigned_to?: string;
+    hospital_id?: string;
+    content: Record<string, any>;
+    content_html: string;
+    content_plain_text: string;
+    title: string;
+    template_id?: string;
+    impression?: string;
+  }) {
+    return this.request('/api/v1/reports', {
+      method: 'POST',
+      body: JSON.stringify(reportData),
+    })
+  }
+
+  async updateReport(reportId: string, reportData: {
+    content?: Record<string, any>;
+    content_html?: string;
+    content_plain_text?: string;
+    title?: string;
+    impression?: string;
+    is_draft?: boolean;
+    is_reviewed?: boolean;
+    is_signed_off?: boolean;
+  }) {
+    return this.request(`/api/v1/reports/${reportId}`, {
+      method: 'PUT',
+      body: JSON.stringify(reportData),
+    })
+  }
+
+  async getReportByCase(caseId: string) {
+    return this.request(`/api/v1/reports/case/${caseId}`, {
+      method: 'GET',
+    })
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL)
