@@ -1,6 +1,6 @@
 import ShowAllPatients from "@/components/patient/ShowAllPatients";
 
-const Pacs = () => {
+const ManageCases = () => {
   return (
     <div className="space-y-2 p-2">
       <ShowAllPatients />
@@ -8,4 +8,4 @@ const Pacs = () => {
   );
 };
 
-export default Pacs;
+export default ManageCases;

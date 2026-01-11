@@ -35,7 +35,7 @@ export interface PacPatient {
 
 export interface Note {
     _id: string;
-    study_id: string;
+    case_id: string;
     note: string;
     flag_type: string;
     user_id: string;
@@ -45,15 +45,15 @@ export interface Note {
 
 export interface PacData {
     _id: string;
-    study_uid: string;
+    case_uid: string;
     accession_number: string;
     body_part: string;
     description: string;
     hospital_id: string;
     modality: string;
     patient_id: string;
-    study_date: string; // Format: YYYYMMDD
-    study_time: string; // Format: HHMMSS.ffffff
+    case_date: string; // Format: YYYYMMDD
+    case_time: string; // Format: HHMMSS.ffffff
     patient: PacPatient;
     priority: string;
     status: string;
@@ -69,24 +69,24 @@ export interface Patient {
     date_of_birth?: string;
     hospital_id: string;
     sex: string;
-    study_description?: string;
+    case_description?: string;
     description?: string;
     age?: string;
-    study?: { study_uid: string; body_part: string } | string;
+    case?: { case_uid: string; body_part: string } | string;
     treatment_type?: string;
     date_of_capture?: string;
     referring_doctor?: string;
     accession_number?: string;
-    study_body_part?: string;
+    case_body_part?: string;
     body_part?: string;
     pac_images?: string[];
     status: string;
     assigned_to: string | AssignedDoctor | null;
     pac_images_count?: number;
-    study_uid?: string;
+    case_uid?: string;
     modality?: string;
-    study_date?: string;
-    study_time?: string;
+    case_date?: string;
+    case_time?: string;
     priority?: string;
     case_type?: string;
     patient?: PacPatient;
@@ -140,9 +140,9 @@ const PacDetailsModal = ({
         name: "",
         dob: "",
         sex: "",
-        study_description: "",
+        case_description: "",
         accession_number: "",
-        study_body_part: "",
+        case_body_part: "",
         status: "",
         modality: "",
         priority: "",
@@ -158,9 +158,9 @@ const PacDetailsModal = ({
                 name: patientData.name || patient.name || "",
                 dob: formatDOB(dob) || "",
                 sex: patientData.sex || patient.sex || "",
-                study_description: patient.description || patient.study_description || "",
+                case_description: patient.description || patient.case_description || "",
                 accession_number: patient.accession_number || "",
-                study_body_part: patient.body_part || getStudyBodyPart(patient.study) || "",
+                case_body_part: patient.body_part || getCaseBodyPart(patient.case) || "",
                 status: patient.status || "",
                 modality: patient.modality || "",
                 priority: patient.priority || "",
@@ -189,11 +189,11 @@ const PacDetailsModal = ({
         return dob;
     };
 
-    const getStudyBodyPart = (study: { study_uid: string; body_part: string } | string | undefined): string => {
-        if (!study) return "";
-        if (typeof study === 'string') return study;
-        if (typeof study === 'object' && study !== null) {
-            return study.body_part || "";
+    const getCaseBodyPart = (caseData: { case_uid: string; body_part: string } | string | undefined): string => {
+        if (!caseData) return "";
+        if (typeof caseData === 'string') return caseData;
+        if (typeof caseData === 'object' && caseData !== null) {
+            return caseData.body_part || "";
         }
         return "";
     };
@@ -219,16 +219,14 @@ const PacDetailsModal = ({
 
     if (!patient) return null;
 
-    console.log(patient);
-
-    const studyDate = patient.study_date || "";
+    const caseDate = patient.case_date || "";
     const isCurrentlyAssigned = isAssigned(patient.assigned_to);
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader className="pb-2">
-                    <DialogTitle className="text-xl font-semibold">PAC Study Details</DialogTitle>
+                    <DialogTitle className="text-xl font-semibold">PAC case Details</DialogTitle>
                 </DialogHeader>
 
                 {patient && (
@@ -292,11 +290,11 @@ const PacDetailsModal = ({
 
                         <Separator />
 
-                        {/* Study Information Section */}
+                        {/* case Information Section */}
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4 text-primary" />
-                                <h3 className="text-sm font-semibold">Study Information</h3>
+                                <h3 className="text-sm font-semibold">case Information</h3>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 {/* Accession Number */}
@@ -326,30 +324,30 @@ const PacDetailsModal = ({
                                     <Label htmlFor="body_part" className="text-xs font-medium">Body Part</Label>
                                     <Input
                                         id="body_part"
-                                        value={formData.study_body_part}
-                                        onChange={(e) => handleInputChange("study_body_part", e.target.value)}
+                                        value={formData.case_body_part}
+                                        onChange={(e) => handleInputChange("case_body_part", e.target.value)}
                                         className="h-8 text-sm"
                                     />
                                 </div>
 
-                                {/* Study Date */}
+                                {/* case Date */}
                                 <div className="flex flex-col gap-1.5">
-                                    <Label htmlFor="study_date" className="text-xs font-medium">Study Date</Label>
+                                    <Label htmlFor="case_date" className="text-xs font-medium">case Date</Label>
                                     <Input
-                                        id="study_date"
-                                        value={formatDate(studyDate)}
+                                        id="case_date"
+                                        value={formatDate(caseDate)}
                                         disabled
                                         className="bg-muted h-8 text-sm"
                                     />
                                 </div>
 
-                                {/* Study Description */}
+                                {/* case Description */}
                                 <div className="flex flex-col gap-1.5 col-span-2">
-                                    <Label htmlFor="description" className="text-xs font-medium">Study Description</Label>
+                                    <Label htmlFor="description" className="text-xs font-medium">case Description</Label>
                                     <Input
                                         id="description"
-                                        value={formData.study_description}
-                                        onChange={(e) => handleInputChange("study_description", e.target.value)}
+                                        value={formData.case_description}
+                                        onChange={(e) => handleInputChange("case_description", e.target.value)}
                                         className="h-8 text-sm"
                                     />
                                 </div>
@@ -454,7 +452,6 @@ const PacDetailsModal = ({
                             </Button>
                             <Button
                                 onClick={() => {
-                                    console.log("Saving patient data:", formData);
                                     // TODO: Add API call to save updated patient data
                                     onClose(false);
                                 }}

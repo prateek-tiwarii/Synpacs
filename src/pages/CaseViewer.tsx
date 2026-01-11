@@ -31,7 +31,7 @@ interface InstancesResponse {
     instances: Instance[];
 }
 
-const StudyViewer = () => {
+const CaseViewer = () => {
     useParams(); // Keep hook call for routing context
     const { caseData, selectedSeries } = useViewerContext();
     const [instances, setInstances] = useState<Instance[]>([]);
@@ -63,7 +63,6 @@ const StudyViewer = () => {
             }
 
             const data: InstancesResponse = await response.json();
-            console.log('Fetched instances:', data);
 
             if (Array.isArray(data.instances)) {
                 setInstances(data.instances);
@@ -84,7 +83,6 @@ const StudyViewer = () => {
         fetchInstances();
     }, [fetchInstances]);
 
-    console.log('instances', instances);
 
 
 
@@ -158,4 +156,4 @@ const StudyViewer = () => {
     );
 };
 
-export default StudyViewer;
+export default CaseViewer;

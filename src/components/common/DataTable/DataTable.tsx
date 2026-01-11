@@ -310,7 +310,7 @@ export function DataTable<TData>({
                                         <DialogHeader>
                                             <DialogTitle>Toggle Columns</DialogTitle>
                                         </DialogHeader>
-                                        <div className="flex flex-col gap-4 py-4">
+                                        <div className="flex flex-col gap-2 py-4">
                                             {table
                                                 .getAllColumns()
                                                 .filter((column) => column.getCanHide())
@@ -326,7 +326,7 @@ export function DataTable<TData>({
                                                         >
                                                             <Label
                                                                 htmlFor={column.id}
-                                                                className="text-sm font-normal capitalize cursor-pointer"
+                                                                className="text-xs font-normal capitalize cursor-pointer"
                                                             >
                                                                 {columnName}
                                                             </Label>

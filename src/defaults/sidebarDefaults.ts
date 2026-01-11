@@ -4,7 +4,7 @@ export const sidebarItems = [
   { label: 'Queue', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Automation', href: '/automation', icon: Zap },
   { label: 'Performance', href: '/performance', icon: Activity },
-  { label: 'Manage PACs', href: '/manage-pacs', icon: ClipboardMinus },
+  { label: 'Manage PACs', href: '/manage-cases', icon: ClipboardMinus },
   { label: 'Manage Users', href: '/manage-users', icon: Users },
 ]
 

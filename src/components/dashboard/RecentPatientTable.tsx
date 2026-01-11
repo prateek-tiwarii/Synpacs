@@ -20,9 +20,23 @@ interface AssignedDoctor {
   full_name: string;
 }
 
-interface Study {
-  study_uid: string;
+interface CaseInfo {
+  case_uid: string;
   body_part: string;
+}
+
+interface AttachedReport {
+  _id: string;
+  title: string;
+  is_draft: boolean;
+  is_reviewed: boolean;
+  is_signed_off: boolean;
+  created_by?: {
+    _id: string;
+    email: string;
+    full_name: string;
+  };
+  created_at: string;
 }
 
 interface Patient {
@@ -34,8 +48,8 @@ interface Patient {
   priority?: string;
   sex: string;
   age: string;
-  study_description?: string;
-  study: Study;
+  case_description?: string;
+  case: CaseInfo;
   treatment_type?: string;
   date_of_capture?: string;
   referring_doctor?: string;
@@ -44,24 +58,26 @@ interface Patient {
   pac_images_count?: number;
   status: string;
   assigned_to: string | AssignedDoctor | null;
+  attached_report?: AttachedReport | null;
 }
 
 interface Case {
   _id: string;
-  study_uid: string;
+  case_uid: string;
   accession_number: string;
   description: string;
   hospital_id: string;
   hospital_name: string;
   patient_id: string;
   referring_physician: string | null;
-  study_date: string;
-  study_time: string;
+  case_date: string;
+  case_time: string;
   body_part: string;
   assigned_to: AssignedDoctor | null;
   case_type: string;
   priority: string;
   status: string;
+  attached_report: AttachedReport | null;
   patient: {
     _id: string;
     patient_id: string;
@@ -94,8 +110,8 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   name: true,
   dob: true,
   age_sex: true,
-  study_description: true,
-  "study.body_part": true,
+  case_description: true,
+  "case.body_part": true,
   treatment_type: false, // Hidden by default
   date_of_capture: false, // Hidden by default
   referring_doctor: false, // Hidden by default
@@ -104,6 +120,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   status: true,
   priority: true,
   assigned_to: true,
+  attached_report: true,
 };
 
 const STORAGE_KEY = 'recent_pacs_table_columns';
@@ -235,12 +252,12 @@ const RecentPatientTable = () => {
             return age.toString();
           };
 
-          // Format study date from YYYYMMDD to readable format
-          const formatStudyDate = (studyDate: string): string => {
-            if (!studyDate || studyDate.length !== 8) return studyDate || '';
-            const year = studyDate.substring(0, 4);
-            const month = studyDate.substring(4, 6);
-            const day = studyDate.substring(6, 8);
+          // Format case date from YYYYMMDD to readable format
+          const formatCaseDate = (caseDate: string): string => {
+            if (!caseDate || caseDate.length !== 8) return caseDate || '';
+            const year = caseDate.substring(0, 4);
+            const month = caseDate.substring(4, 6);
+            const day = caseDate.substring(6, 8);
             return `${year}-${month}-${day}`;
           };
 
@@ -253,17 +270,18 @@ const RecentPatientTable = () => {
             priority: caseItem.priority || 'Normal',
             sex: caseItem.patient?.sex || '',
             age: calculateAge(caseItem.patient?.dob || ''),
-            study_description: caseItem.description || '',
-            study: {
-              study_uid: caseItem.study_uid,
+            case_description: caseItem.description || '',
+            case: {
+              case_uid: caseItem.case_uid,
               body_part: caseItem.body_part || '',
             },
             treatment_type: caseItem.case_type || '',
-            date_of_capture: formatStudyDate(caseItem.study_date),
+            date_of_capture: formatCaseDate(caseItem.case_date),
             referring_doctor: caseItem.referring_physician || '',
             accession_number: caseItem.accession_number || '',
             status: caseItem.status || 'Unassigned',
             assigned_to: caseItem.assigned_to,
+            attached_report: caseItem.attached_report,
           };
         });
         setPatients(mappedPatients);
@@ -434,20 +452,20 @@ const RecentPatientTable = () => {
       ),
     },
     {
-      accessorKey: "study_description",
-      header: "Study Description",
+      accessorKey: "case_description",
+      header: "Case Description",
       cell: ({ row }) => (
         <span className="text-xs font-medium">
-          {row.original.study_description || 'N/A'}
+          {row.original.case_description || 'N/A'}
         </span>
       ),
     },
     {
-      accessorKey: "study.body_part",
+      accessorKey: "case.body_part",
       header: "Body Part",
       cell: ({ row }) => (
         <span className="text-xs">
-          {row.original.study?.body_part || 'N/A'}
+          {row.original.case?.body_part || 'N/A'}
         </span>
       ),
     },
@@ -518,6 +536,31 @@ const RecentPatientTable = () => {
         </span>
       ),
     },
+    {
+      accessorKey: "attached_report",
+      header: "Report",
+      cell: ({ row }) => {
+        const report = row.original.attached_report;
+        if (!report) {
+          return <span className="text-xs text-muted-foreground">N/A</span>;
+        }
+
+        const isDraft = report.is_draft && !report.is_reviewed && !report.is_signed_off;
+
+        return (
+          <Badge
+            variant={isDraft ? "warning" : "success"}
+            className="text-xs px-2 py-0 cursor-pointer hover:opacity-80"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(`/case/${row.original._id}/report`, '_blank');
+            }}
+          >
+            {isDraft ? "Draft" : "Available"}
+          </Badge>
+        );
+      },
+    },
   ], []);
 
 
@@ -534,8 +577,8 @@ const RecentPatientTable = () => {
           </CardTitle>
         </CardHeader>
 
-        <Link to="/manage-pacs" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <p className="text-sm text-muted-foreground">View All Patients</p>
+        <Link to="/manage-cases" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">View All Cases</p>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
@@ -556,8 +599,8 @@ const RecentPatientTable = () => {
           rowSelection={rowSelection}
           onRowSelectionChange={setRowSelection}
           enableRowSelection={true}
-          emptyMessage="No patients found"
-          loadingMessage="Loading patients..."
+          emptyMessage="No Cases found"
+          loadingMessage="Loading Cases..."
           showBorder={true}
           containerClassName=""
           showColumnToggle={true}

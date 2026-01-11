@@ -28,7 +28,7 @@ const COLUMN_CONFIG: ColumnConfig[] = [
   { id: 'pac_patinet_id', label: 'Patient ID' },
   { id: 'age', label: 'Age' },
   { id: 'sex', label: 'Sex' },
-  { id: 'study_description', label: 'Study Description' },
+  { id: 'case_description', label: 'Case Description' },
   { id: 'treatment_type', label: 'Treatment Type' },
   { id: 'status', label: 'Status' },
   { id: 'referring_doctor', label: 'Referring Doctor' },
@@ -123,7 +123,7 @@ const ColumnVisibilityModal = ({
               className="pl-9 h-9 text-sm bg-white border-slate-200 focus-visible:ring-blue-500"
             />
           </div>
-          
+
           <div className="flex items-center justify-between mt-3">
             <span className="text-xs text-slate-500">
               {visibleCount} of {COLUMN_CONFIG.length} visible

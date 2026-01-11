@@ -11,7 +11,7 @@ interface Series {
     description: string;
     modality: string;
     series_number: number;
-    study_id: string;
+    case_id: string;
     image_count: number;
 }
 
@@ -32,15 +32,15 @@ interface AssignedTo {
 
 interface CaseData {
     _id: string;
-    study_uid: string;
+    case_uid: string;
     accession_number: string;
     body_part: string;
     description: string;
     hospital_id: string;
     modality: string;
     patient_id: string;
-    study_date: string;
-    study_time: string;
+    case_date: string;
+    case_time: string;
     assigned_to: AssignedTo;
     case_type: string;
     priority: string;
@@ -232,7 +232,7 @@ export function ViewerLayout() {
             <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-                    <p className="text-gray-400">Loading study...</p>
+                    <p className="text-gray-400">Loading case...</p>
                 </div>
             </div>
         );
@@ -242,7 +242,7 @@ export function ViewerLayout() {
         return (
             <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
                 <div className="text-center">
-                    <p className="text-red-400 mb-2">Error loading study</p>
+                    <p className="text-red-400 mb-2">Error loading case</p>
                     <p className="text-gray-500 text-sm">{error}</p>
                 </div>
             </div>

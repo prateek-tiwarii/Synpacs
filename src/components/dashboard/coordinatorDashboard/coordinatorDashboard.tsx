@@ -10,6 +10,8 @@ interface HospitalStats {
   total_assigned_cases: number;
   total_unassigned_cases: number;
   total_critical_cases: number;
+  total_reported_cases: number;
+  total_unreported_cases: number;
 }
 
 const CoordinatorDashboard = () => {
@@ -24,6 +26,7 @@ const CoordinatorDashboard = () => {
       setError(null);
       const response = await apiService.getHospitalStats();
       if (response.success && response.data) {
+        // @ts-ignore
         setStatsData(response.data);
       }
     } catch (err: any) {
@@ -63,15 +66,15 @@ const CoordinatorDashboard = () => {
       bg: 'bg-red-50'
     },
     {
-      title: 'Unreported',
-      value: 'N/A',
+      title: 'Reported',
+      value: loading ? '...' : (statsData?.total_reported_cases?.toString() || '0'),
       icon: FileText,
       color: 'text-blue-600',
       bg: 'bg-blue-50'
     },
     {
-      title: 'Routine',
-      value: 'N/A',
+      title: 'Unreported',
+      value: loading ? '...' : (statsData?.total_unreported_cases?.toString() || '0'),
       icon: Activity,
       color: 'text-purple-600',
       bg: 'bg-purple-50'

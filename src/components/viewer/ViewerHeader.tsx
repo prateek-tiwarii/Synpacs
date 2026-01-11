@@ -21,7 +21,8 @@ import {
     LayoutGrid,
     RefreshCw,
     Crosshair,
-    Layers
+    Layers,
+    ScrollText
 } from 'lucide-react';
 
 interface ToolButtonProps {
@@ -47,7 +48,7 @@ const ToolButton = ({ icon, label, active = false, onClick, disabled = false }: 
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
-import { useViewerContext, type ViewerTool } from '../ViewerLayout';
+import { useViewerContext } from '../ViewerLayout';
 import { formatDate } from '@/lib/helperFunctions';
 
 
@@ -60,7 +61,6 @@ const ViewerHeader = () => {
         activeTool,
         setActiveTool,
         setViewTransform,
-        annotations,
         setAnnotations,
         undo,
         redo,
@@ -74,8 +74,8 @@ const ViewerHeader = () => {
     const patientName = caseData.patient?.name || 'Unknown';
     const mrn = caseData.patient?.patient_id || 'N/A';
     const dob = formatDate(caseData.patient?.date_of_birth || '');
-    const studyDesc = caseData.description || 'N/A';
-    const studyDate = formatDate(caseData.study_date || '');
+    const caseDesc = caseData.description || 'N/A';
+    const caseDate = formatDate(caseData.case_date || '');
 
     // Format DOB if it's YYYYMMDD or similar, depending on API. Assuming string for now.
     // Format Date if needed.
@@ -121,13 +121,13 @@ const ViewerHeader = () => {
                     <span className="text-white font-semibold">PATIENT: {patientName.toUpperCase()}</span>
                     <span>MRN: {mrn}</span>
                     <span>DOB: {dob}</span>
-                    <span>Study: {studyDesc}</span>
-                    <span>Date: {studyDate}</span>
+                    <span>Case: {caseDesc}</span>
+                    <span>Date: {caseDate}</span>
                 </div>
                 <div className="flex items-center gap-4">
                     <span className="text-green-400">● Connected</span>
                     <span>Series: {seriesNumber}/{totalSeries}</span>
-                    <span>Image: {currentImage}/{imageCount}</span>
+                    <span>Image: {currentImage}/{imageCount} </span>
                 </div>
             </div>
 
@@ -229,6 +229,17 @@ const ViewerHeader = () => {
                 <div className="flex items-center gap-0.5">
                     <ToolButton icon={<Undo2 size={18} />} label="Undo" onClick={undo} disabled={!canUndo} />
                     <ToolButton icon={<Redo2 size={18} />} label="Redo" onClick={redo} disabled={!canRedo} />
+                </div>
+
+                <ToolDivider />
+
+                <div className="flex items-center gap-0.5">
+                    <ToolButton
+                        icon={<ScrollText size={18} />}
+                        label="Report"
+                        onClick={() => window.open(`/case/${caseData._id}/report`, '_window')}
+                    // onClick={() => window.open(`/case/${caseData._id}/report`, '_blank', 'width=1200,height=800')}
+                    />
                 </div>
 
                 <div className="flex-1" />

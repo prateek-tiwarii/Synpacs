@@ -16,6 +16,7 @@ export interface User {
   createdAt: string
   updatedAt: string
   __v: number
+  signature_url?: string
 }
 
 interface UserResponse {

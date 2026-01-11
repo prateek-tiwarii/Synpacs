@@ -20,25 +20,26 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     body_part: true,
     description: true,
     modality: true,
-    accession_number: true,
-    study_date_time: true,
+    case_date_time: true,
     case_type: true,
     priority: true,
     series_count: true,
     instance_count: true,
+    reported: true,
     // Hide all other columns
+    accession_number: false,
     pac_patinet_id: false,
     age: false,
     sex: false,
-    study_description: false,
+    case_description: false,
     treatment_type: false,
     status: false,
     referring_doctor: false,
     date_of_capture: false,
     pac_images_count: false,
     hospital_id: false,
-    study_date: false,
-    study_time: false,
+    case_date: false,
+    case_time: false,
 };
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
@@ -49,40 +50,6 @@ interface AssignedPatientsTableProps {
     setDocumentDialogOpen: (open: boolean) => void;
     filters?: FilterState;
 }
-
-// interface Case {
-//     _id: string;
-//     study_uid: string;
-//     accession_number: string;
-//     body_part: string;
-//     description: string;
-//     hospital_id: string;
-//     modality: string;
-//     patient_id: string;
-//     study_date: string;
-//     study_time: string;
-//     assigned_to: string;
-//     case_type: string;
-//     priority: string;
-//     status: string;
-//     updatedAt: string;
-//     patient: {
-//         _id: string;
-//         patient_id: string;
-//         date_of_birth: string;
-//         name: string;
-//         sex: string;
-//     };
-// }
-
-// interface AssignedCasesResponse {
-//     success: boolean;
-//     message: string;
-//     count: number;
-//     data: {
-//         cases: Case[];
-//     };
-// }
 
 const AssignedPatientsTable = ({
     setSelectedPatient,
@@ -154,8 +121,8 @@ const AssignedPatientsTable = ({
                 if (response.success && response.data) {
                     // Map API response to match Patient interface
                     const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
-                        // Format study_date to readable format (YYYYMMDD -> YYYY-MM-DD)
-                        const formatStudyDate = (dateStr: string): string => {
+                        // Format case_date to readable format (YYYYMMDD -> YYYY-MM-DD)
+                        const formatCaseDate = (dateStr: string): string => {
                             if (!dateStr || dateStr.length !== 8) return dateStr;
                             return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
                         };
@@ -191,15 +158,15 @@ const AssignedPatientsTable = ({
                             hospital_id: caseItem.hospital_id || '',
                             hospital_name: caseItem.hospital_name || '',
                             status: caseItem.status || '',
-                            study_description: caseItem.description || '',
+                            case_description: caseItem.description || '',
                             description: caseItem.description || '',
                             body_part: caseItem.body_part || '',
                             accession_number: caseItem.accession_number || '',
-                            study_uid: caseItem.study_uid || '',
+                            case_uid: caseItem.case_uid || '',
                             modality: caseItem.modality || '',
-                            study_date: caseItem.study_date || '',
-                            study_time: caseItem.study_time || '',
-                            date_of_capture: formatStudyDate(caseItem.study_date),
+                            case_date: caseItem.case_date || '',
+                            case_time: caseItem.case_time || '',
+                            date_of_capture: formatCaseDate(caseItem.case_date),
                             priority: caseItem.priority || '',
                             case_type: caseItem.case_type || '',
                             assigned_to: caseItem.assigned_to || '',
@@ -211,6 +178,7 @@ const AssignedPatientsTable = ({
                             updatedAt: caseItem.updatedAt || '',
                             isBookmarked: caseItem.isBookmarked || false,
                             notes: caseItem.notes || [],
+                            attached_report: caseItem.attached_report || null,
                         } as Patient;
                     });
                     setPatients(mappedPatients);
@@ -355,12 +323,12 @@ const AssignedPatientsTable = ({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button 
+                                <button
                                     onClick={() => {
                                         const id = props.row.original._id;
                                         // Open both tabs synchronously with named targets
-                                        window.open(`/studies/${id}/viewer`, `viewer_${id}`);
-                                        window.open(`/studies/${id}/report`, `report_${id}`);
+                                        window.open(`/case/${id}/viewer`, `viewer_${id}`);
+                                        window.open(`/case/${id}/report`, `report_${id}`);
                                     }}
                                     className="p-1 hover:bg-blue-50 rounded cursor-pointer"
                                 >
@@ -421,16 +389,12 @@ const AssignedPatientsTable = ({
             header: 'Modality',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
-        columnHelper.accessor('accession_number', {
-            header: 'Accession Number',
-            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-acc`} />,
-        }),
         columnHelper.display({
-            id: 'study_date_time',
-            header: 'Study Date/Time',
+            id: 'case_date_time',
+            header: 'Case Date/Time',
             cell: (props) => {
                 // Format date from YYYYMMDD to readable format
-                const dateStr = props.row.original.study_date || '';
+                const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
                 if (dateStr && dateStr.length === 8) {
                     const year = dateStr.substring(0, 4);
@@ -440,7 +404,7 @@ const AssignedPatientsTable = ({
                 }
 
                 // Format time from HHMMSS.milliseconds to HH:MM:SS
-                const timeStr = props.row.original.study_time || '';
+                const timeStr = props.row.original.case_time || '';
                 let formattedTime = '';
                 if (timeStr) {
                     const timePart = timeStr.split('.')[0];
@@ -474,6 +438,25 @@ const AssignedPatientsTable = ({
         columnHelper.accessor('instance_count', {
             header: 'Instance Count',
             cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-instance`} />,
+        }),
+        columnHelper.display({
+            id: 'reported',
+            header: 'Reported',
+            cell: (props) => {
+                const attachedReport = (props.row.original as any).attached_report;
+                if (attachedReport) {
+                    return (
+                        <Link
+                            to={`/case/${props.row.original._id}/report`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                        >
+                            {attachedReport.is_draft ? 'Draft' : 'Available'}
+                        </Link>
+                    );
+                }
+                return <span className="text-gray-400">-</span>;
+            },
         }),
     ], []);
 

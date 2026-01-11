@@ -18,8 +18,8 @@ interface BookmarkedCase {
     description: string;
     modality: string;
     accession_number: string;
-    study_date: string;
-    study_time: string;
+    case_date: string;
+    case_time: string;
     case_type: string;
     priority: string;
     status: string;
@@ -38,7 +38,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     description: true,
     modality: true,
     accession_number: true,
-    study_date_time: true,
+    case_date_time: true,
     case_type: true,
     priority: true,
     status: true,
@@ -107,8 +107,8 @@ const Bookmark = () => {
                         description: caseItem.description || '-',
                         modality: caseItem.modality || '-',
                         accession_number: caseItem.accession_number || '-',
-                        study_date: caseItem.study_date || '',
-                        study_time: caseItem.study_time || '',
+                        case_date: caseItem.case_date || '',
+                        case_time: caseItem.case_time || '',
                         case_type: caseItem.case_type || '-',
                         priority: caseItem.priority || '-',
                         status: caseItem.status || '-',
@@ -255,10 +255,10 @@ const Bookmark = () => {
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-acc`} />,
         }),
         columnHelper.display({
-            id: 'study_date_time',
-            header: 'Study Date/Time',
+            id: 'case_date_time',
+            header: 'case Date/Time',
             cell: (props) => {
-                const dateStr = props.row.original.study_date || '';
+                const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
                 if (dateStr && dateStr.length === 8) {
                     const year = dateStr.substring(0, 4);
@@ -267,7 +267,7 @@ const Bookmark = () => {
                     formattedDate = `${year}-${month}-${day}`;
                 }
 
-                const timeStr = props.row.original.study_time || '';
+                const timeStr = props.row.original.case_time || '';
                 let formattedTime = '';
                 if (timeStr) {
                     const timePart = timeStr.split('.')[0];

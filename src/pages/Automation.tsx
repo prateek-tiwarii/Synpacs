@@ -29,7 +29,7 @@ const MOCK_DATA = {
     { id: 2, name: 'Critical' },
     { id: 3, name: 'Routine' }
   ],
-  studyTypes: [
+  caseTypes: [
     { id: 1, name: 'Brain' },
     { id: 2, name: 'Head' },
     { id: 3, name: 'Spine' },
@@ -141,7 +141,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
   const [selectedCenters, setSelectedCenters] = useState(rule?.selectedCenters || []);
   const [selectedModalities, setSelectedModalities] = useState(rule?.selectedModalities || []);
   const [selectedPriorities, setSelectedPriorities] = useState(rule?.selectedPriorities || []);
-  const [selectedStudyTypes, setSelectedStudyTypes] = useState(rule?.selectedStudyTypes || []);
+  const [selectedCaseTypes, setSelectedCaseTypes] = useState(rule?.selectedCaseTypes || []);
 
   const [startDate, setStartDate] = useState(rule?.startDate || '');
   const [endDate, setEndDate] = useState(rule?.endDate || '');
@@ -155,7 +155,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
 
   const [centers] = useState(MOCK_DATA.centers);
   const [modalities, setModalities] = useState(MOCK_DATA.modalities);
-  const [studyTypes, setStudyTypes] = useState(MOCK_DATA.studyTypes);
+  const [caseTypes, setCaseTypes] = useState(MOCK_DATA.caseTypes);
 
   const handleSave = () => {
     const ruleData = {
@@ -165,7 +165,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
       selectedCenters,
       selectedModalities,
       selectedPriorities,
-      selectedStudyTypes,
+      selectedCaseTypes,
       startDate,
       endDate,
       startTime,
@@ -180,7 +180,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
   };
 
   const hasConditions = selectedCenters.length > 0 || selectedModalities.length > 0 ||
-    selectedPriorities.length > 0 || selectedStudyTypes.length > 0;
+    selectedPriorities.length > 0 || selectedCaseTypes.length > 0;
   const hasAssignment = selectedDoctor && (caseCount || allCases);
 
   return (
@@ -268,16 +268,16 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
           />
 
           <MultiSelectList
-            title="Study Type(s)"
-            items={studyTypes}
-            selectedItems={selectedStudyTypes}
-            setSelectedItems={setSelectedStudyTypes}
+            title="Case Type(s)"
+            items={caseTypes}
+            selectedItems={selectedCaseTypes}
+            setSelectedItems={setSelectedCaseTypes}
             searchPlaceholder="Search..."
             onAddNew={(name: any) => {
-              const newStudyType = { id: Date.now(), name };
-              setStudyTypes([...studyTypes, newStudyType]);
+              const newCaseType = { id: Date.now(), name };
+              setCaseTypes([...caseTypes, newCaseType]);
             }}
-            addNewPlaceholder="Add new study type"
+            addNewPlaceholder="Add new case type"
           />
         </div>
 
@@ -401,7 +401,7 @@ const RuleForm = ({ rule, onClose, onSave }: any) => {
                   {hasConditions ? (
                     <>
                       Conditions set for {selectedCenters.length} center(s), {selectedModalities.length} modality(ies),
-                      {' '}{selectedPriorities.length} priority(ies), {selectedStudyTypes.length} study type(s)
+                      {' '}{selectedPriorities.length} priority(ies), {selectedCaseTypes.length} case type(s)
                     </>
                   ) : (
                     'No conditions set'

@@ -8,11 +8,11 @@ interface Series {
     description: string;
     modality: string;
     series_number: number;
-    study_id: string;
+    case_id: string;
     image_count: number;
 }
 
-const formatStudyDate = (dateStr: string) => {
+const formatCaseDate = (dateStr: string) => {
     if (!dateStr || dateStr.length !== 8) return dateStr;
     const year = dateStr.substring(0, 4);
     const month = dateStr.substring(4, 6);
@@ -72,15 +72,15 @@ const SeriesThumbnail = ({ series, isSelected, onClick }: SeriesThumbnailProps) 
     </div>
 );
 
-interface StudyAccordionProps {
+interface CaseAccordionProps {
     title: string;
-    studyDate: string;
+    caseDate: string;
     seriesCount: number;
     children: React.ReactNode;
     defaultOpen?: boolean;
 }
 
-const StudyAccordion = ({ title, studyDate, seriesCount, children, defaultOpen = true }: StudyAccordionProps) => {
+const CaseAccordion = ({ title, caseDate, seriesCount, children, defaultOpen = true }: CaseAccordionProps) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
 
     return (
@@ -96,7 +96,7 @@ const StudyAccordion = ({ title, studyDate, seriesCount, children, defaultOpen =
                 )}
                 <div className="flex-1 min-w-0">
                     <p className="text-sm text-white font-medium truncate">{title}</p>
-                    <p className="text-xs text-gray-400">{studyDate} • {seriesCount} series</p>
+                    <p className="text-xs text-gray-400">{caseDate} • {seriesCount} series</p>
                 </div>
             </button>
             {isOpen && (
@@ -123,15 +123,15 @@ const ViewerSidebar = () => {
         <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-3 border-b border-gray-700">
-                <h2 className="text-sm font-semibold text-white">Study Navigator</h2>
+                <h2 className="text-sm font-semibold text-white">Case Navigator</h2>
                 <p className="text-xs text-gray-400 mt-1">{caseData.series_count} series • {caseData.instance_count} images</p>
             </div>
 
             {/* Series List */}
             <div className="flex-1 overflow-y-auto">
-                <StudyAccordion
+                <CaseAccordion
                     title={caseData.description}
-                    studyDate={formatStudyDate(caseData.study_date)}
+                    caseDate={formatCaseDate(caseData.case_date)}
                     seriesCount={caseData.series_count}
                     defaultOpen
                 >
@@ -147,7 +147,7 @@ const ViewerSidebar = () => {
                                 />
                             ))}
                     </div>
-                </StudyAccordion>
+                </CaseAccordion>
             </div>
 
             {/* Footer with info */}

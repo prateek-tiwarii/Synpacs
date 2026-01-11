@@ -357,7 +357,6 @@ class ApiService {
 
   async createReport(reportData: {
     case_id: string;
-    study_uid: string;
     patient_id: string;
     assigned_to?: string;
     hospital_id?: string;
@@ -394,6 +393,45 @@ class ApiService {
     return this.request(`/api/v1/reports/case/${caseId}`, {
       method: 'GET',
     })
+  }
+
+  async getReportById(reportId: string) {
+    return this.request(`/api/v1/reports/${reportId}`, {
+      method: 'GET',
+    })
+  }
+
+  async downloadReport(reportId: string) {
+    return this.request(`/api/v1/reports/${reportId}/download`, {
+      method: 'GET',
+    })
+  }
+
+  async uploadSignature(file: File) {
+    const token = getCookie('jwt')
+    const formData = new FormData()
+    formData.append('signature', file)
+
+    const response = await fetch(`${this.baseUrl}/api/v1/doctor/upload-signature`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    })
+
+    if (response.status === 401) {
+      removeCookie('jwt')
+      window.location.href = '/login'
+      throw new Error('Unauthorized')
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Upload failed' }))
+      throw new Error(error.message || 'Upload failed')
+    }
+
+    return response.json()
   }
 }
 

@@ -42,7 +42,6 @@ const DoctorAvailablity = () => {
   const fetchAvailableDoctors = async () => {
     try {
       const response = await apiService.getAvailableDoctors() as DoctorResponse;
-      console.log('response', response);
       if (response.success) {
         setDoctors(response.data || []);
       }
@@ -83,13 +82,13 @@ const DoctorAvailablity = () => {
       <CardContent className="p-0">
         <div className="max-h-[500px] overflow-y-auto">
           {doctors.length === 0 ? (
-            <div className="p-6 text-center text-sm text-gray-500">
+            <div className="p-4 text-center text-sm text-gray-500">
               No doctors available
             </div>
           ) : (
             <div className="divide-y divide-gray-200">
               {doctors.map((doctor) => (
-                <div key={doctor._id} className="p-4 hover:bg-gray-50 transition-colors">
+                <div key={doctor._id} className="p-2 hover:bg-gray-50 transition-colors">
                   {/* Doctor Name and Status */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">

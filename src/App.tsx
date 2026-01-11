@@ -7,7 +7,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAppSelector } from '@/store/hooks'
 import './App.css'
 import UserCreate from './pages/UserCreate'
-import Pacs from './pages/Pacs'
+import Pacs from './pages/ManagaeCases'
 import SinglePatient from './pages/SinglePatient'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
@@ -18,7 +18,7 @@ import { ViewerLayout } from '@/components/ViewerLayout'
 import { ReportLayout } from '@/components/ReportLayout'
 import { Toaster } from 'react-hot-toast'
 import Bookmark from './pages/Bookmark'
-import StudyViewer from './pages/StudyViewer'
+import CaseViewer from './pages/CaseViewer'
 import Report from './pages/Report'
 
 
@@ -51,7 +51,7 @@ function App() {
             }
           />
 
-          {/* Viewer Layout - separate fullscreen layout for study viewer */}
+          {/* Viewer Layout - separate fullscreen layout for case viewer */}
           <Route
             element={
               <ProtectedRoute>
@@ -59,7 +59,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="/studies/:id/viewer" element={<StudyViewer />} />
+            <Route path="/case/:id/viewer" element={<CaseViewer />} />
           </Route>
 
           {/* Report Layout - separate layout for report editor */}
@@ -70,7 +70,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="/studies/:id/report" element={<Report />} />
+            <Route path="/case/:id/report" element={<Report />} />
           </Route>
 
           <Route
@@ -88,7 +88,7 @@ function App() {
             <Route path="/bookmarks" element={<Bookmark />} />
             <Route path="/research" element={<Research />} />
             <Route path="/manage-users" element={<UserCreate />} />
-            <Route path="/manage-pacs" element={<Pacs />} />
+            <Route path="/manage-cases" element={<Pacs />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
           </Route>
 

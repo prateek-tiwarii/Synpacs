@@ -57,7 +57,6 @@ const InstitutionsManager = () => {
 
   const handleCreateInstitution = () => {
     // Add institution logic here
-    console.log('Creating institution:', formData);
     setShowModal(false);
     handleReset();
   };

@@ -6,9 +6,9 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { 
-    $getRoot, 
-    $createParagraphNode, 
+import {
+    $getRoot,
+    $createParagraphNode,
     $createTextNode,
 } from 'lexical';
 import type { EditorState, LexicalEditor } from 'lexical';
@@ -124,7 +124,7 @@ function SetContentPlugin({ content }: SetContentPluginProps) {
             editor.update(() => {
                 const root = $getRoot();
                 root.clear();
-                
+
                 // Split content by newlines and create paragraphs
                 const lines = content.split('\n');
                 lines.forEach((line) => {
@@ -153,6 +153,7 @@ export interface ReportEditorRef {
     getHtml: () => string;
     getEditorState: () => Record<string, any>;
     setContent: (content: string) => void;
+    setEditorState: (state: Record<string, any>) => void;
     focus: () => void;
 }
 
@@ -217,6 +218,10 @@ const EditorCore = forwardRef<ReportEditorRef, EditorCoreProps>(
                     });
                 });
             },
+            setEditorState: (state: Record<string, any>) => {
+                const editorState = editor.parseEditorState(JSON.stringify(state));
+                editor.setEditorState(editorState);
+            },
             focus: () => {
                 editor.focus();
             },
@@ -230,25 +235,27 @@ const EditorCore = forwardRef<ReportEditorRef, EditorCoreProps>(
                 <HistoryPlugin />
                 <ListPlugin />
                 <TabIndentationPlugin />
-                
+
                 <ScrollArea className="flex-1">
                     <div className="p-4 min-h-full">
                         {/* A4-like paper container - optimized for space */}
                         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-sm min-h-200 p-8 text-black">
-                            <RichTextPlugin
-                                contentEditable={
-                                    <ContentEditable
-                                        className="outline-none min-h-175 leading-relaxed prose prose-sm max-w-none"
-                                        style={{ fontFamily: 'Times New Roman, serif', fontSize: '13px' }}
-                                    />
-                                }
-                                placeholder={
-                                    <div className="text-slate-400 absolute pointer-events-none select-none" style={{ top: '32px', left: '32px' }}>
-                                        {placeholder}
-                                    </div>
-                                }
-                                ErrorBoundary={LexicalErrorBoundary}
-                            />
+                            <div className="relative">
+                                <RichTextPlugin
+                                    contentEditable={
+                                        <ContentEditable
+                                            className="outline-none min-h-175 leading-relaxed prose prose-sm max-w-none"
+                                            style={{ fontFamily: 'Times New Roman, serif', fontSize: '13px' }}
+                                        />
+                                    }
+                                    placeholder={
+                                        <div className="text-slate-400 absolute top-0 left-0 pointer-events-none select-none" style={{ fontFamily: 'Times New Roman, serif', fontSize: '13px' }}>
+                                            {placeholder}
+                                        </div>
+                                    }
+                                    ErrorBoundary={LexicalErrorBoundary}
+                                />
+                            </div>
                         </div>
                     </div>
                 </ScrollArea>
@@ -266,7 +273,7 @@ export const ReportEditor = forwardRef<ReportEditorRef, ReportEditorProps>(
 
         return (
             <LexicalComposer initialConfig={editorConfig}>
-                <div className="flex flex-col h-full bg-slate-200 dark:bg-slate-900">
+                <div className="flex flex-col h-full bg-gray-800">
                     <EditorCore
                         ref={ref}
                         initialContent={initialContent}

@@ -12,15 +12,15 @@ interface PatientResult {
   age: number;
   sex: string;
   modality: string;
-  study: string;
+  case: string;
   center: string;
   reportedOn: string;
 }
 
 const dummyData: PatientResult[] = [
-  { id: '1', patientId: 'PT-2024-001', name: 'John Smith', age: 45, sex: 'Male', modality: 'CT', study: 'Chest CT with contrast', center: 'City Hospital', reportedOn: '2024-01-15' },
-  { id: '2', patientId: 'PT-2024-002', name: 'Sarah Johnson', age: 32, sex: 'Female', modality: 'MRI', study: 'Brain MRI without contrast', center: 'Metro Imaging', reportedOn: '2024-01-16' },
-  { id: '3', patientId: 'PT-2024-003', name: 'Michael Brown', age: 67, sex: 'Male', modality: 'X-ray', study: 'Lumbar spine X-ray', center: 'Sunrise Center', reportedOn: '2024-01-17' },
+  { id: '1', patientId: 'PT-2024-001', name: 'John Smith', age: 45, sex: 'Male', modality: 'CT', case: 'Chest CT with contrast', center: 'City Hospital', reportedOn: '2024-01-15' },
+  { id: '2', patientId: 'PT-2024-002', name: 'Sarah Johnson', age: 32, sex: 'Female', modality: 'MRI', case: 'Brain MRI without contrast', center: 'Metro Imaging', reportedOn: '2024-01-16' },
+  { id: '3', patientId: 'PT-2024-003', name: 'Michael Brown', age: 67, sex: 'Male', modality: 'X-ray', case: 'Lumbar spine X-ray', center: 'Sunrise Center', reportedOn: '2024-01-17' },
 ];
 
 interface SearchResultsProps {
@@ -56,7 +56,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ onExport }) => {
               <TableHead>Age</TableHead>
               <TableHead>Sex</TableHead>
               <TableHead>Modality</TableHead>
-              <TableHead>Study</TableHead>
+              <TableHead>Case</TableHead>
               <TableHead>Center</TableHead>
               <TableHead>Reported On</TableHead>
             </TableRow>
@@ -72,7 +72,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ onExport }) => {
                 <TableCell>{patient.age}</TableCell>
                 <TableCell>{patient.sex}</TableCell>
                 <TableCell>{patient.modality}</TableCell>
-                <TableCell>{patient.study}</TableCell>
+                <TableCell>{patient.case}</TableCell>
                 <TableCell>{patient.center}</TableCell>
                 <TableCell>{patient.reportedOn}</TableCell>
               </TableRow>

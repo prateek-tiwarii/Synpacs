@@ -34,7 +34,6 @@ const DoctorDashboard = () => {
 
   const onFilterChange = (newFilters: FilterState) => {
     setFilters(newFilters);
-    console.log('Filters applied:', newFilters);
   };
 
   const onFilterReset = () => {
@@ -55,7 +54,6 @@ const DoctorDashboard = () => {
       },
     });
     setActivePeriod('1D');
-    console.log('Filters reset');
   };
 
 

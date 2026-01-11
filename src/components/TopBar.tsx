@@ -43,7 +43,6 @@ export function TopBar() {
     const fetchHospitals = async () => {
       try {
         const response = await apiService.request<{ data: Hospital[] }>('/api/v1/auth/get-user-hospitals')
-        console.log('User Hospitals Response:', response)
         if (response.data) {
           setHospitals(response.data)
           // Select the first hospital by default if available
@@ -154,13 +153,13 @@ export function TopBar() {
               </div>
               <DropdownMenuItem className="p-3 cursor-pointer">
                 <div>
-                  <p className="text-sm font-medium">New critical study assigned</p>
+                  <p className="text-sm font-medium">New critical case assigned</p>
                   <p className="text-xs text-gray-500 mt-1">CT Brain - John Smith</p>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem className="p-3 cursor-pointer">
                 <div>
-                  <p className="text-sm font-medium">Study completed</p>
+                  <p className="text-sm font-medium">Case completed</p>
                   <p className="text-xs text-gray-500 mt-1">MRI Spine - Sarah Johnson</p>
                 </div>
               </DropdownMenuItem>

@@ -220,7 +220,6 @@ export function DicomViewer({ instances, className = '' }: DicomViewerProps) {
         // if (!prefetchStarted.current) { 
         if (!prefetchStarted.current && currentImageIndex > 0) {
             prefetchStarted.current = true;
-            console.log('Starting background pre-fetch of series images...');
 
             const queue = sortedInstances.filter(inst => !imageCache.current.has(inst.instance_uid));
 

@@ -17,7 +17,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
         <DialogHeader>
           <DialogTitle>Export - Patient Results</DialogTitle>
         </DialogHeader>
-        
+
         <div className="grid gap-6 py-4">
           {/* File Format */}
           <div className="space-y-3">
@@ -59,23 +59,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({ open, onOpenChange }) 
                 <Label htmlFor="modality">Modality</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox id="study" defaultChecked />
-                <Label htmlFor="study">Study</Label>
+                <Checkbox id="case" defaultChecked />
+                <Label htmlFor="case">Case</Label>
               </div>
             </div>
           </div>
         </div>
 
         <DialogFooter className="flex items-center justify-between sm:justify-between">
-            <span className="text-sm text-muted-foreground">Exporting all 3 filtered row(s)</span>
-            <div className="flex gap-2">
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancel
-                </Button>
-                <Button onClick={() => onOpenChange(false)}>
-                    Download
-                </Button>
-            </div>
+          <span className="text-sm text-muted-foreground">Exporting all 3 filtered row(s)</span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => onOpenChange(false)}>
+              Download
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

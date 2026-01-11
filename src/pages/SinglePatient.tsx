@@ -32,8 +32,8 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-interface Study {
-    study_uid: string;
+interface Case {
+    case_uid: string;
     body_part: string;
 }
 
@@ -83,7 +83,7 @@ interface PatientData {
     sex: string;
     age: string;
     center: string;
-    study: Study;
+    case: Case;
     treatment_type: string;
     date_of_capture: string;
     referring_doctor: string;
@@ -415,7 +415,7 @@ const SinglePatient = () => {
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Body Part</span>
-                                <span className="text-gray-900">{patient.study?.body_part || "N/A"}</span>
+                                <span className="text-gray-900">{patient.case?.body_part || "N/A"}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Referring</span>

@@ -50,7 +50,7 @@ const ToolbarButton = ({ icon, active = false, onClick, disabled = false, title 
         onClick={onClick}
         disabled={disabled}
         title={title}
-        className={`h-7 w-7 p-0 text-white hover:text-white ${active ? 'bg-cyan-500/30 text-cyan-300' : 'hover:bg-slate-600'} ${disabled ? 'opacity-40' : ''}`}
+        className={`h-7 w-7 p-0 text-gray-300 hover:text-white ${active ? 'bg-blue-500/30 text-blue-300' : 'hover:bg-gray-700'} ${disabled ? 'opacity-40' : ''}`}
     >
         {icon}
     </Button>
@@ -151,7 +151,7 @@ export function ToolbarPlugin() {
     );
 
     return (
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b bg-slate-700 border-slate-600 flex-wrap">
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b bg-gray-900 border-gray-700 flex-wrap">
             {/* Undo/Redo */}
             <div className="flex items-center gap-0.5">
                 <ToolbarButton
@@ -168,11 +168,11 @@ export function ToolbarPlugin() {
                 />
             </div>
 
-            <Separator orientation="vertical" className="h-5 mx-1 bg-slate-300 dark:bg-slate-600" />
+            <Separator orientation="vertical" className="h-5 mx-1 bg-gray-600" />
 
             {/* Font Family */}
             <Select value={fontFamily} onValueChange={applyFontFamily}>
-                <SelectTrigger className="w-[100px] h-7 text-xs border-slate-500 bg-slate-600 text-white">
+                <SelectTrigger className="w-[100px] h-7 text-xs border-gray-600 bg-gray-700 text-gray-200">
                     <SelectValue placeholder="Font" />
                 </SelectTrigger>
                 <SelectContent>
@@ -186,7 +186,7 @@ export function ToolbarPlugin() {
 
             {/* Font Size */}
             <Select value={fontSize} onValueChange={applyFontSize}>
-                <SelectTrigger className="w-[60px] h-7 text-xs border-slate-500 bg-slate-600 text-white">
+                <SelectTrigger className="w-[60px] h-7 text-xs border-gray-600 bg-gray-700 text-gray-200">
                     <SelectValue placeholder="Size" />
                 </SelectTrigger>
                 <SelectContent>
@@ -198,7 +198,7 @@ export function ToolbarPlugin() {
                 </SelectContent>
             </Select>
 
-            <Separator orientation="vertical" className="h-5 mx-1 bg-slate-300 dark:bg-slate-600" />
+            <Separator orientation="vertical" className="h-5 mx-1 bg-gray-600" />
 
             {/* Text Formatting */}
             <div className="flex items-center gap-0.5">
@@ -228,7 +228,7 @@ export function ToolbarPlugin() {
                 />
             </div>
 
-            <Separator orientation="vertical" className="h-5 mx-1 bg-slate-300 dark:bg-slate-600" />
+            <Separator orientation="vertical" className="h-5 mx-1 bg-gray-600" />
 
             {/* Subscript/Superscript */}
             <div className="flex items-center gap-0.5">
@@ -246,7 +246,7 @@ export function ToolbarPlugin() {
                 />
             </div>
 
-            <Separator orientation="vertical" className="h-5 mx-1 bg-slate-300 dark:bg-slate-600" />
+            <Separator orientation="vertical" className="h-5 mx-1 bg-gray-600" />
 
             {/* Alignment */}
             <div className="flex items-center gap-0.5">

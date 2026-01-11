@@ -40,8 +40,8 @@ interface AssignedDoctor {
   full_name: string;
 }
 
-interface Study {
-  study_uid: string;
+interface Case {
+  case_uid: string;
   body_part: string;
 }
 
@@ -52,9 +52,9 @@ interface Patient {
   dob: string; // Date of birth in format YYYYMMDD
   hospital_id: string;
   sex: string;
-  study_description: string;
+  case_description: string;
   age: string;
-  study: Study | string;
+  case: Case | string;
   treatment_type: string;
   date_of_capture: string;
   time_of_capture: string;
@@ -72,23 +72,24 @@ interface Patient {
 interface CasePatient {
   _id: string;
   patient_id: string;
-  date_of_birth: string;
+  dob: string;
   name: string;
   sex: string;
 }
 
 interface PacCase {
   _id: string;
-  study_uid: string;
+  case_uid: string;
   accession_number: string;
   body_part: string;
   description: string;
   hospital_id: string;
   modality: string;
   patient_id: string;
-  study_date: string;
-  study_time: string;
+  case_date: string;
+  case_time: string;
   patient: CasePatient;
+  attached_report: string | null;
   [key: string]: any; // Allow dynamic fields
 }
 
@@ -209,12 +210,14 @@ const flattenCaseData = (cases: PacCase[]): any[] => {
       // Flatten patient data to top level
       name: caseItem.patient?.name || "",
       sex: caseItem.patient?.sex || "",
-      date_of_birth: caseItem.patient?.date_of_birth || "",
-      age: calculateAge(caseItem.patient?.date_of_birth || ""),
-      // Map description to study_description for compatibility
-      study_description: caseItem.description || "",
+      date_of_birth: caseItem.patient?.dob || "",
+      age: calculateAge(caseItem.patient?.dob || ""),
+      // Map description to case_description for compatibility
+      case_description: caseItem.description || "",
       // Extract assigned_to doctor name
       assigned_to: assignedDoctorName,
+      // Keep attached_report
+      attached_report: caseItem.attached_report,
     };
     return flattened;
   });
@@ -225,8 +228,12 @@ const getAllKeys = (data: any[]): string[] => {
   const keys = new Set<string>();
   data.forEach((item) => {
     Object.keys(item).forEach((key) => {
+      // Always include attached_report as a key (it has special rendering)
+      if (key === 'attached_report') {
+        keys.add(key);
+      }
       // Skip nested objects and functions
-      if (item[key] !== null && typeof item[key] === 'object' && !Array.isArray(item[key])) {
+      else if (item[key] !== null && typeof item[key] === 'object' && !Array.isArray(item[key])) {
         // Flatten nested objects
         Object.keys(item[key]).forEach((nestedKey) => {
           keys.add(`${key}.${nestedKey}`);
@@ -245,14 +252,17 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   name: true,
   date_of_birth: true,
   age_sex: true,
-  study_description: true,
+  case_description: true,
   body_part: true,
   accession_number: false,
   modality: true,
-  study_date: true,
-  study_time: false, // Hidden by default
+  case_date: true,
+  case_time: false, // Hidden by default
+  case_uid: false, // Hidden by default
+  notes: false, // Hidden by default
   status: true,
   assigned_to: true,
+  attached_report: true,
   // Hide technical/internal fields
   _id: false,
   patient_id: false,
@@ -803,6 +813,32 @@ const ShowAllPatients = () => {
             },
           })
         );
+      } else if (key === 'attached_report') {
+        // Special handling for attached_report field
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: "Report",
+            cell: ({ row }) => {
+              const value = (row.original as any)[key];
+              const caseId = row.original._id;
+              return value ? (
+                <Badge
+                  variant="success"
+                  className="text-xs px-2 py-0 cursor-pointer hover:opacity-80"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`/case/${caseId}/report`, '_blank');
+                  }}
+                >
+                  Available
+                </Badge>
+              ) : (
+                <span className="text-xs text-muted-foreground">N/A</span>
+              );
+            },
+          })
+        );
       } else {
         dynamicColumns.push(
           columnHelper.display({
@@ -828,11 +864,11 @@ const ShowAllPatients = () => {
                 }
               } else {
                 // Format time fields
-                if (key === 'study_time' || key === 'time_of_capture' || key.toLowerCase().includes('time')) {
+                if (key === 'case_time' || key === 'time_of_capture' || key.toLowerCase().includes('time')) {
                   displayValue = formatTime(String(value));
                 }
                 // Format date fields
-                else if (key === 'study_date' || key === 'date_of_birth' || key === 'date_of_capture' || key.toLowerCase().includes('date')) {
+                else if (key === 'case_date' || key === 'date_of_birth' || key === 'date_of_capture' || key.toLowerCase().includes('date')) {
                   displayValue = formatDate(String(value));
                 } else {
                   displayValue = String(value);
@@ -886,7 +922,7 @@ const ShowAllPatients = () => {
     <>
       <div className="w-full space-y-2 border rounded-md p-2 bg-white">
         <div className="flex items-center justify-between">
-          <Heading title="Manage PACs" subtitle="Manage all PACs in the system" />
+          <Heading title="Manage all Cases" subtitle="Manage all Case's in the system" />
           <div>
             <button
               onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
@@ -1019,20 +1055,20 @@ const ShowAllPatients = () => {
           _id: selectedCase.patient_id,
           pac_patinet_id: selectedCase.patient?.patient_id || "",
           name: selectedCase.patient?.name || "",
-          dob: selectedCase.patient?.date_of_birth || "",
+          dob: selectedCase.patient?.dob || "",
           hospital_id: selectedCase.hospital_id,
           sex: selectedCase.patient?.sex || "",
-          study_description: selectedCase.description || "",
-          age: calculateAge(selectedCase.patient?.date_of_birth || ""),
-          study: { study_uid: selectedCase.study_uid, body_part: selectedCase.body_part },
+          case_description: selectedCase.description || "",
+          age: calculateAge(selectedCase.patient?.dob || ""),
+          case: { case_uid: selectedCase.case_uid, body_part: selectedCase.body_part },
           treatment_type: "",
-          date_of_capture: formatDate(selectedCase.study_date || ""),
-          time_of_capture: formatTime(selectedCase.study_time || ""),
+          date_of_capture: formatDate(selectedCase.case_date || ""),
+          time_of_capture: formatTime(selectedCase.case_time || ""),
           referring_doctor: "",
           accession_number: selectedCase.accession_number || "",
           pac_images: [],
           status: "",
-          study_date: selectedCase.study_date || "",
+          case_date: selectedCase.case_date || "",
           modality: selectedCase.modality || "",
           assigned_to: null,
           pac_images_count: 0,

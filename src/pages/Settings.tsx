@@ -7,10 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useUser } from '@/hooks/useUser';
-import { Loader2, Save, User, Lock, Camera } from 'lucide-react';
+import { Loader2, Save, User, Lock, Camera, PenTool } from 'lucide-react';
 import { useAppDispatch } from '@/store/hooks';
 import { updateUser } from '@/store/authSlice';
 import { apiService } from '@/lib/api';
+import SignatureUpload from '@/components/settings/SignatureUpload';
 
 const Settings = () => {
   const { user, loading } = useUser();
@@ -92,6 +93,16 @@ const Settings = () => {
     }
   };
 
+  const handleSignatureSave = async (file: File) => {
+    try {
+      await apiService.uploadSignature(file);
+      alert('Signature saved successfully');
+    } catch (error) {
+      console.error('Failed to save signature', error);
+      alert(error instanceof Error ? error.message : 'Failed to save signature');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
@@ -117,6 +128,12 @@ const Settings = () => {
             <Lock className="w-4 h-4 mr-2" />
             Security
           </TabsTrigger>
+          {user?.role === 'doctor' && (
+            <TabsTrigger value="signature" className="data-[state=active]:bg-black data-[state=active]:text-white">
+              <PenTool className="w-4 h-4 mr-2" />
+              Signature
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="profile">
@@ -269,6 +286,12 @@ const Settings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {user?.role === 'doctor' && (
+          <TabsContent value="signature">
+            <SignatureUpload onSave={handleSignatureSave} existingSignature={user?.signature_url} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
