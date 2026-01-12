@@ -22,7 +22,8 @@ import {
     RefreshCw,
     Crosshair,
     Layers,
-    ScrollText
+    ScrollText,
+    ArrowLeft
 } from 'lucide-react';
 
 interface ToolButtonProps {
@@ -50,6 +51,7 @@ const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
 import { useViewerContext } from '../ViewerLayout';
 import { formatDate } from '@/lib/helperFunctions';
+import { useNavigate } from 'react-router-dom';
 
 
 
@@ -68,6 +70,8 @@ const ViewerHeader = () => {
         canRedo,
         saveToHistory
     } = useViewerContext();
+
+    const navigate = useNavigate();
 
     if (!caseData) return null;
 
@@ -113,16 +117,26 @@ const ViewerHeader = () => {
         saveToHistory();
     };
 
+
     return (
         <header className="bg-gray-900 border-b border-gray-700 px-4 py-1">
             {/* Top bar with patient info */}
             <div className="flex items-center justify-between text-sm text-gray-400 mb-2 pt-2">
-                <div className="flex items-center gap-6">
-                    <span className="text-white font-semibold">PATIENT: {patientName.toUpperCase()}</span>
-                    <span>MRN: {mrn}</span>
-                    <span>DOB: {dob}</span>
-                    <span>Case: {caseDesc}</span>
-                    <span>Date: {caseDate}</span>
+                <div className='flex items-center gap-6'>
+                    <div
+                        className='flex items-center gap-2 cursor-pointer hover:text-white transition-colors'
+                        onClick={() => navigate('/dashboard')}
+                    >
+                        <ArrowLeft size={16} />
+                        <span>Back</span>
+                    </div>
+                    <div className="flex items-center gap-6">
+                        <span className="text-white font-semibold">PATIENT: {patientName.toUpperCase()}</span>
+                        <span>MRN: {mrn}</span>
+                        <span>DOB: {dob}</span>
+                        <span>Case: {caseDesc}</span>
+                        <span>Date: {caseDate}</span>
+                    </div>
                 </div>
                 <div className="flex items-center gap-4">
                     <span className="text-green-400">● Connected</span>

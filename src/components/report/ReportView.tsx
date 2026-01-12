@@ -145,11 +145,23 @@ export function ReportView() {
         }
     };
 
-    // Helper function to calculate age from DOB
+    // Helper function to calculate age from DOB (supports DICOM format YYYYMMDD)
     const calculateAge = (dob: string) => {
         if (!dob) return 'N/A';
         try {
-            const birthDate = new Date(dob);
+            let birthDate: Date;
+            // Check if DICOM format (YYYYMMDD)
+            if (/^\d{8}$/.test(dob)) {
+                const year = parseInt(dob.substring(0, 4), 10);
+                const month = parseInt(dob.substring(4, 6), 10) - 1; // JS months are 0-indexed
+                const day = parseInt(dob.substring(6, 8), 10);
+                birthDate = new Date(year, month, day);
+            } else {
+                birthDate = new Date(dob);
+            }
+
+            if (isNaN(birthDate.getTime())) return 'N/A';
+
             const today = new Date();
             let age = today.getFullYear() - birthDate.getFullYear();
             const monthDiff = today.getMonth() - birthDate.getMonth();
@@ -162,14 +174,41 @@ export function ReportView() {
         }
     };
 
+    // Helper to parse DICOM date/time (YYYYMMDD / HHMMSS)
+    const parseDicomDate = (dateStr?: string, timeStr?: string) => {
+        if (!dateStr) return 'N/A';
+        try {
+            // Check if it matches YYYYMMDD
+            if (/^\d{8}$/.test(dateStr)) {
+                const year = dateStr.substring(0, 4);
+                const month = dateStr.substring(4, 6);
+                const day = dateStr.substring(6, 8);
+
+                let formattedDate = `${day}-${month}-${year}`;
+
+                if (timeStr && /^\d{6}/.test(timeStr)) {
+                    const hours = timeStr.substring(0, 2);
+                    const minutes = timeStr.substring(2, 4);
+                    formattedDate += ` ${hours}:${minutes}`;
+                }
+
+                return formattedDate;
+            }
+            // Fallback for standard ISO strings
+            return formatDateTime(dateStr, timeStr);
+        } catch (e) {
+            return dateStr || 'N/A';
+        }
+    };
+
     // Dynamic patient info from context
     const patientInfo: PatientInfo = useMemo(() => ({
         patientName: caseData?.patient?.name || 'N/A',
         patientId: caseData?.patient?.patient_id || 'N/A',
-        age: calculateAge(caseData?.patient?.date_of_birth || ''),
+        age: calculateAge(caseData?.patient?.dob || ''),
         sex: caseData?.patient?.sex || 'N/A',
         accessionNo: caseData?.accession_number || 'N/A',
-        scanDateTime: formatDateTime(caseData?.case_date || '', caseData?.case_time),
+        scanDateTime: parseDicomDate(caseData?.case_date, caseData?.case_time),
         reportDateTime: formatDateTime(new Date().toISOString()),
         serviceName: caseData?.description || caseData?.body_part || 'N/A',
         referredBy: caseData?.assigned_to?.full_name || 'N/A',
@@ -354,32 +393,7 @@ export function ReportView() {
         }
     }, []);
 
-    // Helper to parse DICOM date/time (YYYYMMDD / HHMMSS)
-    const parseDicomDate = (dateStr?: string, timeStr?: string) => {
-        if (!dateStr) return 'N/A';
-        try {
-            // Check if it matches YYYYMMDD
-            if (/^\d{8}$/.test(dateStr)) {
-                const year = dateStr.substring(0, 4);
-                const month = dateStr.substring(4, 6);
-                const day = dateStr.substring(6, 8);
 
-                let formattedDate = `${day}-${month}-${year}`;
-
-                if (timeStr && /^\d{6}/.test(timeStr)) {
-                    const hours = timeStr.substring(0, 2);
-                    const minutes = timeStr.substring(2, 4);
-                    formattedDate += ` ${hours}:${minutes}`;
-                }
-
-                return formattedDate;
-            }
-            // Fallback for standard ISO strings
-            return formatDateTime(dateStr, timeStr);
-        } catch (e) {
-            return dateStr;
-        }
-    };
 
     const handleDownload = useCallback(async () => {
         if (!savedReportId) {
@@ -715,10 +729,8 @@ export function ReportView() {
                                 <div className="grid grid-cols-3 gap-x-6 gap-y-0.5 text-xs">
                                     <div><span className="text-gray-500">ID:</span> <span className="text-gray-300">{patientInfo.patientId}</span></div>
                                     <div><span className="text-gray-500">Age/Sex:</span> <span className="text-gray-300">{patientInfo.age} / {patientInfo.sex}</span></div>
-                                    <div><span className="text-gray-500">Acc:</span> <span className="text-gray-300">{patientInfo.accessionNo}</span></div>
                                     <div><span className="text-gray-500">Service:</span> <span className="text-gray-300">{patientInfo.serviceName}</span></div>
                                     <div><span className="text-gray-500">Scan:</span> <span className="text-gray-300">{patientInfo.scanDateTime}</span></div>
-                                    <div><span className="text-gray-500">Ref:</span> <span className="text-blue-400">{patientInfo.referredBy}</span></div>
                                 </div>
                             </div>
                         </div>

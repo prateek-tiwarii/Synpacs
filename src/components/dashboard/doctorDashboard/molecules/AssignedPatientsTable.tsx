@@ -44,11 +44,22 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
+type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted';
+
+// Map tab names to backend status values
+const TAB_TO_STATUS_MAP: Record<TabType, string> = {
+    'Unreported': 'unreported',
+    'Reported': 'reported',
+    'All Cases': 'all',
+    'Drafted': 'drafted',
+};
+
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
     setMessageDialogOpen: (open: boolean) => void;
     setDocumentDialogOpen: (open: boolean) => void;
     filters?: FilterState;
+    activeTab?: TabType;
 }
 
 const AssignedPatientsTable = ({
@@ -56,6 +67,7 @@ const AssignedPatientsTable = ({
     setMessageDialogOpen,
     setDocumentDialogOpen,
     filters,
+    activeTab = 'Unreported',
 }: AssignedPatientsTableProps) => {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -91,29 +103,39 @@ const AssignedPatientsTable = ({
                 setIsLoading(true);
                 setError(null);
 
-                // Build API filters from FilterState
-                const apiFilters: any = {};
+                // Build API filters from FilterState - always include all properties
+                // Map activeTab to status
+                const status = TAB_TO_STATUS_MAP[activeTab] || 'all';
+
+                const apiFilters: any = {
+                    start_date: filters?.startDate || '',
+                    end_date: filters?.endDate || '',
+                    patient_name: filters?.patientName || '',
+                    patient_id: filters?.patientId || '',
+                    body_part: filters?.bodyPart || '',
+                    status: status,
+                    gender: '',
+                    modality: '',
+                };
 
                 if (filters) {
-                    if (filters.startDate) apiFilters.start_date = filters.startDate;
-                    if (filters.endDate) apiFilters.end_date = filters.endDate;
-                    if (filters.patientName) apiFilters.patient_name = filters.patientName;
-                    if (filters.bodyPart) apiFilters.body_part = filters.bodyPart;
-                    if (filters.status && filters.status !== 'all') apiFilters.status = filters.status;
-
                     // Handle gender
-                    if (filters.gender.M && !filters.gender.F) {
+                    if (filters.gender?.M && !filters.gender?.F) {
                         apiFilters.gender = 'M';
-                    } else if (filters.gender.F && !filters.gender.M) {
+                    } else if (filters.gender?.F && !filters.gender?.M) {
                         apiFilters.gender = 'F';
+                    } else if (filters.gender?.M && filters.gender?.F) {
+                        apiFilters.gender = 'MF';
                     }
 
                     // Handle modality
-                    const selectedModality = Object.entries(filters.modalities).find(
-                        ([_, isSelected]) => isSelected && _ !== 'ALL'
-                    );
-                    if (selectedModality) {
-                        apiFilters.modality = selectedModality[0];
+                    if (filters.modalities) {
+                        const selectedModality = Object.entries(filters.modalities).find(
+                            ([key, isSelected]) => isSelected && key !== 'ALL'
+                        );
+                        if (selectedModality) {
+                            apiFilters.modality = selectedModality[0];
+                        }
                     }
                 }
 
@@ -192,7 +214,7 @@ const AssignedPatientsTable = ({
         };
 
         fetchAssignedPatients();
-    }, [filters]);
+    }, [filters, activeTab]);
 
     const handleZipDownload = (case_id: string) => {
         console.log('Downloading Case:', case_id);
@@ -481,7 +503,8 @@ const AssignedPatientsTable = ({
             columnVisibility={columnVisibility}
             onColumnVisibilityChange={setColumnVisibility}
             showColumnToggle={true}
-            tableTitle="Cases"
+            tableTitle="Assigned Cases"
+            tableDescription="List of cases assigned to you."
         />
     );
 };

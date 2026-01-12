@@ -16,7 +16,8 @@ interface Series {
 interface Patient {
     _id: string;
     patient_id: string;
-    date_of_birth: string;
+    date_of_birth?: string;
+    dob?: string; // DICOM format: YYYYMMDD
     name: string;
     sex: string;
 }

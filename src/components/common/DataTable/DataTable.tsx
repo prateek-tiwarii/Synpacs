@@ -62,6 +62,7 @@ export interface DataTableProps<TData> {
     manualPagination?: boolean;
     showDoctorsOnSelect?: boolean;
     showEmptyTable?: boolean;
+    tableDescription?: string;
 }
 
 export function DataTable<TData>({
@@ -88,6 +89,7 @@ export function DataTable<TData>({
     manualPagination = false,
     showDoctorsOnSelect = false,
     showEmptyTable = false,
+    tableDescription = "",
 }: DataTableProps<TData>) {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -225,9 +227,14 @@ export function DataTable<TData>({
         <div className={containerClassName}>
             {(tableTitle || showSettings || showDoctorsDropdown) && (
                 <div className="flex items-center justify-between py-2 px-1">
-                    {tableTitle && (
-                        <h3 className="text-lg font-semibold">{tableTitle}</h3>
-                    )}
+                    <div className="flex flex-col">
+                        {tableTitle && (
+                            <p className="text-lg font-semibold">{tableTitle}</p>
+                        )}
+                        {tableDescription && (
+                            <p className="text-sm text-muted-foreground">{tableDescription}</p>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2 ml-auto">
                         {showDoctorsDropdown && (
                             <DropdownMenu open={isDropdownOpen} onOpenChange={(open) => {

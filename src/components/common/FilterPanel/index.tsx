@@ -1,13 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+
 import { Calendar, Filter, RotateCcw, Search, SlidersHorizontal, User } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 
@@ -15,7 +9,6 @@ export interface FilterState {
     patientName: string;
     patientId: string;
     bodyPart: string;
-    hospital: string;
     startDate: string;
     endDate: string;
     status: string; // 'all', 'assigned', 'unassigned'
@@ -51,20 +44,66 @@ interface FilterPanelProps {
     initialFilters?: Partial<FilterState>;
 }
 
+// Format date as YYYY-MM-DD for input[type="date"]
+const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+// Helper function to get start date based on period
+const getStartDateFromPeriod = (period: string): string => {
+    const today = new Date();
+    const startDate = new Date(today);
+
+    switch (period) {
+        case '1D':
+            startDate.setDate(today.getDate() - 1);
+            break;
+        case '2D':
+            startDate.setDate(today.getDate() - 2);
+            break;
+        case '3D':
+            startDate.setDate(today.getDate() - 3);
+            break;
+        case '1W':
+            startDate.setDate(today.getDate() - 7);
+            break;
+        case '2W':
+            startDate.setDate(today.getDate() - 14);
+            break;
+        default:
+            startDate.setDate(today.getDate() - 7); // Default to 1W
+    }
+
+    return formatDate(startDate);
+};
+
+// Helper function to get default date range (7 days = 1W)
+const getDefaultDateRange = () => {
+    const today = new Date();
+    return {
+        startDate: getStartDateFromPeriod('1W'),
+        endDate: formatDate(today),
+    };
+};
+
 const FilterPanel = ({
     onFilterChange,
     onFilterReset,
-    activePeriod = '1D',
+    activePeriod = '1W',
     setActivePeriod,
     initialFilters,
 }: FilterPanelProps) => {
+    const defaultDates = getDefaultDateRange();
+
     const [filters, setFilters] = useState<FilterState>({
         patientName: '',
         patientId: '',
         bodyPart: '',
-        hospital: '',
-        startDate: '',
-        endDate: '',
+        startDate: defaultDates.startDate,
+        endDate: defaultDates.endDate,
         status: 'all',
         gender: { M: false, F: false },
         modalities: {
@@ -92,7 +131,6 @@ const FilterPanel = ({
             filters.patientName !== '' ||
             filters.patientId !== '' ||
             filters.bodyPart !== '' ||
-            filters.hospital !== '' ||
             filters.startDate !== '' ||
             filters.endDate !== '';
 
@@ -108,7 +146,6 @@ const FilterPanel = ({
             patientName: '',
             patientId: '',
             bodyPart: '',
-            hospital: '',
             startDate: '',
             endDate: '',
             status: 'all',
@@ -205,44 +242,7 @@ const FilterPanel = ({
                     </div>
 
                     {/* Row 2 */}
-                    <div className="grid grid-cols-4 gap-3">
-                        <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                Hospital
-                            </label>
-                            <Select
-                                value={filters.hospital}
-                                onValueChange={(value) => setFilters({ ...filters, hospital: value })}
-                            >
-                                <SelectTrigger className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200">
-                                    <SelectValue placeholder="Select Hospital..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="hospital_a" className="text-xs">Hospital A</SelectItem>
-                                    <SelectItem value="hospital_b" className="text-xs">Hospital B</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                Case Status
-                            </label>
-                            <Select
-                                value={filters.status}
-                                onValueChange={(value) => setFilters({ ...filters, status: value })}
-                            >
-                                <SelectTrigger className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200">
-                                    <SelectValue placeholder="All Cases" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all" className="text-xs">All Cases</SelectItem>
-                                    <SelectItem value="assigned" className="text-xs">Assigned</SelectItem>
-                                    <SelectItem value="unassigned" className="text-xs">Unassigned</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
+                    <div className="grid grid-cols-3 gap-3">
                         <div className="space-y-1">
                             <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                                 <Calendar className="w-3 h-3" />
@@ -259,7 +259,11 @@ const FilterPanel = ({
                                     {['1D', '2D', '3D', '1W', '2W'].map((period) => (
                                         <button
                                             key={period}
-                                            onClick={() => setActivePeriod(period)}
+                                            onClick={() => {
+                                                setActivePeriod(period);
+                                                const newStartDate = getStartDateFromPeriod(period);
+                                                setFilters(prev => ({ ...prev, startDate: newStartDate }));
+                                            }}
                                             className={`
                                                 px-2 py-0.5 rounded text-[10px] font-bold transition-all duration-200
                                                 ${activePeriod === period
@@ -288,7 +292,7 @@ const FilterPanel = ({
                             />
                         </div>
 
-                        <div className="flex items-end gap-1.5">
+                        <div className="flex items-center gap-1.5">
                             <Button
                                 onClick={() => onFilterChange?.(filters)}
                                 className="flex-1 bg-slate-800 hover:bg-slate-900 h-8 text-xs font-semibold rounded-md shadow-sm hover:shadow transition-all duration-200"

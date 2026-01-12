@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useViewerContext } from '@/components/ViewerLayout';
 import { getCookie } from '@/lib/cookies';
 import DicomViewer from '@/components/viewer/DicomViewer';
+import SRViewer from '@/components/viewer/SRViewer';
 import { Loader2 } from 'lucide-react';
 
 // Instance interface matching the ACTUAL API response
@@ -137,7 +138,7 @@ const CaseViewer = () => {
                         Series {selectedSeries.series_number}: {selectedSeries.description || 'No description'}
                     </span>
                     <span className="text-xs text-gray-500">
-                        {selectedSeries.modality} • {instances.length} images
+                        {selectedSeries.modality} • {instances.length} {selectedSeries.modality === 'SR' ? 'document(s)' : 'images'}
                     </span>
                 </div>
                 {caseData && (
@@ -147,11 +148,18 @@ const CaseViewer = () => {
                 )}
             </div>
 
-            {/* DICOM Viewer */}
-            <DicomViewer
-                instances={instances || []}
-                className="flex-1"
-            />
+            {/* Viewer - SR uses SRViewer, others use DicomViewer */}
+            {selectedSeries.modality === 'SR' ? (
+                <SRViewer
+                    instances={instances || []}
+                    className="flex-1"
+                />
+            ) : (
+                <DicomViewer
+                    instances={instances || []}
+                    className="flex-1"
+                />
+            )}
         </div>
     );
 };
