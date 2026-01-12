@@ -40,6 +40,9 @@ export function DicomViewer({ instances, className = '' }: DicomViewerProps) {
         isFullscreen,
         toggleFullscreen
     } = useViewerContext();
+
+    // Use full API URL for production deployments
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -236,7 +239,7 @@ export function DicomViewer({ instances, className = '' }: DicomViewerProps) {
                     const instance = queue[queueIndex++];
                     activeRequests.current++;
 
-                    const url = `/api/v1/instances/${instance.instance_uid}/dicom`;
+                    const url = `${API_BASE_URL}/api/v1/instances/${instance.instance_uid}/dicom`;
 
                     fetch(url)
                         .then(res => {
@@ -266,7 +269,7 @@ export function DicomViewer({ instances, className = '' }: DicomViewerProps) {
 
         let mounted = true;
         const currentInstance = sortedInstances[currentImageIndex];
-        const instanceUrl = `/api/v1/instances/${currentInstance.instance_uid}/dicom`;
+        const instanceUrl = `${API_BASE_URL}/api/v1/instances/${currentInstance.instance_uid}/dicom`;
 
         const loadImage = async () => {
             try {
