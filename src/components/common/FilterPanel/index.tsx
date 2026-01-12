@@ -16,6 +16,7 @@ export interface FilterState {
         M: boolean;
         F: boolean;
     };
+    hospital: string;
     modalities: {
         ALL: boolean;
         DT: boolean;
@@ -106,6 +107,7 @@ const FilterPanel = ({
         endDate: defaultDates.endDate,
         status: 'all',
         gender: { M: false, F: false },
+        hospital: '',
         modalities: {
             ALL: false, DT: false, SC: false, AN: false,
             US: false, ECHO: false, CR: false, XA: false,
@@ -150,6 +152,7 @@ const FilterPanel = ({
             endDate: '',
             status: 'all',
             gender: { M: false, F: false },
+            hospital: '',
             modalities: {
                 ALL: false, DT: false, SC: false, AN: false,
                 US: false, ECHO: false, CR: false, XA: false,

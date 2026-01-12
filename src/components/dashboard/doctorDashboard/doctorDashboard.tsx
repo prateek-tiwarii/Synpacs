@@ -101,6 +101,7 @@ const DoctorDashboard = () => {
         M: genderParam === 'M' || genderParam === 'MF',
         F: genderParam === 'F' || genderParam === 'MF',
       },
+      hospital: searchParams.get('hospital') || '',
       modalities: parseModalitiesFromUrl(searchParams.get('modalities')),
     };
   }, [searchParams]);

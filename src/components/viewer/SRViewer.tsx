@@ -46,7 +46,7 @@ const TAGS = {
     MeasurementUnitsCodeSequence: 'x004008ea',
 };
 
-function extractAllContent(dataSet: dicomParser.DataSet, rows: TableRow[], depth: number = 0, parentName: string = ''): void {
+function extractAllContent(dataSet: dicomParser.DataSet, rows: TableRow[], depth: number = 0): void {
     if (depth > 10) return;
 
     const contentSeq = dataSet.elements[TAGS.ContentSequence];
@@ -89,7 +89,7 @@ function extractAllContent(dataSet: dicomParser.DataSet, rows: TableRow[], depth
             case 'CONTAINER':
                 // Add section header
                 rows.push({ label: name, value: '', isHeader: true });
-                extractAllContent(item.dataSet, rows, depth + 1, name);
+                extractAllContent(item.dataSet, rows, depth + 1);
                 continue;
         }
 
