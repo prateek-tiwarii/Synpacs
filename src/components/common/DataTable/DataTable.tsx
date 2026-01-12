@@ -19,6 +19,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { apiService } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface DoctorResponse {
     success: boolean;
@@ -91,6 +92,7 @@ export function DataTable<TData>({
     showEmptyTable = false,
     tableDescription = "",
 }: DataTableProps<TData>) {
+    const { toast } = useToast();
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
@@ -212,8 +214,22 @@ export function DataTable<TData>({
             }
 
             setIsDropdownOpen(false);
+
+            // Show success toast and reload
+            toast({
+                title: "Success",
+                description: `Successfully assigned ${selectedRows.length} case(s) to doctor.`,
+            });
+
+            // Reload the page to reflect changes
+            window.location.reload();
         } catch (error) {
             console.error('Failed to assign doctor:', error);
+            toast({
+                title: "Error",
+                description: "Failed to assign doctor. Please try again.",
+                variant: "destructive",
+            });
         } finally {
             setIsAssigning(false);
         }

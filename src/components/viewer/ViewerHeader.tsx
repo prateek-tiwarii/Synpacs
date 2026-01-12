@@ -251,8 +251,8 @@ const ViewerHeader = () => {
                     <ToolButton
                         icon={<ScrollText size={18} />}
                         label="Report"
-                        onClick={() => window.open(`/case/${caseData._id}/report`, '_window')}
-                    // onClick={() => window.open(`/case/${caseData._id}/report`, '_blank', 'width=1200,height=800')}
+                        // onClick={() => window.open(`/case/${caseData._id}/report`, '_window')}
+                        onClick={() => window.open(`/case/${caseData._id}/report`, '_blank', 'width=1200,height=800')}
                     />
                 </div>
 
