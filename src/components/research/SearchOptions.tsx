@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp, Filter, RotateCcw, Search, SlidersHorizontal, Calendar, Building2, Activity } from "lucide-react";
 
 export const SearchOptions = () => {
-  const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [filters, setFilters] = useState({
     keywords: '',
     minAge: '',

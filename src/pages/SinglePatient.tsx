@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
     ArrowLeft,
     Loader2,
@@ -48,7 +48,7 @@ interface AssignedDoctor {
 interface Note {
     _id: string;
     note: string;
-    flag_type: string;
+    flag_type: 'urgent' | 'routine';
     created_by: {
         _id: string;
         full_name: string;
@@ -126,7 +126,7 @@ const SinglePatient = () => {
     // Notes state
     const [notes, setNotes] = useState<Note[]>([]);
     const [newNote, setNewNote] = useState("");
-    const [noteFlagType, setNoteFlagType] = useState("info");
+    const [noteFlagType, setNoteFlagType] = useState("routine");
     const [isAddingNote, setIsAddingNote] = useState(false);
 
     // Documents state
@@ -223,31 +223,48 @@ const SinglePatient = () => {
 
     const getFlagColor = (flagType: string) => {
         switch (flagType?.toLowerCase()) {
+            case "urgent":
+                return "bg-red-500";
+            case "routine":
+                return "bg-gray-500";
+            // Legacy support
             case "warning":
                 return "bg-amber-500";
             case "error":
                 return "bg-red-500";
-            default:
+            case "info":
                 return "bg-blue-500";
+            default:
+                return "bg-gray-500";
         }
     };
 
     const getFlagBgColor = (flagType: string) => {
         switch (flagType?.toLowerCase()) {
+            case "urgent":
+                return "bg-red-50 border-red-200";
+            case "routine":
+                return "bg-gray-50 border-gray-200";
+            // Legacy support
             case "warning":
                 return "bg-amber-50 border-amber-200";
             case "error":
                 return "bg-red-50 border-red-200";
-            default:
+            case "info":
                 return "bg-blue-50 border-blue-200";
+            default:
+                return "bg-gray-50 border-gray-200";
         }
     };
 
     const handleAddNote = async () => {
-        if (!newNote.trim() || !id) return;
+        if (!newNote.trim() || !id) {
+            return;
+        }
 
         try {
             setIsAddingNote(true);
+            
             const response = await apiService.createCaseNote(id, {
                 note: newNote,
                 flag_type: noteFlagType,
@@ -258,7 +275,7 @@ const SinglePatient = () => {
                 toast.success("Note added successfully");
             }
             setNewNote("");
-            setNoteFlagType("info");
+            setNoteFlagType("routine");
         } catch (err) {
             console.error("Error adding note:", err);
             toast.error("Failed to add note");
@@ -354,7 +371,7 @@ const SinglePatient = () => {
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-gray-50">
             {/* Header - Fixed */}
-            <div className="flex-shrink-0 bg-white border-b px-4 py-3">
+            <div className="shrink-0 bg-white border-b px-4 py-3">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Button
@@ -399,7 +416,7 @@ const SinglePatient = () => {
                 {/* Left Panel - Patient Info & Images */}
                 <div className="col-span-3 flex flex-col gap-4 min-h-0">
                     {/* Patient Info */}
-                    <div className="bg-white rounded-lg border p-4 flex-shrink-0">
+                    <div className="bg-white rounded-lg border p-4 shrink-0">
                         <div className="flex items-center gap-2 mb-3">
                             <User className="w-4 h-4 text-gray-400" />
                             <span className="text-xs font-medium text-gray-700">Patient Info</span>
@@ -414,7 +431,7 @@ const SinglePatient = () => {
                                 <span className="text-gray-900">{patient.center || "N/A"}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Body Part</span>
+                                <span className="text-gray-500">Study Description</span>
                                 <span className="text-gray-900">{patient.case?.body_part || "N/A"}</span>
                             </div>
                             <div className="flex justify-between">
@@ -434,13 +451,13 @@ const SinglePatient = () => {
 
                     {/* Assigned Doctor */}
                     {patient.assigned_to && (
-                        <div className="bg-white rounded-lg border p-4 flex-shrink-0">
+                        <div className="bg-white rounded-lg border p-4 shrink-0">
                             <div className="flex items-center gap-2 mb-3">
                                 <Stethoscope className="w-4 h-4 text-gray-400" />
                                 <span className="text-xs font-medium text-gray-700">Assigned Doctor</span>
                             </div>
                             <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
                                     <User className="w-4 h-4 text-blue-600" />
                                 </div>
                                 <div className="min-w-0">
@@ -461,7 +478,7 @@ const SinglePatient = () => {
 
                     {/* Images */}
                     <div className="bg-white rounded-lg border p-4 flex-1 min-h-0 flex flex-col">
-                        <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                        <div className="flex items-center justify-between mb-3 shrink-0">
                             <div className="flex items-center gap-2">
                                 <Image className="w-4 h-4 text-gray-400" />
                                 <span className="text-xs font-medium text-gray-700">Images</span>
@@ -501,7 +518,7 @@ const SinglePatient = () => {
 
                 {/* Middle Panel - Notes Timeline */}
                 <div className="col-span-5 bg-white rounded-lg border flex flex-col min-h-0">
-                    <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
                         <div className="flex items-center gap-2">
                             <Flag className="w-4 h-4 text-gray-400" />
                             <span className="text-xs font-medium text-gray-700">Notes & Timeline</span>
@@ -512,28 +529,38 @@ const SinglePatient = () => {
                     </div>
 
                     {/* Add Note Form */}
-                    <div className="px-4 py-3 border-b flex-shrink-0 bg-gray-50">
+                    <div className="px-4 py-3 border-b shrink-0 bg-gray-50">
                         <div className="flex gap-2">
                             <div className="flex-1">
                                 <Textarea
                                     placeholder="Add a note..."
                                     value={newNote}
                                     onChange={(e) => setNewNote(e.target.value)}
-                                    className="text-xs min-h-[60px] resize-none"
+                                    className="text-xs min-h-15 resize-none"
                                 />
                             </div>
                         </div>
                         <div className="flex items-center justify-between mt-2">
-                            <Select value={noteFlagType} onValueChange={setNoteFlagType}>
-                                <SelectTrigger className="w-28 h-7 text-xs">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="info" className="text-xs">Info</SelectItem>
-                                    <SelectItem value="warning" className="text-xs">Warning</SelectItem>
-                                    <SelectItem value="error" className="text-xs">Error</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={noteFlagType === 'urgent' ? 'default' : 'outline'}
+                                    className={`h-7 text-xs ${noteFlagType === 'urgent' ? 'bg-red-600 hover:bg-red-700 text-white' : 'hover:bg-gray-100'}`}
+                                    onClick={() => setNoteFlagType('urgent')}
+                                >
+                                    Urgent
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={noteFlagType === 'routine' ? 'default' : 'outline'}
+                                    className={`h-7 text-xs ${noteFlagType === 'routine' ? 'bg-gray-600 hover:bg-gray-700 text-white' : 'hover:bg-gray-100'}`}
+                                    onClick={() => setNoteFlagType('routine')}
+                                >
+                                    Routine
+                                </Button>
+                            </div>
                             <Button
                                 size="sm"
                                 className="h-7 text-xs"
@@ -554,42 +581,79 @@ const SinglePatient = () => {
                     <div className="flex-1 overflow-y-auto px-4 py-3">
                         <div className="relative">
                             {/* Timeline line */}
-                            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
+                            <div className="absolute left-1.75 top-2 bottom-2 w-px bg-gray-200" />
 
                             {/* Notes */}
-                            <div className="space-y-4">
-                                {notes
-                                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                    .map((note) => (
-                                        <div key={note._id} className="relative pl-6">
-                                            {/* Timeline dot */}
-                                            <div className={`absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full border-2 border-white ${getFlagColor(note.flag_type)}`} />
+                            <TooltipProvider delayDuration={300}>
+                                <div className="space-y-4">
+                                    {notes
+                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                        .map((note) => (
+                                            <div key={note._id} className="relative pl-6">
+                                                {/* Timeline dot */}
+                                                <div className={`absolute left-0 top-1.5 w-3.75 h-3.75 rounded-full border-2 border-white ${getFlagColor(note.flag_type)}`} />
 
-                                            <div className={`p-3 rounded-lg border ${getFlagBgColor(note.flag_type)}`}>
-                                                <div className="flex items-start justify-between mb-1.5">
-                                                    <span className="text-xs font-medium text-gray-800">
-                                                        {note.created_by?.full_name || "Unknown"}
-                                                    </span>
-                                                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                                                        <Clock className="w-3 h-3" />
-                                                        <span>{getRelativeTime(note.createdAt)}</span>
-                                                    </div>
-                                                </div>
-                                                <p className="text-xs text-gray-600 leading-relaxed">{note.note}</p>
-                                                <div className="mt-2 text-[10px] text-gray-400">
-                                                    {formatDateTime(note.createdAt)}
-                                                </div>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <div className={`p-3 rounded-lg border ${getFlagBgColor(note.flag_type)} cursor-pointer transition-shadow hover:shadow-md`}>
+                                                            <div className="flex items-start justify-between mb-1.5">
+                                                                <span className="text-xs font-medium text-gray-800">
+                                                                    {note.created_by?.full_name || "Unknown"}
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                                                                    <Clock className="w-3 h-3" />
+                                                                    <span>{getRelativeTime(note.createdAt)}</span>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs text-gray-600 leading-relaxed">{note.note}</p>
+                                                            <div className="mt-2 text-[10px] text-gray-400">
+                                                                {formatDateTime(note.createdAt)}
+                                                            </div>
+                                                        </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent 
+                                                        side="right" 
+                                                        align="start"
+                                                        className="max-w-xs bg-gray-900 text-white border-gray-700 p-3"
+                                                    >
+                                                        <div className="space-y-2">
+                                                            <div>
+                                                                <p className="text-xs font-semibold mb-1">Message:</p>
+                                                                <p className="text-xs leading-relaxed">{note.note}</p>
+                                                            </div>
+                                                            <div className="pt-2 border-t border-gray-700">
+                                                                <p className="text-xs">
+                                                                    <span className="font-semibold">Author:</span> {note.created_by?.full_name || "Unknown"}
+                                                                </p>
+                                                                <p className="text-xs mt-1">
+                                                                    <span className="font-semibold">Date:</span> {new Date(note.createdAt).toLocaleDateString('en-US', { 
+                                                                        year: 'numeric', 
+                                                                        month: 'long', 
+                                                                        day: 'numeric' 
+                                                                    })}
+                                                                </p>
+                                                                <p className="text-xs mt-1">
+                                                                    <span className="font-semibold">Time:</span> {new Date(note.createdAt).toLocaleTimeString('en-US', { 
+                                                                        hour: '2-digit', 
+                                                                        minute: '2-digit',
+                                                                        second: '2-digit'
+                                                                    })}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             </div>
-                                        </div>
-                                    ))}
-                            </div>
+                                        ))}
+                                </div>
+                            </TooltipProvider>
                         </div>
                     </div>
                 </div>
 
                 {/* Right Panel - Documents */}
                 <div className="col-span-4 bg-white rounded-lg border flex flex-col min-h-0">
-                    <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
                         <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-gray-400" />
                             <span className="text-xs font-medium text-gray-700">Documents</span>
@@ -610,7 +674,7 @@ const SinglePatient = () => {
 
                     {/* Upload Modal */}
                     {isUploadModalOpen && (
-                        <div className="px-4 py-3 border-b bg-gray-50 flex-shrink-0">
+                        <div className="px-4 py-3 border-b bg-gray-50 shrink-0">
                             <div className="flex items-center justify-between mb-3">
                                 <span className="text-xs font-medium text-gray-700">Upload Document</span>
                                 <button
@@ -705,7 +769,7 @@ const SinglePatient = () => {
                                         className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors group cursor-pointer"
                                         onClick={() => window.open(doc.signed_url || doc.file_url, '_blank')}
                                     >
-                                        <div className="w-9 h-9 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
+                                        <div className="w-9 h-9 bg-blue-100 rounded flex items-center justify-center shrink-0">
                                             <FileText className="w-4 h-4 text-blue-600" />
                                         </div>
                                         <div className="flex-1 min-w-0">

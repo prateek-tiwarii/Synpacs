@@ -598,9 +598,8 @@ const UserCreate = () => {
     setUserDialogOpen(true);
   };
 
-  const handleViewUser = (user: any) => {
+  const handleViewUser = (_user: any) => {
     // View functionality can be implemented here if needed
-    console.log('View user:', user);
   };
 
   const handleDeleteUser = (user: any) => {

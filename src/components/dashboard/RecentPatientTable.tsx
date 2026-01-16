@@ -8,7 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { DataTable } from "@/components/common/DataTable/DataTable";
@@ -125,11 +125,16 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY = 'recent_pacs_table_columns';
 
-const RecentPatientTable = () => {
+interface RecentPatientTableProps {
+  onDateRangeChange?: (dateRange: { from: string; to: string }) => void;
+}
+
+const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {}) => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -165,6 +170,7 @@ const RecentPatientTable = () => {
     endDate: defaultDates.end,
     status: "all",
     gender: { M: false, F: false },
+    reportStatus: { reported: false, drafted: false, unreported: false },
     modalities: {
       ALL: false,
       DT: false,
@@ -194,6 +200,16 @@ const RecentPatientTable = () => {
     }
   }, [columnVisibility]);
 
+  // Notify parent component about date range changes
+  useEffect(() => {
+    if (onDateRangeChange && filters.startDate && filters.endDate) {
+      onDateRangeChange({
+        from: filters.startDate,
+        to: filters.endDate
+      });
+    }
+  }, [filters.startDate, filters.endDate, onDateRangeChange]);
+
   useEffect(() => {
     fetchPatients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,6 +232,15 @@ const RecentPatientTable = () => {
       if (filters.bodyPart) apiFilters.body_part = filters.bodyPart;
       if (filters.hospital) apiFilters.hospital = filters.hospital;
       if (filters.status && filters.status !== "all") apiFilters.status = filters.status;
+
+      // Handle report status filter
+      const reportStatusFilters = [];
+      if (filters.reportStatus?.reported) reportStatusFilters.push('reported');
+      if (filters.reportStatus?.drafted) reportStatusFilters.push('drafted');
+      if (filters.reportStatus?.unreported) reportStatusFilters.push('unreported');
+      if (reportStatusFilters.length > 0) {
+        apiFilters.report_status = reportStatusFilters.join(',');
+      }
 
       // Handle gender filter
       if (filters.gender.M && !filters.gender.F) {
@@ -373,6 +398,7 @@ const RecentPatientTable = () => {
       endDate: defaultDates.end,
       status: "all",
       gender: { M: false, F: false },
+      reportStatus: { reported: false, drafted: false, unreported: false },
       modalities: {
         ALL: false,
         DT: false,
@@ -462,7 +488,7 @@ const RecentPatientTable = () => {
     },
     {
       accessorKey: "case.body_part",
-      header: "Body Part",
+      header: "Study Description",
       cell: ({ row }) => (
         <span className="text-xs">
           {row.original.case?.body_part || 'N/A'}
@@ -577,18 +603,36 @@ const RecentPatientTable = () => {
           </CardTitle>
         </CardHeader>
 
-        <Link to="/manage-cases" className="flex items-center gap-2 text-sm text-muted-foreground">
-          <p className="text-sm text-muted-foreground">View All Cases</p>
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
+            className={`
+              flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200
+              ${!isFilterCollapsed
+                ? 'bg-slate-700 text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }
+            `}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Filters</span>
+            {isFilterCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+          </button>
+          <Link to="/manage-cases" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">View All Cases</p>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
 
       {/* Filter Panel */}
-      <FilterPanel
-        onFilterChange={handleFilterChange}
-        onFilterReset={handleFilterReset}
-        initialFilters={filters}
-      />
+      {!isFilterCollapsed && (
+        <FilterPanel
+          onFilterChange={handleFilterChange}
+          onFilterReset={handleFilterReset}
+          initialFilters={filters}
+        />
+      )}
 
       <CardContent className="px-3">
         <DataTable
