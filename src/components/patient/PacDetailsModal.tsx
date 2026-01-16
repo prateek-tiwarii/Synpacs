@@ -31,6 +31,7 @@ export interface PacPatient {
     date_of_birth: string; // Format: YYYYMMDD
     name: string;
     sex: string;
+    age?: number;
 }
 
 export interface Note {
@@ -75,6 +76,7 @@ export interface Patient {
     dob?: string;
     date_of_birth?: string;
     hospital_id: string;
+    hospital_name?: string;
     sex: string;
     case_description?: string;
     description?: string;
@@ -83,6 +85,7 @@ export interface Patient {
     treatment_type?: string;
     date_of_capture?: string;
     referring_doctor?: string;
+    referring_physician?: string;
     accession_number?: string;
     case_body_part?: string;
     body_part?: string;

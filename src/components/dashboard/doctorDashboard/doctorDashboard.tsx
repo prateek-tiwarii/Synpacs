@@ -46,7 +46,7 @@ const serializeModalitiesToUrl = (modalities: typeof DEFAULT_MODALITIES): string
 const parseReportStatusFromUrl = (reportStatusParam: string | null): { reported: boolean; drafted: boolean; unreported: boolean } => {
   const defaultStatus = { reported: false, drafted: false, unreported: false };
   if (!reportStatusParam) return defaultStatus;
-  
+
   const selected = reportStatusParam.split(',');
   return {
     reported: selected.includes('reported'),
@@ -261,7 +261,7 @@ const DoctorDashboard = () => {
         filters={filters}
       />
 
-      <div className='flex flex-col gap-2 p-4 rounded-2xl bg-white'>
+      <div className='flex flex-col gap-2 px-4 py-2 rounded-2xl bg-white'>
         <AssignedPatientsTable
           setSelectedPatient={setSelectedPatient}
           setMessageDialogOpen={setMessageDialogOpen}

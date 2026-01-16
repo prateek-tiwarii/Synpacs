@@ -1,4 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { flexRender, useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel } from "@tanstack/react-table";
 import type { ColumnDef, VisibilityState, SortingState, ColumnFiltersState, RowSelectionState } from '@tanstack/react-table';
 import { Loader2, RotateCcwIcon, Settings, UserPlus, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
@@ -64,6 +65,7 @@ export interface DataTableProps<TData> {
     showDoctorsOnSelect?: boolean;
     showEmptyTable?: boolean;
     tableDescription?: string;
+    onRefresh?: () => void | Promise<void>;
 }
 
 export function DataTable<TData>({
@@ -72,7 +74,6 @@ export function DataTable<TData>({
     isLoading = false,
     error = null,
     emptyMessage = "No data available.",
-    loadingMessage = "Loading data...",
     columnVisibility,
     onColumnVisibilityChange,
     rowSelection,
@@ -84,13 +85,14 @@ export function DataTable<TData>({
     enableFiltering = true,
     enableRowSelection = false,
     showBorder = true,
-    containerClassName = "flex flex-col gap-2 bg-white",
+    containerClassName = "flex flex-col gap-1 bg-white",
     showColumnToggle = true,
     tableTitle,
     manualPagination = false,
     showDoctorsOnSelect = false,
     showEmptyTable = false,
     tableDescription = "",
+    onRefresh,
 }: DataTableProps<TData>) {
     const { toast } = useToast();
     const [sorting, setSorting] = useState<SortingState>([]);
@@ -100,6 +102,7 @@ export function DataTable<TData>({
     const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const table = useReactTable({
         data,
@@ -128,12 +131,74 @@ export function DataTable<TData>({
         manualPagination,
     });
 
+    const handleRefresh = async () => {
+        if (onRefresh && !isRefreshing) {
+            setIsRefreshing(true);
+            try {
+                await onRefresh();
+            } finally {
+                setIsRefreshing(false);
+            }
+        }
+    };
+
+    // Skeleton loading component
+    const TableSkeleton = () => (
+        <div className="overflow-x-auto overflow-y-visible">
+            <div className={showBorder ? "rounded-md border" : ""}>
+                <Table>
+                    <TableHeader>
+                        <TableRow className={headerClassName}>
+                            {columns.map((_, index) => (
+                                <TableHead key={index} className="font-semibold whitespace-nowrap text-xs px-2 py-1">
+                                    <Skeleton className="h-4 w-20" />
+                                </TableHead>
+                            ))}
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {[...Array(5)].map((_, rowIndex) => (
+                            <TableRow key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-green-100/30' : 'bg-blue-100/30'}>
+                                {columns.map((_, colIndex) => (
+                                    <TableCell key={colIndex} className="whitespace-nowrap text-xs px-2 py-1">
+                                        <Skeleton className="h-4 w-full" />
+                                    </TableCell>
+                                ))}
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
+        </div>
+    );
+
     // Loading state
-    if (isLoading) {
+    if (isLoading || isRefreshing) {
         return (
-            <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                <span className="ml-2 text-gray-600">{loadingMessage}</span>
+            <div className={containerClassName}>
+                {tableTitle && (
+                    <div className="flex items-center justify-between py-1 px-1">
+                        <div className="flex flex-col">
+                            <p className="text-lg font-semibold">{tableTitle}</p>
+                            {tableDescription && (
+                                <p className="text-sm text-muted-foreground">{tableDescription}</p>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 ml-auto">
+                            {(showColumnToggle && onColumnVisibilityChange) && (
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" className="h-8" disabled>
+                                        <Settings className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="h-8" disabled>
+                                        <RotateCcwIcon className="h-4 w-4 animate-spin" />
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+                <TableSkeleton />
             </div>
         );
     }
@@ -319,21 +384,23 @@ export function DataTable<TData>({
                                     >
                                         <Settings className="h-4 w-4" />
                                     </Button>
-                                    <Button
+                                    {/* <Button
                                         variant="outline"
                                         size="sm"
                                         className="h-8"
-                                        onClick={() => setIsColumnModalOpen(true)}
+                                        onClick={handleRefresh}
+                                        disabled={isRefreshing || !onRefresh}
+                                        title="Refresh data"
                                     >
-                                        <RotateCcwIcon className="h-4 w-4" />
-                                    </Button>
+                                        <RotateCcwIcon className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                    </Button> */}
                                 </div>
                                 <Dialog open={isColumnModalOpen} onOpenChange={setIsColumnModalOpen}>
                                     <DialogContent className="sm:max-w-106.25">
                                         <DialogHeader>
                                             <DialogTitle>Toggle Columns</DialogTitle>
                                         </DialogHeader>
-                                        <div className="flex flex-col gap-2 py-4">
+                                        <div className="flex flex-col gap-1 py-4">
                                             {table
                                                 .getAllColumns()
                                                 .filter((column) => column.getCanHide())
@@ -371,7 +438,7 @@ export function DataTable<TData>({
                     </div>
                 </div>
             )}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-visible">
                 <div className={showBorder ? "rounded-md border" : ""}>
                     <Table>
                         <TableHeader>
@@ -415,9 +482,8 @@ export function DataTable<TData>({
                                 table.getRowModel().rows.map((row, index) => (
                                     <TableRow
                                         key={row.id}
-                                        className={`${getRowClassName(row.original)} ${
-                                            index % 2 === 0 ? 'bg-green-100/50 hover:bg-green-100/70' : 'bg-blue-100/50 hover:bg-blue-100/70'
-                                        }`}
+                                        className={`${getRowClassName(row.original)} ${index % 2 === 0 ? 'bg-green-100/50 hover:bg-green-100/70' : 'bg-blue-100/50 hover:bg-blue-100/70'
+                                            }`}
                                         onClick={() => onRowClick?.(row.original)}
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >

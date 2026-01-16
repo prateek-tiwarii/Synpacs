@@ -1,9 +1,10 @@
 import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
@@ -20,30 +21,23 @@ import toast from "react-hot-toast";
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     actions: true, // Always visible, cannot be hidden
     name: true,
-    age_sex: true,
-    body_part: true,
+    case_id: true,
+    age: true,
+    sex: true,
+    study_date_time: true,
+    history_date_time: true,
+    reporting_date_time: true,
+    accession_number: true,
+    center: true,
+    referring_doctor: true,
+    image_count: true,
     description: true,
     modality: true,
-    case_date_time: true,
     case_type: true,
-    priority: true,
-    series_count: true,
-    instance_count: true,
     reported: true,
-    // Hide all other columns
-    accession_number: false,
-    pac_patinet_id: false,
-    age: false,
-    sex: false,
-    case_description: false,
-    treatment_type: false,
-    status: false,
-    referring_doctor: false,
-    date_of_capture: false,
-    pac_images_count: false,
-    hospital_id: false,
-    case_date: false,
-    case_time: false,
+    // Hide other columns
+    series_count: false,
+    instance_count: false,
 };
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
@@ -71,7 +65,7 @@ const AssignedPatientsTable = ({
     setMessageDialogOpen,
     setDocumentDialogOpen,
     filters,
-    activeTab = 'Unreported',
+    activeTab = 'All Cases',
 }: AssignedPatientsTableProps) => {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -106,129 +100,129 @@ const AssignedPatientsTable = ({
         }
     }, [columnVisibility]);
 
-    useEffect(() => {
-        const fetchAssignedPatients = async () => {
-            try {
-                setIsLoading(true);
-                setError(null);
+    const fetchAssignedPatients = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
 
-                // Build API filters from FilterState - always include all properties
-                // Map activeTab to status
-                const status = TAB_TO_STATUS_MAP[activeTab] || 'all';
+            // Build API filters from FilterState - always include all properties
+            // Map activeTab to status
+            const status = TAB_TO_STATUS_MAP[activeTab] || 'all';
 
-                const apiFilters: any = {
-                    start_date: filters?.startDate || '',
-                    end_date: filters?.endDate || '',
-                    patient_name: filters?.patientName || '',
-                    patient_id: filters?.patientId || '',
-                    body_part: filters?.bodyPart || '',
-                    status: status,
-                    gender: '',
-                    modality: '',
-                };
+            const apiFilters: any = {
+                start_date: filters?.startDate || '',
+                end_date: filters?.endDate || '',
+                patient_name: filters?.patientName || '',
+                patient_id: filters?.patientId || '',
+                body_part: filters?.bodyPart || '',
+                status: status,
+                gender: '',
+                modality: '',
+            };
 
-                if (filters) {
-                    // Handle gender
-                    if (filters.gender?.M && !filters.gender?.F) {
-                        apiFilters.gender = 'M';
-                    } else if (filters.gender?.F && !filters.gender?.M) {
-                        apiFilters.gender = 'F';
-                    } else if (filters.gender?.M && filters.gender?.F) {
-                        apiFilters.gender = 'MF';
-                    }
-
-                    // Handle modality
-                    if (filters.modalities) {
-                        const selectedModality = Object.entries(filters.modalities).find(
-                            ([key, isSelected]) => isSelected && key !== 'ALL'
-                        );
-                        if (selectedModality) {
-                            apiFilters.modality = selectedModality[0];
-                        }
-                    }
+            if (filters) {
+                // Handle gender
+                if (filters.gender?.M && !filters.gender?.F) {
+                    apiFilters.gender = 'M';
+                } else if (filters.gender?.F && !filters.gender?.M) {
+                    apiFilters.gender = 'F';
+                } else if (filters.gender?.M && filters.gender?.F) {
+                    apiFilters.gender = 'MF';
                 }
 
-                const response = await apiService.getAssignedCases(apiFilters) as any;
-                if (response.success && response.data) {
-                    // Map API response to match Patient interface
-                    const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
-                        // Format case_date to readable format (YYYYMMDD -> YYYY-MM-DD)
-                        const formatCaseDate = (dateStr: string): string => {
-                            if (!dateStr || dateStr.length !== 8) return dateStr;
-                            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-                        };
-
-                        // Use pre-calculated age from API if available, otherwise calculate from dob
-                        const getAge = (): string => {
-                            if (caseItem.patient?.age !== undefined && caseItem.patient?.age !== null) {
-                                return caseItem.patient.age.toString();
-                            }
-                            // Fallback: calculate from dob if age not provided
-                            const dob = caseItem.patient?.dob || caseItem.patient?.date_of_birth;
-                            if (!dob || dob.length !== 8) return '';
-                            const year = parseInt(dob.substring(0, 4));
-                            const month = parseInt(dob.substring(4, 6)) - 1;
-                            const day = parseInt(dob.substring(6, 8));
-                            const birthDate = new Date(year, month, day);
-                            const today = new Date();
-                            let age = today.getFullYear() - birthDate.getFullYear();
-                            const monthDiff = today.getMonth() - birthDate.getMonth();
-                            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                                age--;
-                            }
-                            return age.toString();
-                        };
-
-                        return {
-                            _id: caseItem._id,
-                            name: caseItem.patient?.name || '',
-                            sex: caseItem.patient?.sex || '',
-                            pac_patinet_id: caseItem.patient?.patient_id || '',
-                            date_of_birth: caseItem.patient?.dob || caseItem.patient?.date_of_birth || '',
-                            age: getAge(),
-                            hospital_id: caseItem.hospital_id || '',
-                            hospital_name: caseItem.hospital_name || '',
-                            status: caseItem.status || '',
-                            case_description: caseItem.description || '',
-                            description: caseItem.description || '',
-                            body_part: caseItem.body_part || '',
-                            accession_number: caseItem.accession_number || '',
-                            case_uid: caseItem.case_uid || '',
-                            modality: caseItem.modality || '',
-                            case_date: caseItem.case_date || '',
-                            case_time: caseItem.case_time || '',
-                            date_of_capture: formatCaseDate(caseItem.case_date),
-                            priority: caseItem.priority || '',
-                            case_type: caseItem.case_type || '',
-                            assigned_to: caseItem.assigned_to || '',
-                            referring_physician: caseItem.referring_physician || '',
-                            patient: caseItem.patient,
-                            series_count: caseItem.series_count || 0,
-                            instance_count: caseItem.instance_count || 0,
-                            pac_images_count: 0, // Not provided in API response
-                            updatedAt: caseItem.updatedAt || '',
-                            isBookmarked: caseItem.isBookmarked || false,
-                            notes: caseItem.notes || [],
-                            attached_report: caseItem.attached_report || null,
-                        } as Patient;
-                    });
-                    setPatients(mappedPatients);
+                // Handle modality
+                if (filters.modalities) {
+                    const selectedModality = Object.entries(filters.modalities).find(
+                        ([key, isSelected]) => isSelected && key !== 'ALL'
+                    );
+                    if (selectedModality) {
+                        apiFilters.modality = selectedModality[0];
+                    }
                 }
-            } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to fetch assigned patients');
-                console.error('Error fetching assigned patients:', err);
-            } finally {
-                setIsLoading(false);
             }
-        };
 
-        fetchAssignedPatients();
+            const response = await apiService.getAssignedCases(apiFilters) as any;
+            if (response.success && response.data) {
+                // Map API response to match Patient interface
+                const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
+                    // Format case_date to readable format (YYYYMMDD -> YYYY-MM-DD)
+                    const formatCaseDate = (dateStr: string): string => {
+                        if (!dateStr || dateStr.length !== 8) return dateStr;
+                        return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+                    };
+
+                    // Use pre-calculated age from API if available, otherwise calculate from dob
+                    const getAge = (): string => {
+                        if (caseItem.patient?.age !== undefined && caseItem.patient?.age !== null) {
+                            return caseItem.patient.age.toString();
+                        }
+                        // Fallback: calculate from dob if age not provided
+                        const dob = caseItem.patient?.dob || caseItem.patient?.date_of_birth;
+                        if (!dob || dob.length !== 8) return '';
+                        const year = parseInt(dob.substring(0, 4));
+                        const month = parseInt(dob.substring(4, 6)) - 1;
+                        const day = parseInt(dob.substring(6, 8));
+                        const birthDate = new Date(year, month, day);
+                        const today = new Date();
+                        let age = today.getFullYear() - birthDate.getFullYear();
+                        const monthDiff = today.getMonth() - birthDate.getMonth();
+                        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                            age--;
+                        }
+                        return age.toString();
+                    };
+
+                    return {
+                        _id: caseItem._id,
+                        name: caseItem.patient?.name || '',
+                        sex: caseItem.patient?.sex || '',
+                        pac_patinet_id: caseItem.patient?.patient_id || '',
+                        date_of_birth: caseItem.patient?.dob || caseItem.patient?.date_of_birth || '',
+                        age: getAge(),
+                        hospital_id: caseItem.center_id || caseItem.hospital_id || '',
+                        hospital_name: caseItem.center_name || caseItem.hospital_name || '',
+                        status: caseItem.status || '',
+                        case_description: caseItem.description || '',
+                        description: caseItem.description || '',
+                        body_part: caseItem.body_part || '',
+                        accession_number: caseItem.accession_number || '',
+                        case_uid: caseItem.case_uid || '',
+                        modality: caseItem.modality || '',
+                        case_date: caseItem.case_date || '',
+                        case_time: caseItem.case_time || '',
+                        date_of_capture: formatCaseDate(caseItem.case_date),
+                        priority: caseItem.priority || '',
+                        case_type: caseItem.case_type || '',
+                        assigned_to: caseItem.assigned_to || '',
+                        referring_physician: caseItem.referring_physician || '',
+                        patient: caseItem.patient,
+                        series_count: caseItem.series_count || 0,
+                        instance_count: caseItem.instance_count || 0,
+                        pac_images_count: 0, // Not provided in API response
+                        updatedAt: caseItem.updatedAt || '',
+                        isBookmarked: caseItem.isBookmarked || false,
+                        notes: caseItem.notes || [],
+                        attached_report: caseItem.attached_report || null,
+                    } as Patient;
+                });
+                setPatients(mappedPatients);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch assigned patients');
+            console.error('Error fetching assigned patients:', err);
+        } finally {
+            setIsLoading(false);
+        }
     }, [filters, activeTab]);
 
+    useEffect(() => {
+        fetchAssignedPatients();
+    }, [fetchAssignedPatients]);
+
     const handleZipDownload = (case_id: string, patient_name?: string) => {
-        setSelectedCaseForDownload({ 
-            id: case_id, 
-            name: patient_name || 'Study Files' 
+        setSelectedCaseForDownload({
+            id: case_id,
+            name: patient_name || 'Study Files'
         });
         setDownloadModalOpen(true);
     };
@@ -341,17 +335,16 @@ const AssignedPatientsTable = ({
                                                 <div key={note._id} className="p-2.5 bg-white rounded-md border border-gray-200 shadow-sm">
                                                     <div className="flex items-center justify-between mb-2">
                                                         <div className="flex items-center gap-2">
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                                                                note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
                                                                 note.flag_type === 'routine' ? 'bg-gray-100 text-gray-700' :
-                                                                note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
-                                                                note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                                                                note.flag_type === 'error' ? 'bg-red-100 text-red-700' :
-                                                                'bg-gray-100 text-gray-700'
-                                                            }`}>
+                                                                    note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
+                                                                        note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                                                                            note.flag_type === 'error' ? 'bg-red-100 text-red-700' :
+                                                                                'bg-gray-100 text-gray-700'
+                                                                }`}>
                                                                 {note.flag_type === 'urgent' ? 'URGENT' :
-                                                                note.flag_type === 'routine' ? 'ROUTINE' :
-                                                                String(note.flag_type || 'ROUTINE').toUpperCase()}
+                                                                    note.flag_type === 'routine' ? 'ROUTINE' :
+                                                                        String(note.flag_type || 'ROUTINE').toUpperCase()}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -454,12 +447,126 @@ const AssignedPatientsTable = ({
             },
         }),
         columnHelper.display({
-            id: 'age_sex',
-            header: 'Age/Sex',
+            id: 'case_id',
+            header: 'Case ID',
             cell: (props) => {
-                const age = props.row.original.age || '-';
-                const sex = props.row.original.sex || '-';
-                return <CellWithCopy content={`${age} / ${sex}`} cellId={`${props.row.id}-age-sex`} />;
+                const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
+                return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'age',
+            header: 'Age',
+            cell: (props) => {
+                const age = props.row.original.age || props.row.original.patient?.age || '-';
+                return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'sex',
+            header: 'Sex',
+            cell: (props) => {
+                const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
+                return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'study_date_time',
+            header: 'Study Date & Time',
+            cell: (props) => {
+                // Format date from YYYYMMDD to readable format
+                const dateStr = props.row.original.case_date || '';
+                let formattedDate = '-';
+                if (dateStr && dateStr.length === 8) {
+                    const year = dateStr.substring(0, 4);
+                    const month = dateStr.substring(4, 6);
+                    const day = dateStr.substring(6, 8);
+                    formattedDate = `${day}-${month}-${year}`;
+                }
+
+                // Format time from HHMMSS.milliseconds to HH:MM
+                const timeStr = props.row.original.case_time || '';
+                let formattedTime = '';
+                if (timeStr) {
+                    const timePart = timeStr.split('.')[0];
+                    if (timePart.length >= 4) {
+                        formattedTime = `${timePart.substring(0, 2)}:${timePart.substring(2, 4)}`;
+                    }
+                }
+
+                return <CellWithCopy content={`${formattedDate} ${formattedTime}`} cellId={`${props.row.id}-study-dt`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'history_date_time',
+            header: 'History Date & Time',
+            cell: (props) => {
+                // Use updatedAt as history date/time
+                const updatedAt = props.row.original.updatedAt;
+                if (!updatedAt) return <span className="text-gray-400">-</span>;
+
+                const date = new Date(updatedAt);
+                const formatted = date.toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'reporting_date_time',
+            header: 'Reporting Date & Time',
+            cell: (props) => {
+                const attachedReport = (props.row.original as any).attached_report;
+                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
+
+                const date = new Date(attachedReport.created_at);
+                const formatted = date.toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
+            },
+        }),
+        columnHelper.accessor('accession_number', {
+            header: 'Accession Number',
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
+        }),
+        columnHelper.display({
+            id: 'center',
+            header: 'Center',
+            cell: (props) => {
+                const centerName = props.row.original.hospital_name;
+                if (!centerName) return <span className="text-gray-400">-</span>;
+                return (
+                    <Badge variant="info" className="font-normal text-[10px] px-2 py-0.5 whitespace-nowrap">
+                        {centerName}
+                    </Badge>
+                );
+            },
+        }),
+        columnHelper.display({
+            id: 'referring_doctor',
+            header: 'Referring Doctor',
+            cell: (props) => {
+                const referringPhysician = props.row.original.referring_physician || '-';
+                return <CellWithCopy content={referringPhysician} cellId={`${props.row.id}-ref-doc`} />;
+            },
+        }),
+        columnHelper.display({
+            id: 'image_count',
+            header: 'Image Count',
+            cell: (props) => {
+                const instanceCount = props.row.original.instance_count || 0;
+                return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
             },
         }),
         columnHelper.accessor('description', {
@@ -470,51 +577,9 @@ const AssignedPatientsTable = ({
             header: 'Modality',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
-        columnHelper.display({
-            id: 'case_date_time',
-            header: 'Case Date/Time',
-            cell: (props) => {
-                // Format date from YYYYMMDD to readable format
-                const dateStr = props.row.original.case_date || '';
-                let formattedDate = '-';
-                if (dateStr && dateStr.length === 8) {
-                    const year = dateStr.substring(0, 4);
-                    const month = dateStr.substring(4, 6);
-                    const day = dateStr.substring(6, 8);
-                    formattedDate = `${year}-${month}-${day}`;
-                }
-
-                // Format time from HHMMSS.milliseconds to HH:MM:SS
-                const timeStr = props.row.original.case_time || '';
-                let formattedTime = '';
-                if (timeStr) {
-                    const timePart = timeStr.split('.')[0];
-                    if (timePart.length >= 6) {
-                        formattedTime = `${timePart.substring(0, 2)}:${timePart.substring(2, 4)}:${timePart.substring(4, 6)}`;
-                    }
-                }
-
-                return (
-                    <div className="whitespace-pre-line text-xs">
-                        <CellWithCopy
-                            content={`${formattedDate}\n${formattedTime}`}
-                            cellId={`${props.row.id}-datetime`}
-                        />
-                    </div>
-                );
-            },
-        }),
         columnHelper.accessor('case_type', {
             header: 'Case Type',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
-        }),
-        columnHelper.accessor('series_count', {
-            header: 'Series Count',
-            cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-series`} />,
-        }),
-        columnHelper.accessor('instance_count', {
-            header: 'Instance Count',
-            cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-instance`} />,
         }),
         columnHelper.display({
             id: 'reported',
@@ -637,6 +702,7 @@ const AssignedPatientsTable = ({
                 enableRowSelection={true}
                 rowSelection={rowSelection}
                 onRowSelectionChange={setRowSelection}
+                onRefresh={fetchAssignedPatients}
             />
             <BookmarkDialog
                 open={bookmarkDialogOpen}
