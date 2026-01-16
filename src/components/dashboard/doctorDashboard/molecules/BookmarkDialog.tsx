@@ -9,9 +9,9 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { apiService } from '@/lib/api';
 import type { Patient } from '@/components/patient/PacDetailsModal';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Bookmark } from 'lucide-react';
 
-interface MessageDialogProps {
+interface BookmarkDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     patient: Patient | null;
@@ -20,23 +20,18 @@ interface MessageDialogProps {
 
 type FlagType = 'urgent' | 'routine';
 
-const MessageDialog = ({
+const BookmarkDialog = ({
     open,
     onOpenChange,
     patient,
     onSuccess,
-}: MessageDialogProps) => {
-    const [message, setMessage] = useState('');
-    const [messageFlag, setMessageFlag] = useState<FlagType>('routine');
+}: BookmarkDialogProps) => {
+    const [note, setNote] = useState('');
+    const [noteFlag, setNoteFlag] = useState<FlagType>('routine');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleSendMessage = async () => {
-        if (!message.trim()) {
-            setError('Please enter a note');
-            return;
-        }
-
+    const handleSaveBookmark = async () => {
         if (!patient?._id) {
             setError('No patient selected');
             return;
@@ -46,17 +41,23 @@ const MessageDialog = ({
         setError(null);
 
         try {
-            await apiService.createCaseNote(patient._id, {
-                note: message,
-                flag_type: messageFlag,
-            });
+            // Save the bookmark
+            await apiService.bookmarkCase(patient._id);
 
-            setMessage('');
-            setMessageFlag('routine');
+            // If there's a note, add it as well
+            if (note.trim()) {
+                await apiService.createCaseNote(patient._id, {
+                    note: note,
+                    flag_type: noteFlag,
+                });
+            }
+
+            setNote('');
+            setNoteFlag('routine');
             onOpenChange(false);
             onSuccess?.();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to add note');
+            setError(err instanceof Error ? err.message : 'Failed to bookmark case');
         } finally {
             setIsLoading(false);
         }
@@ -65,8 +66,8 @@ const MessageDialog = ({
     const handleClose = (open: boolean) => {
         if (!isLoading) {
             if (!open) {
-                setMessage('');
-                setMessageFlag('routine');
+                setNote('');
+                setNoteFlag('routine');
                 setError(null);
             }
             onOpenChange(open);
@@ -90,8 +91,9 @@ const MessageDialog = ({
         <Dialog open={open} onOpenChange={handleClose}>
             <DialogContent className="sm:max-w-120 bg-white p-0 gap-0">
                 <DialogHeader className="px-4 py-3 border-b border-gray-100">
-                    <DialogTitle className="text-base font-semibold text-gray-900">
-                        Add Note
+                    <DialogTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                        <Bookmark className="w-4 h-4" />
+                        Bookmark Case
                         {patient && (
                             <span className="font-normal text-gray-500 ml-2 text-sm">
                                 — {patient.name}
@@ -101,27 +103,18 @@ const MessageDialog = ({
                 </DialogHeader>
 
                 <div className="px-4 py-3 space-y-3">
-                    <Textarea
-                        placeholder="Enter clinical notes..."
-                        value={message}
-                        onChange={(e) => {
-                            setMessage(e.target.value);
-                            if (error) setError(null);
-                        }}
-                        disabled={isLoading}
-                        className="min-h-25 resize-none text-sm border-gray-200 focus:border-gray-300 focus:ring-0"
-                    />
-
+                    <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-500 mr-1">Category:</span>
                         {flags.map((flag) => (
                             <button
                                 key={flag.type}
-                                onClick={() => setMessageFlag(flag.type)}
+                                onClick={() => setNoteFlag(flag.type)}
                                 disabled={isLoading}
                                 className={`
                                     inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-all
-                                    ${messageFlag === flag.type
+                                    ${noteFlag === flag.type
                                         ? flag.activeClass
                                         : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                                     }
@@ -131,6 +124,20 @@ const MessageDialog = ({
                                 {flag.label}
                             </button>
                         ))}
+                    </div>
+
+                            Notes/Comments (Optional)
+                        </label>
+                        <Textarea
+                            placeholder="Add notes or comments about why you're bookmarking this case..."
+                            value={note}
+                            onChange={(e) => {
+                                setNote(e.target.value);
+                                if (error) setError(null);
+                            }}
+                            disabled={isLoading}
+                            className="min-h-25 resize-none text-sm border-gray-200 focus:border-gray-300 focus:ring-0"
+                        />
                     </div>
 
                     {error && (
@@ -152,17 +159,20 @@ const MessageDialog = ({
                     </Button>
                     <Button
                         size="sm"
-                        onClick={handleSendMessage}
-                        disabled={isLoading || !message.trim()}
+                        onClick={handleSaveBookmark}
+                        disabled={isLoading}
                         className="bg-gray-900 hover:bg-gray-800 text-white"
                     >
                         {isLoading ? (
                             <>
                                 <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                                Adding...
+                                Bookmarking...
                             </>
                         ) : (
-                            'Add Note'
+                            <>
+                                <Bookmark className="w-3.5 h-3.5 mr-1.5" />
+                                Save Bookmark
+                            </>
                         )}
                     </Button>
                 </div>
@@ -171,4 +181,4 @@ const MessageDialog = ({
     );
 };
 
-export default MessageDialog;
+export default BookmarkDialog;

@@ -1,4 +1,4 @@
-import { Search, Bell, Settings, User } from 'lucide-react'
+import { Bell, Settings, User, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -70,23 +70,11 @@ export function TopBar() {
         <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
           <span className="text-white font-bold text-lg">S</span>
         </div>
-        <span className="text-xl font-bold text-gray-900">synPacs</span>
+        <span className="text-xl font-bold text-gray-900">SynPACS</span>
       </Link>
 
-      {/* Search Bar */}
-      <div className="flex-1 max-w-2xl mx-8">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search patients, studies, doctors..."
-            className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 bg-white"
-          />
-        </div>
-      </div>
-
       {/* Right Side Icons */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 ml-auto">
 
         {(user?.role === 'coordinator' || user?.role === 'super_coordinator') && (
           <Popover open={open} onOpenChange={setOpen}>
@@ -134,6 +122,17 @@ export function TopBar() {
           </Popover>
         )}
         <div className='flex items-center gap-2'>
+          {/* Refresh Button */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => window.location.reload()}
+            className="bg-white! border-gray-300! hover:bg-gray-50! text-gray-700!"
+            title="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

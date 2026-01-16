@@ -37,10 +37,17 @@ export interface Note {
     _id: string;
     case_id: string;
     note: string;
-    flag_type: string;
+    flag_type: 'urgent' | 'routine';
     user_id: string;
     created_at: string;
     updated_at: string;
+    createdAt: string;
+    updatedAt: string;
+    created_by?: {
+        _id: string;
+        full_name: string;
+        email: string;
+    };
 }
 
 export interface PacData {
@@ -273,7 +280,7 @@ const PacDetailsModal = ({
                                 <Button
                                     onClick={onAssignDoctor}
                                     disabled={!selectedDoctorId || isAssigning || isLoadingDoctors}
-                                    className="min-w-[100px]"
+                                    className="min-w-25"
                                     size="sm"
                                 >
                                     {isAssigning ? (
@@ -447,7 +454,7 @@ const PacDetailsModal = ({
 
                         {/* Action buttons */}
                         <div className="flex justify-end gap-2 pt-2 border-t">
-                            <Button variant="outline" onClick={() => onClose(false)} size="sm" className="min-w-[80px]">
+                            <Button variant="outline" onClick={() => onClose(false)} size="sm" className="min-w-20">
                                 Close
                             </Button>
                             <Button
@@ -456,7 +463,7 @@ const PacDetailsModal = ({
                                     onClose(false);
                                 }}
                                 size="sm"
-                                className="min-w-[100px]"
+                                className="min-w-25"
                             >
                                 Save Changes
                             </Button>

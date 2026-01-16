@@ -1,13 +1,17 @@
-import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare } from "lucide-react";
+import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
-import type { VisibilityState } from '@tanstack/react-table';
+import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
+import { Button } from "@/components/ui/button";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import BookmarkDialog from "./BookmarkDialog";
+import DownloadModal from "@/components/common/DownloadModal";
 
 import type { FilterState } from "@/components/common/FilterPanel";
 import toast from "react-hot-toast";
@@ -72,6 +76,11 @@ const AssignedPatientsTable = ({
     const [patients, setPatients] = useState<Patient[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
+    const [selectedPatientForBookmark, setSelectedPatientForBookmark] = useState<Patient | null>(null);
+    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+    const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
 
     // Initialize column visibility from localStorage or use default
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -216,24 +225,29 @@ const AssignedPatientsTable = ({
         fetchAssignedPatients();
     }, [filters, activeTab]);
 
-    const handleZipDownload = (case_id: string) => {
-        console.log('Downloading Case:', case_id);
+    const handleZipDownload = (case_id: string, patient_name?: string) => {
+        setSelectedCaseForDownload({ 
+            id: case_id, 
+            name: patient_name || 'Study Files' 
+        });
+        setDownloadModalOpen(true);
     };
 
     // Save a patient case to bookmarks
     const handleSaveBookmark = async (patient: Patient) => {
-        try {
-            await apiService.bookmarkCase(patient._id);
+        setSelectedPatientForBookmark(patient);
+        setBookmarkDialogOpen(true);
+    };
+
+    const handleBookmarkSuccess = () => {
+        if (selectedPatientForBookmark) {
             // Update local state to reflect the change immediately
             setPatients(prevPatients =>
                 prevPatients.map(p =>
-                    p._id === patient._id ? { ...p, isBookmarked: true } : p
+                    p._id === selectedPatientForBookmark._id ? { ...p, isBookmarked: true } : p
                 )
             );
             toast.success('Case bookmarked successfully');
-        } catch (error) {
-            console.error('Failed to bookmark case:', error);
-            toast.error('Failed to bookmark case');
         }
     };
 
@@ -257,6 +271,25 @@ const AssignedPatientsTable = ({
     const columnHelper = createColumnHelper<Patient>();
 
     const columns = useMemo(() => [
+        columnHelper.display({
+            id: 'select',
+            header: ({ table }) => (
+                <Checkbox
+                    checked={table.getIsAllPageRowsSelected()}
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                    aria-label="Select all"
+                />
+            ),
+            cell: ({ row }) => (
+                <Checkbox
+                    checked={row.getIsSelected()}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    aria-label="Select row"
+                    onClick={(e) => e.stopPropagation()}
+                />
+            ),
+            enableHiding: false,
+        }),
         columnHelper.display({
             id: 'actions',
             header: 'Action',
@@ -305,22 +338,39 @@ const AssignedPatientsTable = ({
                                         <h4 className="text-sm font-semibold text-gray-900">Notes ({props.row.original.notes.length})</h4>
                                         <div className="space-y-2">
                                             {props.row.original.notes.map((note: Note) => (
-                                                <div key={note._id} className="p-2 bg-gray-50 rounded-md border border-gray-100">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className={`w-2 h-2 rounded-full ${note.flag_type === 'info' ? 'bg-blue-500' :
-                                                            note.flag_type === 'warning' ? 'bg-yellow-500' :
-                                                                note.flag_type === 'error' ? 'bg-red-500' : 'bg-gray-500'
-                                                            }`} />
-                                                        <span className="text-xs text-gray-500">
-                                                            {new Date(note.created_at).toLocaleDateString('en-US', {
+                                                <div key={note._id} className="p-2.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                                                note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
+                                                                note.flag_type === 'routine' ? 'bg-gray-100 text-gray-700' :
+                                                                note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
+                                                                note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                                                                note.flag_type === 'error' ? 'bg-red-100 text-red-700' :
+                                                                'bg-gray-100 text-gray-700'
+                                                            }`}>
+                                                                {note.flag_type === 'urgent' ? 'URGENT' :
+                                                                note.flag_type === 'routine' ? 'ROUTINE' :
+                                                                String(note.flag_type || 'ROUTINE').toUpperCase()}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
+                                                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                                        <span className="font-medium">
+                                                            {note.created_by?.full_name || 'Unknown User'}
+                                                        </span>
+                                                        <span>
+                                                            {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
                                                                 month: 'short',
                                                                 day: 'numeric',
+                                                                year: 'numeric'
+                                                            })} at {new Date(note.createdAt || note.created_at).toLocaleTimeString('en-US', {
                                                                 hour: '2-digit',
                                                                 minute: '2-digit'
                                                             })}
                                                         </span>
                                                     </div>
-                                                    <p className="text-sm text-gray-700">{note.note}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -332,7 +382,7 @@ const AssignedPatientsTable = ({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    onClick={() => handleZipDownload(props.row.original._id)}
+                                    onClick={() => handleZipDownload(props.row.original._id, props.row.original.patient?.name)}
                                     className="p-1 hover:bg-yellow-50 rounded cursor-pointer"
                                 >
                                     <Download className="w-4 h-4 text-yellow-500" />
@@ -348,9 +398,8 @@ const AssignedPatientsTable = ({
                                 <button
                                     onClick={() => {
                                         const id = props.row.original._id;
-                                        // Open both tabs synchronously with named targets
-                                        window.open(`/case/${id}/viewer`, `viewer_${id}`);
-                                        window.open(`/case/${id}/report`, `report_${id}`);
+                                        // Open viewer only in a new window (not tab)
+                                        window.open(`/case/${id}/viewer`, `viewer_${id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
                                     className="p-1 hover:bg-blue-50 rounded cursor-pointer"
                                 >
@@ -358,7 +407,7 @@ const AssignedPatientsTable = ({
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>View Images & Report</p>
+                                <p>View Images</p>
                             </TooltipContent>
                         </Tooltip>
 
@@ -388,7 +437,21 @@ const AssignedPatientsTable = ({
         }),
         columnHelper.accessor('name', {
             header: 'Patient Name',
-            cell: (info) => <CellWithCopy content={info.getValue()} cellId={`${info.row.id}-name`} />,
+            cell: (info) => {
+                const name = info.getValue();
+                const caseId = info.row.original._id;
+                return (
+                    <button
+                        onClick={() => {
+                            // Open only viewer in new window
+                            window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                        }}
+                        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
+                    >
+                        {name}
+                    </button>
+                );
+            },
         }),
         columnHelper.display({
             id: 'age_sex',
@@ -398,10 +461,6 @@ const AssignedPatientsTable = ({
                 const sex = props.row.original.sex || '-';
                 return <CellWithCopy content={`${age} / ${sex}`} cellId={`${props.row.id}-age-sex`} />;
             },
-        }),
-        columnHelper.accessor('body_part', {
-            header: 'Body Part',
-            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-body`} />,
         }),
         columnHelper.accessor('description', {
             header: 'Description',
@@ -449,10 +508,6 @@ const AssignedPatientsTable = ({
             header: 'Case Type',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
         }),
-        columnHelper.accessor('priority', {
-            header: 'Priority',
-            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-priority`} />,
-        }),
         columnHelper.accessor('series_count', {
             header: 'Series Count',
             cell: (info) => <CellWithCopy content={info.getValue()?.toString() || '0'} cellId={`${info.row.id}-series`} />,
@@ -492,20 +547,113 @@ const AssignedPatientsTable = ({
         setDocumentDialogOpen(true);
     };
 
+    // Get selected patients from row selection
+    const selectedPatients = useMemo(() => {
+        return Object.keys(rowSelection)
+            .filter(key => rowSelection[key])
+            .map(key => patients[parseInt(key)])
+            .filter(Boolean);
+    }, [rowSelection, patients]);
+
+    // Handle bulk viewer action
+    const handleBulkViewStudies = () => {
+        selectedPatients.forEach((patient, index) => {
+            if (patient?._id) {
+                // Open each study in a new window (not tab) with a slight delay
+                setTimeout(() => {
+                    window.open(`/case/${patient._id}/viewer`, `viewer_${patient._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                }, index * 100);
+            }
+        });
+    };
+
+    // Handle bulk report action
+    const handleBulkViewReports = () => {
+        selectedPatients.forEach((patient, index) => {
+            if (patient?._id) {
+                setTimeout(() => {
+                    window.open(`/case/${patient._id}/report`, `report_${patient._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                }, index * 100);
+            }
+        });
+    };
+
+    // Clear selection
+    const handleClearSelection = () => {
+        setRowSelection({});
+    };
+
     return (
-        <DataTable
-            data={patients}
-            columns={columns}
-            isLoading={isLoading}
-            error={error}
-            emptyMessage="No patients assigned to you yet."
-            loadingMessage="Loading assigned patients..."
-            columnVisibility={columnVisibility}
-            onColumnVisibilityChange={setColumnVisibility}
-            showColumnToggle={true}
-            tableTitle="Assigned Cases"
-            tableDescription="List of cases assigned to you."
-        />
+        <>
+            {selectedPatients.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium text-blue-900">
+                                {selectedPatients.length} case{selectedPatients.length > 1 ? 's' : ''} selected
+                            </span>
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    onClick={handleBulkViewStudies}
+                                    className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
+                                >
+                                    <Eye className="w-3.5 h-3.5 mr-1.5" />
+                                    Open All Studies
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleBulkViewReports}
+                                    className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                                >
+                                    <ClipboardCheck className="w-3.5 h-3.5 mr-1.5" />
+                                    Open All Reports
+                                </Button>
+                            </div>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleClearSelection}
+                            className="h-8 text-xs text-gray-600 hover:text-gray-900"
+                        >
+                            <X className="w-3.5 h-3.5 mr-1" />
+                            Clear
+                        </Button>
+                    </div>
+                </div>
+            )}
+            <DataTable
+                data={patients}
+                columns={columns}
+                isLoading={isLoading}
+                error={error}
+                emptyMessage="No patients assigned to you yet."
+                loadingMessage="Loading assigned patients..."
+                columnVisibility={columnVisibility}
+                onColumnVisibilityChange={setColumnVisibility}
+                showColumnToggle={true}
+                enableRowSelection={true}
+                rowSelection={rowSelection}
+                onRowSelectionChange={setRowSelection}
+            />
+            <BookmarkDialog
+                open={bookmarkDialogOpen}
+                onOpenChange={setBookmarkDialogOpen}
+                patient={selectedPatientForBookmark}
+                onSuccess={handleBookmarkSuccess}
+            />
+            <DownloadModal
+                open={downloadModalOpen}
+                onClose={() => {
+                    setDownloadModalOpen(false);
+                    setSelectedCaseForDownload(null);
+                }}
+                caseId={selectedCaseForDownload?.id || ''}
+                caseName={selectedCaseForDownload?.name}
+            />
+        </>
     );
 };
 

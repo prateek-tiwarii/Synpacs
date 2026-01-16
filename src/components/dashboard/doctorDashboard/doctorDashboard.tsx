@@ -42,9 +42,31 @@ const serializeModalitiesToUrl = (modalities: typeof DEFAULT_MODALITIES): string
   return selected.length > 0 ? selected.join(',') : null;
 };
 
+// Helper to parse report status from URL
+const parseReportStatusFromUrl = (reportStatusParam: string | null): { reported: boolean; drafted: boolean; unreported: boolean } => {
+  const defaultStatus = { reported: false, drafted: false, unreported: false };
+  if (!reportStatusParam) return defaultStatus;
+  
+  const selected = reportStatusParam.split(',');
+  return {
+    reported: selected.includes('reported'),
+    drafted: selected.includes('drafted'),
+    unreported: selected.includes('unreported'),
+  };
+};
+
+// Helper to serialize report status to URL
+const serializeReportStatusToUrl = (reportStatus: { reported: boolean; drafted: boolean; unreported: boolean }): string | null => {
+  const selected = [];
+  if (reportStatus.reported) selected.push('reported');
+  if (reportStatus.drafted) selected.push('drafted');
+  if (reportStatus.unreported) selected.push('unreported');
+  return selected.length > 0 ? selected.join(',') : null;
+};
+
 const DoctorDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -102,6 +124,7 @@ const DoctorDashboard = () => {
         F: genderParam === 'F' || genderParam === 'MF',
       },
       hospital: searchParams.get('hospital') || '',
+      reportStatus: parseReportStatusFromUrl(searchParams.get('reportStatus')),
       modalities: parseModalitiesFromUrl(searchParams.get('modalities')),
     };
   }, [searchParams]);
@@ -166,6 +189,14 @@ const DoctorDashboard = () => {
         newParams.delete('status');
       }
 
+      // Handle report status
+      const reportStatusStr = serializeReportStatusToUrl(newFilters.reportStatus);
+      if (reportStatusStr) {
+        newParams.set('reportStatus', reportStatusStr);
+      } else {
+        newParams.delete('reportStatus');
+      }
+
       // Handle gender
       if (newFilters.gender.M && newFilters.gender.F) {
         newParams.set('gender', 'MF');
@@ -200,6 +231,7 @@ const DoctorDashboard = () => {
       newParams.delete('startDate');
       newParams.delete('endDate');
       newParams.delete('status');
+      newParams.delete('reportStatus');
       newParams.delete('gender');
       newParams.delete('modalities');
       // Reset period to default
@@ -226,6 +258,7 @@ const DoctorDashboard = () => {
         onFilterReset={onFilterReset}
         setActivePeriod={setActivePeriod}
         activePeriod={activePeriod}
+        filters={filters}
       />
 
       <div className='flex flex-col gap-2 p-4 rounded-2xl bg-white'>

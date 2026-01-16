@@ -1,10 +1,10 @@
-import { Activity, AlertCircle, CheckCircle2, Clock, FileText, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Activity, AlertCircle, CheckCircle2, Clock, FileText } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import PatientTable from '@/components/dashboard/RecentPatientTable';
 import DoctorAvailablity from '@/components/dashboard/DoctorAvailablity';
 import { useState, useEffect } from 'react';
 import { apiService } from '@/lib/api';
+import { format } from 'date-fns';
 
 interface HospitalStats {
   total_assigned_cases: number;
@@ -18,7 +18,23 @@ const CoordinatorDashboard = () => {
   const [statsData, setStatsData] = useState<HospitalStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentDate, setCurrentDate] = useState<string>('');
+  
+  // Helper function to get default date range (last 1 month)
+  const getDefaultDateRange = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 1);
+    return {
+      start: format(startDate, "yyyy-MM-dd"),
+      end: format(endDate, "yyyy-MM-dd"),
+    };
+  };
+
+  const defaultDates = getDefaultDateRange();
+  const [dateRange, setDateRange] = useState({
+    from: defaultDates.start,
+    to: defaultDates.end
+  });
 
   const fetchStats = async () => {
     try {
@@ -37,9 +53,7 @@ const CoordinatorDashboard = () => {
     }
   };
 
-  // Fix hydration issue by setting date on client side only
   useEffect(() => {
-    setCurrentDate(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     fetchStats();
   }, []);
 
@@ -81,10 +95,6 @@ const CoordinatorDashboard = () => {
     },
   ];
 
-  const handleRefresh = () => {
-    fetchStats();
-  };
-
   return (
     <div className='flex flex-col gap-2'>
       <div className="flex justify-between items-center">
@@ -97,21 +107,11 @@ const CoordinatorDashboard = () => {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className="text-xs text-gray-500">Today</p>
+            <p className="text-xs text-gray-500">Date Range</p>
             <p className="text-sm font-medium text-gray-900">
-              {currentDate || 'Loading...'}
+              {format(new Date(dateRange.from), 'MMM dd, yyyy')} - {format(new Date(dateRange.to), 'MMM dd, yyyy')}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white! text-black! border border-gray-300 gap-2"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </div>
       </div>
 
@@ -145,7 +145,7 @@ const CoordinatorDashboard = () => {
 
         {/* Main Content - Patients and Doctors in Flex Row */}
         <div className="flex gap-2 w-full justify-around">
-          <PatientTable />
+          <PatientTable onDateRangeChange={setDateRange} />
           <DoctorAvailablity />
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { flexRender, useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel } from "@tanstack/react-table";
 import type { ColumnDef, VisibilityState, SortingState, ColumnFiltersState, RowSelectionState } from '@tanstack/react-table';
-import { Loader2, RotateCcwIcon, Settings, UserPlus, ChevronDown } from "lucide-react";
+import { Loader2, RotateCcwIcon, Settings, UserPlus, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState } from "react";
 import {
     Dialog,
@@ -329,7 +329,7 @@ export function DataTable<TData>({
                                     </Button>
                                 </div>
                                 <Dialog open={isColumnModalOpen} onOpenChange={setIsColumnModalOpen}>
-                                    <DialogContent className="sm:max-w-[425px]">
+                                    <DialogContent className="sm:max-w-106.25">
                                         <DialogHeader>
                                             <DialogTitle>Toggle Columns</DialogTitle>
                                         </DialogHeader>
@@ -378,13 +378,33 @@ export function DataTable<TData>({
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <TableRow key={headerGroup.id} className={headerClassName}>
                                     {headerGroup.headers.map((header) => (
-                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-xs px-2 py-2">
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext()
-                                                )}
+                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-xs px-2 py-1">
+                                            {header.isPlaceholder ? null : (
+                                                <div
+                                                    className={
+                                                        header.column.getCanSort()
+                                                            ? 'flex items-center gap-1 cursor-pointer select-none hover:text-gray-900'
+                                                            : ''
+                                                    }
+                                                    onClick={header.column.getToggleSortingHandler()}
+                                                >
+                                                    {flexRender(
+                                                        header.column.columnDef.header,
+                                                        header.getContext()
+                                                    )}
+                                                    {header.column.getCanSort() && (
+                                                        <span className="ml-1">
+                                                            {header.column.getIsSorted() === 'asc' ? (
+                                                                <ArrowUp className="h-3 w-3" />
+                                                            ) : header.column.getIsSorted() === 'desc' ? (
+                                                                <ArrowDown className="h-3 w-3" />
+                                                            ) : (
+                                                                <ArrowUpDown className="h-3 w-3 opacity-50" />
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </TableHead>
                                     ))}
                                 </TableRow>
@@ -392,15 +412,17 @@ export function DataTable<TData>({
                         </TableHeader>
                         <TableBody>
                             {table.getRowModel().rows.length > 0 ? (
-                                table.getRowModel().rows.map((row) => (
+                                table.getRowModel().rows.map((row, index) => (
                                     <TableRow
                                         key={row.id}
-                                        className={getRowClassName(row.original)}
+                                        className={`${getRowClassName(row.original)} ${
+                                            index % 2 === 0 ? 'bg-green-100/50 hover:bg-green-100/70' : 'bg-blue-100/50 hover:bg-blue-100/70'
+                                        }`}
                                         onClick={() => onRowClick?.(row.original)}
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >
                                         {row.getVisibleCells().map((cell) => (
-                                            <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-2">
+                                            <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-1">
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                             </TableCell>
                                         ))}

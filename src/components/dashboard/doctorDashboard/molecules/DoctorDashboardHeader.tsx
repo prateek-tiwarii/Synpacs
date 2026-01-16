@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import FilterPanel from "@/components/common/FilterPanel";
+import type { FilterState } from "@/components/common/FilterPanel";
 
 const DoctorDashboardHeader = ({
     activeTab,
@@ -9,7 +10,8 @@ const DoctorDashboardHeader = ({
     onFilterChange,
     onFilterReset,
     setActivePeriod,
-    activePeriod }
+    activePeriod,
+    filters }
     : {
         activeTab: string,
         setActiveTab: any
@@ -18,7 +20,8 @@ const DoctorDashboardHeader = ({
         onFilterChange: any,
         onFilterReset: any,
         setActivePeriod: any,
-        activePeriod: string
+        activePeriod: string,
+        filters: FilterState
     }) => {
 
     const tabs = [
@@ -73,6 +76,7 @@ const DoctorDashboardHeader = ({
                     onFilterReset={onFilterReset}
                     activePeriod={activePeriod}
                     setActivePeriod={setActivePeriod}
+                    initialFilters={filters}
                 />
             )}
         </div>

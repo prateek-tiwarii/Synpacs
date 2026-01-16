@@ -24,7 +24,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, Eye, X, ImageIcon } from "lucide-react";
 import { Heading } from "@/components/common/Heading";
 import PatientDetailsModal from "./PacDetailsModal";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
@@ -90,6 +90,13 @@ interface PacCase {
   case_time: string;
   patient: CasePatient;
   attached_report: string | null;
+  uploaded_images_count?: number;
+  present_images_count?: number;
+  history_date_time?: string;
+  reporting_date_time?: string;
+  hospital_name?: string;
+  center_name?: string;
+  referring_doctor_name?: string;
   [key: string]: any; // Allow dynamic fields
 }
 
@@ -171,9 +178,9 @@ const StatusCellWithCopy = ({ value, cellId }: { value: any; cellId: string }) =
         className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded"
       >
         {copiedCell === cellId ? (
-          <Check className="w-3 h-3 text-green-600" />
+          <Check className="w-3.5 h-3.5 text-green-600" />
         ) : (
-          <Copy className="w-3 h-3 text-gray-600" />
+          <Copy className="w-3.5 h-3.5 text-gray-600" />
         )}
       </button>
     </div>
@@ -206,7 +213,7 @@ const flattenCaseData = (cases: PacCase[]): any[] => {
         : caseItem.assigned_to || "";
 
     const flattened: any = {
-      ...caseItem,
+      ...caseItem, // Keep all original fields including new backend fields
       // Flatten patient data to top level
       name: caseItem.patient?.name || "",
       sex: caseItem.patient?.sex || "",
@@ -218,6 +225,16 @@ const flattenCaseData = (cases: PacCase[]): any[] => {
       assigned_to: assignedDoctorName,
       // Keep attached_report
       attached_report: caseItem.attached_report,
+      // Ensure new backend fields are preserved
+      uploaded_images_count: caseItem.uploaded_images_count || 0,
+      present_images_count: caseItem.present_images_count || 0,
+      history_date_time: caseItem.history_date_time || null,
+      reporting_date_time: caseItem.reporting_date_time || null,
+      center_name: caseItem.center_name || caseItem.hospital_name || null,
+      hospital_name: caseItem.hospital_name || caseItem.center_name || null,
+      referring_doctor_name: caseItem.referring_doctor_name || null,
+      // Add synthetic study_date_time field for column detection
+      study_date_time: caseItem.case_date ? `${caseItem.case_date} ${caseItem.case_time || ''}` : null,
     };
     return flattened;
   });
@@ -250,25 +267,37 @@ const getAllKeys = (data: any[]): string[] => {
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   select: true,
   name: true,
-  date_of_birth: true,
-  age_sex: true,
-  case_description: true,
-  body_part: true,
-  accession_number: false,
+  case_uid: true, // Case ID
+  accession_number: true, // Accession Number
+  'patient.sex': true, // Sex
+  'patient.dob': true, // Age (calculated from DOB)
+  study_date_time: true, // Study Date & Time (combined)
+  history_date_time: true, // History Date & Time
+  reporting_date_time: false, // Reporting Date & Time - hidden by default
+  center_name: true, // Center
+  hospital_name: false, // Hospital Name - same as center, hide by default
+  referring_doctor_name: true, // Referring Doctor
+  uploaded_images_count: true, // Image Count (Uploaded)
+  present_images_count: false, // Image Count (Present) - hidden by default
   modality: true,
-  case_date: true,
-  case_time: false, // Hidden by default
-  case_uid: false, // Hidden by default
-  notes: false, // Hidden by default
   status: true,
   assigned_to: true,
   attached_report: true,
+  // Hide removed columns
+  priority: false,
+  body_part: false,
   // Hide technical/internal fields
   _id: false,
   patient_id: false,
   hospital_id: false,
   __v: false,
   patient: false,
+  case_date: false, // Hidden - using study_date_time instead
+  case_time: false, // Hidden - using study_date_time instead
+  date_of_birth: false, // Hidden - using patient.dob instead
+  age_sex: false, // Hidden - using separate age and sex columns
+  case_description: false, // Hidden by default
+  notes: false, // Hidden by default
 };
 
 const STORAGE_KEY_ALL_PATIENTS = 'all_patients_table_columns';
@@ -323,6 +352,7 @@ const ShowAllPatients = () => {
     endDate: defaultDates.end,
     status: "all",
     gender: { M: false, F: false },
+    reportStatus: { reported: false, drafted: false, unreported: false },
     modalities: {
       ALL: false,
       DT: false,
@@ -390,6 +420,11 @@ const ShowAllPatients = () => {
       gender: {
         M: searchParams.get("gender") === "M",
         F: searchParams.get("gender") === "F",
+      },
+      reportStatus: {
+        reported: false,
+        drafted: false,
+        unreported: false,
       },
       modalities: {
         ALL: false,
@@ -479,6 +514,7 @@ const ShowAllPatients = () => {
         hospital?: string;
         modality?: string;
         status?: string;
+        report_status?: string;
       } = {
         start_date: filters.startDate,
         end_date: filters.endDate,
@@ -499,6 +535,15 @@ const ShowAllPatients = () => {
       }
       if (filters.status && filters.status !== "all") {
         apiFilters.status = filters.status;
+      }
+
+      // Handle report status filter
+      const reportStatusFilters = [];
+      if (filters.reportStatus.reported) reportStatusFilters.push('reported');
+      if (filters.reportStatus.drafted) reportStatusFilters.push('drafted');
+      if (filters.reportStatus.unreported) reportStatusFilters.push('unreported');
+      if (reportStatusFilters.length > 0) {
+        apiFilters.report_status = reportStatusFilters.join(',');
       }
 
       // Handle gender filter
@@ -679,6 +724,7 @@ const ShowAllPatients = () => {
       endDate: defaultDates.end,
       status: "all",
       gender: { M: false, F: false },
+      reportStatus: { reported: false, drafted: false, unreported: false },
       modalities: {
         ALL: false,
         DT: false,
@@ -813,6 +859,30 @@ const ShowAllPatients = () => {
             },
           })
         );
+      } else if (key === 'name') {
+        // Special handling for patient name - make it clickable to open both viewer and report
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: headerLabel,
+            cell: ({ row }) => {
+              const name = (row.original as any)[key] || '-';
+              const caseId = row.original._id;
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Open only viewer in new window
+                    window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                  }}
+                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
+                >
+                  {name}
+                </button>
+              );
+            },
+          })
+        );
       } else if (key === 'attached_report') {
         // Special handling for attached_report field
         dynamicColumns.push(
@@ -836,6 +906,93 @@ const ShowAllPatients = () => {
               ) : (
                 <span className="text-xs text-muted-foreground">N/A</span>
               );
+            },
+          })
+        );
+      } else if (key === 'study_date_time') {
+        // Add combined Study Date & Time column
+        dynamicColumns.push(
+          columnHelper.display({
+            id: 'study_date_time',
+            header: 'Study Date & Time',
+            cell: ({ row }) => {
+              const date = (row.original as any).case_date;
+              const time = (row.original as any).case_time;
+              if (!date) return '-';
+              // Format: YYYYMMDD to YYYY-MM-DD and HHMMSS to HH:MM:SS
+              const formattedDate = date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+              const formattedTime = time ? time.replace(/(\d{2})(\d{2})(\d{2})/, '$1:$2:$3') : '';
+              return <span className="text-xs">{formattedDate} {formattedTime}</span>;
+            },
+          })
+        );
+      } else if (key === 'history_date_time') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: 'History Date & Time',
+            cell: ({ row }) => {
+              const value = (row.original as any)[key];
+              if (!value) return '-';
+              const date = new Date(value);
+              return <span className="text-xs">{date.toLocaleString()}</span>;
+            },
+          })
+        );
+      } else if (key === 'reporting_date_time') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: 'Reporting Date & Time',
+            cell: ({ row }) => {
+              const value = (row.original as any)[key];
+              if (!value) return '-';
+              const date = new Date(value);
+              return <span className="text-xs">{date.toLocaleString()}</span>;
+            },
+          })
+        );
+      } else if (key === 'uploaded_images_count') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: 'Uploaded Images',
+            cell: ({ row }) => {
+              const uploaded = (row.original as any).uploaded_images_count || 0;
+              const present = (row.original as any).present_images_count || 0;
+              return <span className="text-xs">{uploaded}/{present}</span>;
+            },
+          })
+        );
+      } else if (key === 'present_images_count') {
+        // Skip - handled in uploaded_images_count
+        processedKeys.add(key);
+      } else if (key === 'patient.dob') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: 'Age',
+            cell: ({ row }) => {
+              const dob = (row.original as any).patient?.dob;
+              if (!dob) return '-';
+              // Calculate age from DOB (format: YYYYMMDD)
+              const year = parseInt(dob.substring(0, 4));
+              const month = parseInt(dob.substring(4, 6)) - 1;
+              const day = parseInt(dob.substring(6, 8));
+              const birthDate = new Date(year, month, day);
+              const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+              return <span className="text-xs">{age}y</span>;
+            },
+          })
+        );
+      } else if (key === 'patient.sex') {
+        dynamicColumns.push(
+          columnHelper.display({
+            id: key,
+            header: 'Sex',
+            cell: ({ row }) => {
+              const sex = (row.original as any).patient?.sex;
+              return <span className="text-xs">{sex || '-'}</span>;
             },
           })
         );
@@ -918,6 +1075,42 @@ const ShowAllPatients = () => {
     return flattenCaseData(cases);
   }, [cases]);
 
+  // Get selected cases from row selection
+  const selectedCases = useMemo(() => {
+    return Object.keys(rowSelection)
+      .filter(key => rowSelection[key])
+      .map(key => flattenedCases[parseInt(key)])
+      .filter(Boolean);
+  }, [rowSelection, flattenedCases]);
+
+  // Handle bulk viewer action
+  const handleBulkViewStudies = () => {
+    selectedCases.forEach((caseItem, index) => {
+      if (caseItem?._id) {
+        // Open each study in a new window (not tab) with a slight delay
+        setTimeout(() => {
+          window.open(`/case/${caseItem._id}/viewer`, `viewer_${caseItem._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+        }, index * 100);
+      }
+    });
+  };
+
+  // Handle bulk report action
+  const handleBulkViewReports = () => {
+    selectedCases.forEach((caseItem, index) => {
+      if (caseItem?._id) {
+        setTimeout(() => {
+          window.open(`/case/${caseItem._id}/report`, `report_${caseItem._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+        }, index * 100);
+      }
+    });
+  };
+
+  // Clear selection
+  const handleClearSelection = () => {
+    setRowSelection({});
+  };
+
   return (
     <>
       <div className="w-full space-y-2 border rounded-md p-2 bg-white">
@@ -948,6 +1141,45 @@ const ShowAllPatients = () => {
               onFilterReset={handleFilterReset}
               initialFilters={filters}
             />
+          </div>
+        )}
+        {selectedCases.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-blue-900">
+                  {selectedCases.length} case{selectedCases.length > 1 ? 's' : ''} selected
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleBulkViewStudies}
+                    className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Eye className="w-3.5 h-3.5 mr-1.5" />
+                    Open All Studies
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkViewReports}
+                    className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 mr-1.5" />
+                    Open All Reports
+                  </Button>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleClearSelection}
+                className="h-8 text-xs text-gray-600 hover:text-gray-900"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                Clear
+              </Button>
+            </div>
           </div>
         )}
         <DataTable
@@ -982,7 +1214,7 @@ const ShowAllPatients = () => {
                 });
               }}
             >
-              <SelectTrigger className="h-7 w-[60px] text-xs">
+              <SelectTrigger className="h-7 w-15 text-xs">
                 <SelectValue placeholder={limit.toString()} />
               </SelectTrigger>
               <SelectContent side="top">

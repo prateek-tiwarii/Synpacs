@@ -17,6 +17,11 @@ export interface FilterState {
         F: boolean;
     };
     hospital: string;
+    reportStatus: {
+        reported: boolean;
+        drafted: boolean;
+        unreported: boolean;
+    };
     modalities: {
         ALL: boolean;
         DT: boolean;
@@ -108,6 +113,7 @@ const FilterPanel = ({
         status: 'all',
         gender: { M: false, F: false },
         hospital: '',
+        reportStatus: { reported: false, drafted: false, unreported: false },
         modalities: {
             ALL: false, DT: false, SC: false, AN: false,
             US: false, ECHO: false, CR: false, XA: false,
@@ -138,9 +144,11 @@ const FilterPanel = ({
 
         const hasGenderFilter = filters.gender.M || filters.gender.F;
 
+        const hasReportStatusFilter = filters.reportStatus.reported || filters.reportStatus.drafted || filters.reportStatus.unreported;
+
         const hasModalityFilter = Object.values(filters.modalities).some(v => v);
 
-        return hasTextFilters || hasGenderFilter || hasModalityFilter;
+        return hasTextFilters || hasGenderFilter || hasReportStatusFilter || hasModalityFilter;
     }, [filters]);
 
     const handleResetFilters = () => {
@@ -153,6 +161,7 @@ const FilterPanel = ({
             status: 'all',
             gender: { M: false, F: false },
             hospital: '',
+            reportStatus: { reported: false, drafted: false, unreported: false },
             modalities: {
                 ALL: false, DT: false, SC: false, AN: false,
                 US: false, ECHO: false, CR: false, XA: false,
@@ -201,10 +210,10 @@ const FilterPanel = ({
 
                         <div className="space-y-1">
                             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                Body Part
+                                Study Description
                             </label>
                             <Input
-                                placeholder="Enter body part"
+                                placeholder="Enter study description"
                                 value={filters.bodyPart}
                                 onChange={(e) => setFilters({ ...filters, bodyPart: e.target.value })}
                                 className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all"
@@ -239,6 +248,53 @@ const FilterPanel = ({
                                     `}
                                 >
                                     Female
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Report Status Row */}
+                    <div className="grid grid-cols-1 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                Report Status
+                            </label>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, reported: !filters.reportStatus.reported } })}
+                                    className={`
+                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
+                                        ${filters.reportStatus.reported
+                                            ? 'bg-green-600 border-green-600 text-white shadow-sm'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                        }
+                                    `}
+                                >
+                                    Reported
+                                </button>
+                                <button
+                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, drafted: !filters.reportStatus.drafted } })}
+                                    className={`
+                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
+                                        ${filters.reportStatus.drafted
+                                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                        }
+                                    `}
+                                >
+                                    Drafted
+                                </button>
+                                <button
+                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, unreported: !filters.reportStatus.unreported } })}
+                                    className={`
+                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
+                                        ${filters.reportStatus.unreported
+                                            ? 'bg-yellow-600 border-yellow-600 text-white shadow-sm'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                                        }
+                                    `}
+                                >
+                                    Unreported
                                 </button>
                             </div>
                         </div>
@@ -336,12 +392,25 @@ const FilterPanel = ({
                             >
                                 <Checkbox
                                     checked={filters.modalities[mod as keyof typeof filters.modalities]}
-                                    onCheckedChange={(checked) =>
-                                        setFilters({
-                                            ...filters,
-                                            modalities: { ...filters.modalities, [mod]: checked as boolean },
-                                        })
-                                    }
+                                    onCheckedChange={(checked) => {
+                                        if (mod === 'ALL') {
+                                            // When ALL is clicked, select/deselect all modalities
+                                            const newModalitiesState = Object.keys(filters.modalities).reduce(
+                                                (acc, key) => ({ ...acc, [key]: checked as boolean }),
+                                                {} as typeof filters.modalities
+                                            );
+                                            setFilters({
+                                                ...filters,
+                                                modalities: newModalitiesState,
+                                            });
+                                        } else {
+                                            // When individual modality is clicked
+                                            setFilters({
+                                                ...filters,
+                                                modalities: { ...filters.modalities, [mod]: checked as boolean },
+                                            });
+                                        }
+                                    }}
                                     className="hidden"
                                 />
                                 <span className="text-[11px] font-bold">{mod}</span>

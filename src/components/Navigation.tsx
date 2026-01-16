@@ -21,7 +21,7 @@ export function Navigation() {
           <div className="w-11 h-11 bg-linear-to-br from-blue-600 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
             <span className="text-white font-bold text-lg">S</span>
           </div>
-          <span className="text-2xl font-bold text-gray-900">synPacs</span>
+          <span className="text-2xl font-bold text-gray-900">SynPACS</span>
         </Link>
 
         
