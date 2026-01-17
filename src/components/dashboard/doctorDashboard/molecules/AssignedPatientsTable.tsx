@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import BookmarkDialog from "./BookmarkDialog";
 import DownloadModal from "@/components/common/DownloadModal";
+import PatientHistoryModal from "./PatientHistoryModal";
 
 import type { FilterState } from "@/components/common/FilterPanel";
 import toast from "react-hot-toast";
@@ -75,6 +76,8 @@ const AssignedPatientsTable = ({
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<Patient | null>(null);
 
     // Initialize column visibility from localStorage or use default
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -204,6 +207,7 @@ const AssignedPatientsTable = ({
                         notes: caseItem.notes || [],
                         attached_report: caseItem.attached_report || null,
                         reporting_status: caseItem.reporting_status || '',
+                        patient_history: caseItem.patient_history || [],
                     } as Patient;
                 });
                 setPatients(mappedPatients);
@@ -294,12 +298,18 @@ const AssignedPatientsTable = ({
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                <button
+                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        setSelectedPatientForHistory(props.row.original);
+                                        setHistoryModalOpen(true);
+                                    }}
+                                >
                                     <ClipboardCheck className="w-4 h-4 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>???</p>
+                                <p>Patient History</p>
                             </TooltipContent>
                         </Tooltip>
 
@@ -352,7 +362,8 @@ const AssignedPatientsTable = ({
                                                     <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
                                                     <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
                                                         <span className="font-medium">
-                                                            {note.created_by?.full_name || 'Unknown User'}
+                                                            {note.created_by?.full_name ||
+                                                                (typeof note.user_id === 'object' ? note.user_id.full_name : 'Unknown User')}
                                                         </span>
                                                         <span>
                                                             {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
@@ -748,6 +759,12 @@ const AssignedPatientsTable = ({
                 }}
                 caseId={selectedCaseForDownload?.id || ''}
                 caseName={selectedCaseForDownload?.name}
+            />
+            <PatientHistoryModal
+                open={historyModalOpen}
+                onOpenChange={setHistoryModalOpen}
+                images={selectedPatientForHistory?.patient_history || []}
+                patientName={selectedPatientForHistory?.name}
             />
         </>
     );

@@ -229,9 +229,9 @@ export function TopBar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
               <div className="p-3 border-b">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-semibold text-sm">{user?.full_name || 'Guest'}</p>
-                  <Badge variant="info" className="text-[10px] px-2 py-0">
+                <div className="flex flex-col  mb-1">
+                  <p className="font-semibold text-sm whitespace-nowrap">{user?.full_name || 'Guest'}</p>
+                  <Badge variant="info" className="text-[10px] px-2 py-0 whitespace-nowrap w-fit">
                     {formatRole(user?.role)}
                   </Badge>
                 </div>

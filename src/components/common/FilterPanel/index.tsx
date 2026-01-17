@@ -337,7 +337,7 @@ const FilterPanel = ({
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-end gap-1.5">
                             <Button
                                 onClick={() => onFilterChange?.(filters)}
                                 className="flex-1 bg-slate-800 hover:bg-slate-900 h-8 text-xs font-semibold rounded-md shadow-sm hover:shadow transition-all duration-200"

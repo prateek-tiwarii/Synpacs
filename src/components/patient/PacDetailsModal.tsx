@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
     Dialog,
     DialogContent,
@@ -15,8 +15,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, User, FileText, Stethoscope } from "lucide-react";
+import { Loader2, User, FileText, Stethoscope, ImagePlus, X } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { apiService } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 // Interfaces
 export interface AssignedDoctor {
@@ -39,7 +41,12 @@ export interface Note {
     case_id: string;
     note: string;
     flag_type: 'urgent' | 'routine';
-    user_id: string;
+    user_id: string | {
+        _id: string;
+        full_name: string;
+        email: string;
+        role?: string;
+    };
     created_at: string;
     updated_at: string;
     createdAt: string;
@@ -108,6 +115,7 @@ export interface Patient {
     __v?: number;
     notes?: Note[];
     isBookmarked?: boolean;
+    patient_history?: string[];
 }
 
 export interface Doctor {
@@ -131,6 +139,7 @@ interface PacDetailsModalProps {
     onAssignDoctor: () => void;
     isAssigning: boolean;
     isLoadingDoctors: boolean;
+    case_id: string;
 }
 
 const PacDetailsModal = ({
@@ -142,8 +151,10 @@ const PacDetailsModal = ({
     onDoctorSelect,
     onAssignDoctor,
     isAssigning,
+    case_id,
     isLoadingDoctors,
 }: PacDetailsModalProps) => {
+    const { toast } = useToast();
 
     // Form state
     const [formData, setFormData] = useState({
@@ -157,6 +168,39 @@ const PacDetailsModal = ({
         modality: "",
         priority: "",
     });
+
+    // Patient history images state
+    const [historyImages, setHistoryImages] = useState<{ file: File; preview: string }[]>([]);
+    const [existingHistoryImages, setExistingHistoryImages] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Saving state
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+
+        const newImages = Array.from(files).map(file => ({
+            file,
+            preview: URL.createObjectURL(file),
+        }));
+
+        setHistoryImages(prev => [...prev, ...newImages]);
+
+        // Reset input so same file can be selected again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveImage = (index: number) => {
+        setHistoryImages(prev => {
+            // Revoke the URL to prevent memory leaks
+            URL.revokeObjectURL(prev[index].preview);
+            return prev.filter((_, i) => i !== index);
+        });
+    };
 
     // Initialize form data when patient changes
     useEffect(() => {
@@ -175,6 +219,7 @@ const PacDetailsModal = ({
                 modality: patient.modality || "",
                 priority: patient.priority || "",
             });
+            setExistingHistoryImages(patient.patient_history || []);
         }
     }, [patient]);
 
@@ -225,18 +270,59 @@ const PacDetailsModal = ({
         }));
     };
 
+    const handleSaveChanges = async () => {
+        if (!patient) return;
 
+        setIsSaving(true);
+        try {
+            // Prepare case data for update
+            const caseData = {
+                accession_number: formData.accession_number || undefined,
+                body_part: formData.case_body_part || undefined,
+                description: formData.case_description || undefined,
+                priority: formData.priority || undefined,
+            };
+
+            // Get the files from historyImages
+            const files = historyImages.map(img => img.file);
+
+            // Call the API with case ID
+            await apiService.updateCase(case_id, caseData, files.length > 0 ? files : undefined);
+
+            toast({
+                title: "Success",
+                description: "Case updated successfully",
+            });
+
+            // Clear the history images after successful upload
+            historyImages.forEach(img => URL.revokeObjectURL(img.preview));
+            setHistoryImages([]);
+
+            onClose(false);
+        } catch (error: any) {
+            console.error('Failed to update case:', error);
+            toast({
+                title: "Error",
+                description: error.message || "Failed to update case",
+                variant: "destructive",
+            });
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     if (!patient) return null;
 
     const caseDate = patient.case_date || "";
     const isCurrentlyAssigned = isAssigned(patient.assigned_to);
 
+    console.log('historyImages', historyImages)
+
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader className="pb-2">
-                    <DialogTitle className="text-xl font-semibold">PAC case Details</DialogTitle>
+                    <DialogTitle className="text-xl font-semibold">Case Details</DialogTitle>
                 </DialogHeader>
 
                 {patient && (
@@ -455,20 +541,103 @@ const PacDetailsModal = ({
                             </div>
                         </div>
 
+                        <Separator />
+
+                        {/* Patient History Images Section */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                                <ImagePlus className="h-4 w-4 text-primary" />
+                                <h3 className="text-sm font-semibold">Patient History</h3>
+                            </div>
+
+                            {/* Hidden file input */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={handleImageUpload}
+                                className="hidden"
+                            />
+
+                            {historyImages.length === 0 && existingHistoryImages.length === 0 ? (
+                                /* Empty state - Upload area with dotted border */
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="w-full h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                                >
+                                    <ImagePlus className="h-8 w-8 text-gray-400" />
+                                    <span className="text-sm text-gray-500">Click to upload patient history images</span>
+                                    <span className="text-xs text-gray-400">Supports JPG, PNG, GIF</span>
+                                </button>
+                            ) : (
+                                /* Images grid when images exist */
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-4 gap-3">
+                                        {/* Existing Images */}
+                                        {existingHistoryImages.map((imageUrl, index) => (
+                                            <div key={`existing-${index}`} className="relative group aspect-square">
+                                                <img
+                                                    src={imageUrl}
+                                                    alt={`History ${index + 1}`}
+                                                    className="w-full h-full object-cover rounded-lg border border-gray-200"
+                                                />
+                                                {/* No delete button for existing images for now */}
+                                            </div>
+                                        ))}
+
+                                        {/* New Images */}
+                                        {historyImages.map((image, index) => (
+                                            <div key={`new-${index}`} className="relative group aspect-square">
+                                                <img
+                                                    src={image.preview}
+                                                    alt={`New History ${index + 1}`}
+                                                    className="w-full h-full object-cover rounded-lg border border-gray-200"
+                                                />
+                                                {/* Delete button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveImage(index)}
+                                                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <X className="w-3.5 h-3.5 text-white" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {/* Add more button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                                        >
+                                            <ImagePlus className="h-5 w-5 text-gray-400" />
+                                            <span className="text-xs text-gray-400">Add</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         {/* Action buttons */}
                         <div className="flex justify-end gap-2 pt-2 border-t">
-                            <Button variant="outline" onClick={() => onClose(false)} size="sm" className="min-w-20">
+                            <Button variant="outline" onClick={() => onClose(false)} size="sm" className="min-w-20" disabled={isSaving}>
                                 Close
                             </Button>
                             <Button
-                                onClick={() => {
-                                    // TODO: Add API call to save updated patient data
-                                    onClose(false);
-                                }}
+                                onClick={handleSaveChanges}
                                 size="sm"
                                 className="min-w-25"
+                                disabled={isSaving}
                             >
-                                Save Changes
+                                {isSaving ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    "Save Changes"
+                                )}
                             </Button>
                         </div>
                     </div>
