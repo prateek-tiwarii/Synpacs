@@ -1,5 +1,4 @@
-import { useState, type ReactNode } from 'react'
-import { Sidebar } from './Sidebar'
+import { type ReactNode } from 'react'
 import { TopBar } from './TopBar'
 
 interface DashboardLayoutProps {
@@ -7,7 +6,6 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(true)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -19,7 +17,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* <Sidebar isCollapsed={isCollapsed} toggleSidebar={() => setIsCollapsed(!isCollapsed)} /> */}
 
         {/* Main Content Area */}
-        <main className={`pt-16 transition-all duration-300 ${isCollapsed ? 'ml-16 w-[calc(100%-64px)]' : 'ml-48 w-[calc(100%-192px)]'}`}>
+        <main className={`pt-16 transition-all duration-300`}>
           {children}
         </main>
       </div>
