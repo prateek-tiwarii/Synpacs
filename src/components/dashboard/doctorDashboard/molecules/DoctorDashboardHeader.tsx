@@ -26,7 +26,7 @@ const DoctorDashboardHeader = ({
 
     const tabs = [
         { id: 'Unreported', label: 'Unreported', color: 'bg-amber-500' },
-        { id: 'Reported', label: 'Reported', color: 'bg-emerald-500' },
+        { id: 'Signed Off', label: 'Signed Off', color: 'bg-emerald-500' },
         { id: 'All Cases', label: 'All Cases', color: 'bg-slate-600' },
         { id: 'Drafted', label: 'Drafted', color: 'bg-sky-500' },
     ];

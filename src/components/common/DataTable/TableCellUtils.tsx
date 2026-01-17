@@ -49,22 +49,20 @@ interface StatusCellProps {
 export const StatusCell = ({ status }: StatusCellProps) => {
     return (
         <span
-            className={`inline-flex items-center gap-1 ${
-                status === 'Reported'
+            className={`inline-flex items-center gap-1 ${status === 'Reported'
                     ? 'text-green-600'
                     : status === 'Unreported'
-                    ? 'text-red-600'
-                    : 'text-yellow-600'
-            }`}
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                }`}
         >
             <span
-                className={`w-2 h-2 rounded-full ${
-                    status === 'Reported'
+                className={`w-2 h-2 rounded-full ${status === 'Reported'
                         ? 'bg-green-600'
                         : status === 'Unreported'
-                        ? 'bg-red-600'
-                        : 'bg-yellow-600'
-                }`}
+                            ? 'bg-red-600'
+                            : 'bg-yellow-600'
+                    }`}
             />
             {status}
         </span>
@@ -108,9 +106,9 @@ export const formatDate = (dateString: string | undefined): string => {
     if (!dateString) return 'N/A';
     try {
         const date = new Date(dateString);
-        return `${date.toLocaleDateString()}\n${date.toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+        return `${date.toLocaleDateString()}\n${date.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
         })}`;
     } catch {
         return dateString;

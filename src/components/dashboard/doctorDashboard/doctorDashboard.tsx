@@ -8,7 +8,7 @@ import type { Patient } from '@/components/patient/PacDetailsModal';
 import type { FilterState } from '@/components/common/FilterPanel';
 import { toast } from 'react-hot-toast';
 
-type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted';
+type TabType = 'Unreported' | 'Signed Off' | 'All Cases' | 'Drafted';
 
 const DEFAULT_MODALITIES = {
   ALL: false, DT: false, SC: false, AN: false,
@@ -17,8 +17,8 @@ const DEFAULT_MODALITIES = {
   MR2: false, NM: false, RF: false, CT: false,
 };
 
-const VALID_TABS: TabType[] = ['Unreported', 'Reported', 'All Cases', 'Drafted'];
-const VALID_PERIODS = ['1D', '2D', '3D', '1W', '2W'];
+const VALID_TABS: TabType[] = ['Unreported', 'Signed Off', 'All Cases', 'Drafted'];
+const VALID_PERIODS = ['1D', '2D', '3D', '1W', '2W', '1M'];
 
 // Helper to parse modalities from URL
 const parseModalitiesFromUrl = (modalityParam: string | null): typeof DEFAULT_MODALITIES => {
@@ -86,14 +86,14 @@ const DoctorDashboard = () => {
     if (periodParam && VALID_PERIODS.includes(periodParam)) {
       return periodParam;
     }
-    return '1W';
+    return '1M';
   }, [searchParams]);
 
-  // Helper to get default dates (7 days ago to today)
+  // Helper to get default dates (30 days ago to today)
   const getDefaultDates = () => {
     const today = new Date();
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(today.getDate() - 7);
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
 
     const formatDate = (date: Date) => {
       const year = date.getFullYear();
@@ -103,7 +103,7 @@ const DoctorDashboard = () => {
     };
 
     return {
-      startDate: formatDate(sevenDaysAgo),
+      startDate: formatDate(thirtyDaysAgo),
       endDate: formatDate(today),
     };
   };
@@ -235,7 +235,7 @@ const DoctorDashboard = () => {
       newParams.delete('gender');
       newParams.delete('modalities');
       // Reset period to default
-      newParams.set('period', '1W');
+      newParams.set('period', '1M');
       return newParams;
     });
   }, [setSearchParams]);

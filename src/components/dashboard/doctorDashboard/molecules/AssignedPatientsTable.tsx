@@ -42,12 +42,12 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
-type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted';
+type TabType = 'Unreported' | 'Signed Off' | 'All Cases' | 'Drafted';
 
-// Map tab names to backend status values
-const TAB_TO_STATUS_MAP: Record<TabType, string> = {
+// Map tab names to backend reporitng_status values
+const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'Unreported': 'unreported',
-    'Reported': 'reported',
+    'Signed Off': 'signed_off',
     'All Cases': 'all',
     'Drafted': 'drafted',
 };
@@ -107,7 +107,7 @@ const AssignedPatientsTable = ({
 
             // Build API filters from FilterState - always include all properties
             // Map activeTab to status
-            const status = TAB_TO_STATUS_MAP[activeTab] || 'all';
+            const reporting_status = TAB_TO_REPORTING_STATUS_MAP[activeTab] || 'all';
 
             const apiFilters: any = {
                 start_date: filters?.startDate || '',
@@ -115,7 +115,7 @@ const AssignedPatientsTable = ({
                 patient_name: filters?.patientName || '',
                 patient_id: filters?.patientId || '',
                 body_part: filters?.bodyPart || '',
-                status: status,
+                reporting_status: reporting_status,
                 gender: '',
                 modality: '',
             };
@@ -203,6 +203,7 @@ const AssignedPatientsTable = ({
                         isBookmarked: caseItem.isBookmarked || false,
                         notes: caseItem.notes || [],
                         attached_report: caseItem.attached_report || null,
+                        reporting_status: caseItem.reporting_status || '',
                     } as Patient;
                 });
                 setPatients(mappedPatients);
@@ -517,25 +518,7 @@ const AssignedPatientsTable = ({
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
             },
         }),
-        columnHelper.display({
-            id: 'reporting_date_time',
-            header: 'Reporting Date & Time',
-            cell: (props) => {
-                const attachedReport = (props.row.original as any).attached_report;
-                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
-                const date = new Date(attachedReport.created_at);
-                const formatted = date.toLocaleString('en-GB', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false
-                });
-                return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
-            },
-        }),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
@@ -582,22 +565,70 @@ const AssignedPatientsTable = ({
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
         }),
         columnHelper.display({
+            id: 'reporting_date_time',
+            header: 'Reporting Date & Time',
+            cell: (props) => {
+                const attachedReport = (props.row.original as any).attached_report;
+                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
+
+                const date = new Date(attachedReport.created_at);
+                const formatted = date.toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
+            },
+        }),
+        columnHelper.display({
             id: 'reported',
             header: 'Reported',
             cell: (props) => {
-                const attachedReport = (props.row.original as any).attached_report;
-                if (attachedReport) {
+                const reportingStatus = (props.row.original as any).reporting_status;
+
+                // Check for attached report first
+                if (reportingStatus === 'drafted') {
                     return (
                         <Link
                             to={`/case/${props.row.original._id}/report`}
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                            className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full transition-colors bg-yellow-100 border-2 border-yellow-500 text-yellow-800 hover:bg-yellow-200`}
                         >
-                            {attachedReport.is_draft ? 'Draft' : 'Available'}
+                            Drafted
                         </Link>
                     );
                 }
-                return <span className="text-gray-400">-</span>;
+
+                // Check for reporting_status field
+                if (reportingStatus === 'signed_off') {
+                    return (
+                        <Link
+                            to={`/case/${props.row.original._id}/report`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 border-2 border-green-500 text-green-800 hover:bg-green-200 transition-colors"
+                        >
+                            Signed Off
+                        </Link>
+                    );
+                }
+
+                if (reportingStatus === 'unreported') {
+                    return (
+                        <Link
+                            to={`/case/${props.row.original._id}/report`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex justify-center"
+                        >
+                            -
+                        </Link>
+                    );
+                }
+
+                // Default: unreported
+                return <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">Unreported</span>;
             },
         }),
     ], []);

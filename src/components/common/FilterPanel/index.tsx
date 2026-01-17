@@ -1,9 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 import { Calendar, Filter, RotateCcw, Search, SlidersHorizontal, User } from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 
 export interface FilterState {
     patientName: string;
@@ -79,18 +86,21 @@ const getStartDateFromPeriod = (period: string): string => {
         case '2W':
             startDate.setDate(today.getDate() - 14);
             break;
+        case '1M':
+            startDate.setDate(today.getDate() - 30);
+            break;
         default:
-            startDate.setDate(today.getDate() - 7); // Default to 1W
+            startDate.setDate(today.getDate() - 30); // Default to 1M (30 days)
     }
 
     return formatDate(startDate);
 };
 
-// Helper function to get default date range (7 days = 1W)
+// Helper function to get default date range (30 days = 1M)
 const getDefaultDateRange = () => {
     const today = new Date();
     return {
-        startDate: getStartDateFromPeriod('1W'),
+        startDate: getStartDateFromPeriod('1M'),
         endDate: formatDate(today),
     };
 };
@@ -98,7 +108,7 @@ const getDefaultDateRange = () => {
 const FilterPanel = ({
     onFilterChange,
     onFilterReset,
-    activePeriod = '1W',
+    activePeriod = '1M',
     setActivePeriod,
     initialFilters,
 }: FilterPanelProps) => {
@@ -122,6 +132,10 @@ const FilterPanel = ({
         },
         ...initialFilters,
     });
+
+    // Refs for date inputs to trigger calendar popup
+    const fromDateRef = useRef<HTMLInputElement>(null);
+    const toDateRef = useRef<HTMLInputElement>(null);
 
     // Sync filters when initialFilters change
     useEffect(() => {
@@ -224,79 +238,31 @@ const FilterPanel = ({
                             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                                 Gender
                             </label>
-                            <div className="flex gap-1.5">
-                                <button
-                                    onClick={() => setFilters({ ...filters, gender: { ...filters.gender, M: !filters.gender.M } })}
-                                    className={`
-                                        flex-1 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
-                                        ${filters.gender.M
-                                            ? 'bg-slate-700 border-slate-700 text-white shadow-sm'
-                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                        }
-                                    `}
-                                >
-                                    Male
-                                </button>
-                                <button
-                                    onClick={() => setFilters({ ...filters, gender: { ...filters.gender, F: !filters.gender.F } })}
-                                    className={`
-                                        flex-1 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
-                                        ${filters.gender.F
-                                            ? 'bg-slate-700 border-slate-700 text-white shadow-sm'
-                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                        }
-                                    `}
-                                >
-                                    Female
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Report Status Row */}
-                    <div className="grid grid-cols-1 gap-3">
-                        <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                                Report Status
-                            </label>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, reported: !filters.reportStatus.reported } })}
-                                    className={`
-                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
-                                        ${filters.reportStatus.reported
-                                            ? 'bg-green-600 border-green-600 text-white shadow-sm'
-                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                        }
-                                    `}
-                                >
-                                    Reported
-                                </button>
-                                <button
-                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, drafted: !filters.reportStatus.drafted } })}
-                                    className={`
-                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
-                                        ${filters.reportStatus.drafted
-                                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                        }
-                                    `}
-                                >
-                                    Drafted
-                                </button>
-                                <button
-                                    onClick={() => setFilters({ ...filters, reportStatus: { ...filters.reportStatus, unreported: !filters.reportStatus.unreported } })}
-                                    className={`
-                                        px-4 h-8 rounded-md font-semibold text-xs transition-all duration-200 border
-                                        ${filters.reportStatus.unreported
-                                            ? 'bg-yellow-600 border-yellow-600 text-white shadow-sm'
-                                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                        }
-                                    `}
-                                >
-                                    Unreported
-                                </button>
-                            </div>
+                            <Select
+                                value={
+                                    filters.gender.M && filters.gender.F ? 'all' :
+                                        filters.gender.M ? 'M' :
+                                            filters.gender.F ? 'F' : 'all'
+                                }
+                                onValueChange={(value) => {
+                                    if (value === 'all') {
+                                        setFilters({ ...filters, gender: { M: false, F: false } });
+                                    } else if (value === 'M') {
+                                        setFilters({ ...filters, gender: { M: true, F: false } });
+                                    } else if (value === 'F') {
+                                        setFilters({ ...filters, gender: { M: false, F: true } });
+                                    }
+                                }}
+                            >
+                                <SelectTrigger className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all">
+                                    <SelectValue placeholder="Select gender" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All</SelectItem>
+                                    <SelectItem value="M">Male</SelectItem>
+                                    <SelectItem value="F">Female</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
 
@@ -307,15 +273,25 @@ const FilterPanel = ({
                                 <Calendar className="w-3 h-3" />
                                 From Date
                             </label>
-                            <Input
-                                type="date"
-                                value={filters.startDate}
-                                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                                className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all"
-                            />
+                            <div className="relative">
+                                <Input
+                                    ref={fromDateRef}
+                                    type="date"
+                                    value={filters.startDate}
+                                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                                    className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all pr-8"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => fromDateRef.current?.showPicker()}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <Calendar className="w-4 h-4" />
+                                </button>
+                            </div>
                             {setActivePeriod && (
                                 <div className="flex gap-1 mt-1">
-                                    {['1D', '2D', '3D', '1W', '2W'].map((period) => (
+                                    {['1D', '2D', '3D', '1W', '2W', '1M'].map((period) => (
                                         <button
                                             key={period}
                                             onClick={() => {
@@ -343,12 +319,22 @@ const FilterPanel = ({
                                 <Calendar className="w-3 h-3" />
                                 To Date
                             </label>
-                            <Input
-                                type="date"
-                                value={filters.endDate}
-                                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                                className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all"
-                            />
+                            <div className="relative">
+                                <Input
+                                    ref={toDateRef}
+                                    type="date"
+                                    value={filters.endDate}
+                                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                                    className="bg-white border-slate-200 h-8 text-xs rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all pr-8"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => toDateRef.current?.showPicker()}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <Calendar className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-1.5">

@@ -378,10 +378,8 @@ class ApiService {
     content_html?: string;
     content_plain_text?: string;
     title?: string;
-    impression?: string;
-    is_draft?: boolean;
-    is_reviewed?: boolean;
-    is_signed_off?: boolean;
+    change_description?: string;
+    reporting_status?: string; // e.g., 'draft', 'drafted', 'reviewed', 'signed_off'
   }) {
     return this.request(`/api/v1/reports/${reportId}`, {
       method: 'PUT',

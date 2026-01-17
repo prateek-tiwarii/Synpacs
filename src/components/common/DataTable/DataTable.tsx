@@ -142,26 +142,28 @@ export function DataTable<TData>({
     //     }
     // };
 
-    // Skeleton loading component
+    // Skeleton loading component - use default columns count when columns array is empty
+    const skeletonColumnCount = columns.length > 0 ? columns.length : 8;
+
     const TableSkeleton = () => (
         <div className="overflow-x-auto overflow-y-visible">
             <div className={showBorder ? "rounded-md border" : ""}>
                 <Table>
                     <TableHeader>
                         <TableRow className={headerClassName}>
-                            {columns.map((_, index) => (
-                                <TableHead key={index} className="font-semibold whitespace-nowrap text-xs px-2 py-1">
+                            {[...Array(skeletonColumnCount)].map((_, index) => (
+                                <TableHead key={index} className="font-semibold whitespace-nowrap text-[12px] px-2 py-1">
                                     <Skeleton className="h-4 w-20" />
                                 </TableHead>
                             ))}
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {[...Array(5)].map((_, rowIndex) => (
+                        {[...Array(10)].map((_, rowIndex) => (
                             <TableRow key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-green-100/30' : 'bg-blue-100/30'}>
-                                {columns.map((_, colIndex) => (
-                                    <TableCell key={colIndex} className="whitespace-nowrap text-xs px-2 py-1">
-                                        <Skeleton className="h-4 w-full" />
+                                {[...Array(skeletonColumnCount)].map((_, colIndex) => (
+                                    <TableCell key={colIndex} className="whitespace-nowrap text-[12px] px-2 py-1">
+                                        <Skeleton className="h-4 w-full max-w-[120px]" />
                                     </TableCell>
                                 ))}
                             </TableRow>
@@ -445,7 +447,7 @@ export function DataTable<TData>({
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <TableRow key={headerGroup.id} className={headerClassName}>
                                     {headerGroup.headers.map((header) => (
-                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-xs px-2 py-1">
+                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-[12px] py-1">
                                             {header.isPlaceholder ? null : (
                                                 <div
                                                     className={
@@ -488,7 +490,7 @@ export function DataTable<TData>({
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >
                                         {row.getVisibleCells().map((cell) => (
-                                            <TableCell key={cell.id} className="whitespace-nowrap text-xs px-2 py-1">
+                                            <TableCell key={cell.id} className="whitespace-nowrap text-[12px] px-2 py-1">
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                             </TableCell>
                                         ))}
