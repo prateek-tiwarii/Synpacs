@@ -702,7 +702,6 @@ const AssignedPatientsTable = ({
                 enableRowSelection={true}
                 rowSelection={rowSelection}
                 onRowSelectionChange={setRowSelection}
-                onRefresh={fetchAssignedPatients}
             />
             <BookmarkDialog
                 open={bookmarkDialogOpen}

@@ -65,7 +65,7 @@ export interface DataTableProps<TData> {
     showDoctorsOnSelect?: boolean;
     showEmptyTable?: boolean;
     tableDescription?: string;
-    onRefresh?: () => void | Promise<void>;
+    // onRefresh?: () => void | Promise<void>;
 }
 
 export function DataTable<TData>({
@@ -92,7 +92,7 @@ export function DataTable<TData>({
     showDoctorsOnSelect = false,
     showEmptyTable = false,
     tableDescription = "",
-    onRefresh,
+    // onRefresh,
 }: DataTableProps<TData>) {
     const { toast } = useToast();
     const [sorting, setSorting] = useState<SortingState>([]);
@@ -102,7 +102,7 @@ export function DataTable<TData>({
     const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    // const [isRefreshing, setIsRefreshing] = useState(false);
 
     const table = useReactTable({
         data,
@@ -131,16 +131,16 @@ export function DataTable<TData>({
         manualPagination,
     });
 
-    const handleRefresh = async () => {
-        if (onRefresh && !isRefreshing) {
-            setIsRefreshing(true);
-            try {
-                await onRefresh();
-            } finally {
-                setIsRefreshing(false);
-            }
-        }
-    };
+    // const handleRefresh = async () => {
+    //     if (onRefresh && !isRefreshing) {
+    //         setIsRefreshing(true);
+    //         try {
+    //             await onRefresh();
+    //         } finally {
+    //             setIsRefreshing(false);
+    //         }
+    //     }
+    // };
 
     // Skeleton loading component
     const TableSkeleton = () => (
@@ -173,7 +173,7 @@ export function DataTable<TData>({
     );
 
     // Loading state
-    if (isLoading || isRefreshing) {
+    if (isLoading) {
         return (
             <div className={containerClassName}>
                 {tableTitle && (
