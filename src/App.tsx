@@ -13,11 +13,11 @@ import Performance from './pages/Performance'
 import Settings from './pages/Settings'
 import ViewerSettings from './pages/ViewerSettings'
 import Research from './pages/Research'
+import PacsList from './pages/PacsList'
 import { MainLayout } from '@/components/MainLayout'
 import { ViewerLayout } from '@/components/ViewerLayout'
 import { ReportLayout } from '@/components/ReportLayout'
 import { Toaster } from 'react-hot-toast'
-import Bookmark from './pages/Bookmark'
 import CaseViewer from './pages/CaseViewer'
 import Report from './pages/Report'
 
@@ -85,8 +85,8 @@ function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/viewer-settings" element={<ViewerSettings />} />
-            <Route path="/bookmarks" element={<Bookmark />} />
             <Route path="/research" element={<Research />} />
+            <Route path="/pacs-list" element={<PacsList />} />
             <Route path="/manage-users" element={<UserCreate />} />
             <Route path="/manage-cases" element={<Pacs />} />
             <Route path="/patient/:id" element={<SinglePatient />} />
