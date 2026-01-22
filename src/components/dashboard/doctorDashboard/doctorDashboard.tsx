@@ -8,7 +8,7 @@ import type { Patient } from '@/components/patient/PacDetailsModal';
 import type { FilterState } from '@/components/common/FilterPanel';
 import { toast } from 'react-hot-toast';
 
-type TabType = 'Unreported' | 'Signed Off' | 'All Cases' | 'Drafted';
+type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted' | 'Review';
 
 const DEFAULT_MODALITIES = {
   ALL: false, DT: false, SC: false, AN: false,
@@ -17,8 +17,8 @@ const DEFAULT_MODALITIES = {
   MR2: false, NM: false, RF: false, CT: false,
 };
 
-const VALID_TABS: TabType[] = ['Unreported', 'Signed Off', 'All Cases', 'Drafted'];
-const VALID_PERIODS = ['1D', '2D', '3D', '1W', '2W', '1M'];
+const VALID_TABS: TabType[] = ['Unreported', 'Drafted', 'Reported', 'All Cases', 'Review'];
+const VALID_PERIODS = ['1D', '2D', '3D', '1W', '2W'];
 
 // Helper to parse modalities from URL
 const parseModalitiesFromUrl = (modalityParam: string | null): typeof DEFAULT_MODALITIES => {

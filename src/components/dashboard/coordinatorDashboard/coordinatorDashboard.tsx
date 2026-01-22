@@ -99,7 +99,7 @@ const CoordinatorDashboard = () => {
     <div className='flex flex-col gap-2'>
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-medium text-gray-900">Overview</h1>
+          <h1 className="text-2xl font-medium text-gray-900">Worklist</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Medical Imaging Management System

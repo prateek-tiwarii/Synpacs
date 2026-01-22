@@ -156,17 +156,6 @@ class ApiService {
     })
   }
 
-  async getAllPatients(page: number = 1, limit: number = 10) {
-    return this.request('/api/v1/patient/get-all', {
-      method: 'POST',
-      body: JSON.stringify({
-        active_hospital: localStorage.getItem('active_hospital'),
-        page,
-        limit,
-      }),
-    })
-  }
-
   async getAllPacCases(page: number = 1, limit: number = 10, filters?: {
     start_date?: string;
     end_date?: string;
@@ -430,6 +419,22 @@ class ApiService {
     }
 
     return response.json()
+  }
+
+  async getPatientsByCenter(centerId: string) {
+    return this.request(`/api/v1/doctor/center/${centerId}/patients`, {
+      method: 'GET',
+    })
+  }
+  async getAllPatients(activeHospital: string, page: number = 1, limit: number = 20) {
+    return this.request('/api/v1/patient/get-all', {
+      method: 'POST',
+      body: JSON.stringify({
+        active_hospital: activeHospital,
+        page,
+        limit
+      })
+    });
   }
 
   async updateCase(caseId: string, caseData: {

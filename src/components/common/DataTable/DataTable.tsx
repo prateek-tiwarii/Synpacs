@@ -375,69 +375,20 @@ export function DataTable<TData>({
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         )}
-                        {showSettings && (
-                            <>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8"
-                                        onClick={() => setIsColumnModalOpen(true)}
-                                    >
-                                        <Settings className="h-4 w-4" />
-                                    </Button>
-                                    {/* <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8"
-                                        onClick={handleRefresh}
-                                        disabled={isRefreshing || !onRefresh}
-                                        title="Refresh data"
-                                    >
-                                        <RotateCcwIcon className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                                    </Button> */}
-                                </div>
-                                <Dialog open={isColumnModalOpen} onOpenChange={setIsColumnModalOpen}>
-                                    <DialogContent className="sm:max-w-106.25">
-                                        <DialogHeader>
-                                            <DialogTitle>Toggle Columns</DialogTitle>
-                                        </DialogHeader>
-                                        <div className="flex flex-col gap-1 py-4">
-                                            {table
-                                                .getAllColumns()
-                                                .filter((column) => column.getCanHide())
-                                                .map((column) => {
-                                                    const columnName = typeof column.columnDef.header === 'string'
-                                                        ? column.columnDef.header
-                                                        : column.id;
-
-                                                    return (
-                                                        <div
-                                                            key={column.id}
-                                                            className="flex items-center justify-between space-x-2"
-                                                        >
-                                                            <Label
-                                                                htmlFor={column.id}
-                                                                className="text-xs font-normal capitalize cursor-pointer"
-                                                            >
-                                                                {columnName}
-                                                            </Label>
-                                                            <Switch
-                                                                id={column.id}
-                                                                checked={column.getIsVisible()}
-                                                                onCheckedChange={(checked) =>
-                                                                    column.toggleVisibility(checked)
-                                                                }
-                                                            />
-                                                        </div>
-                                                    );
-                                                })}
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
-                            </>
-                        )}
                     </div>
+                </div>
+            )}
+            {showSettings && (
+                <div className="flex items-start gap-2 py-2 px-1">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setIsColumnModalOpen(true)}
+                    >
+                        <Settings className="h-4 w-4 mr-2" />
+                        <span className="text-xs">Column Settings</span>
+                    </Button>
                 </div>
             )}
             <div className="overflow-x-auto overflow-y-visible">
@@ -510,6 +461,50 @@ export function DataTable<TData>({
                     </Table>
                 </div>
             </div>
+            {showSettings && (
+                <Dialog open={isColumnModalOpen} onOpenChange={setIsColumnModalOpen}>
+                    <DialogContent className="sm:max-w-106.25">
+                        <DialogHeader>
+                            <DialogTitle>Toggle Columns</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex flex-col gap-1 py-4">
+                            {table
+                                .getAllColumns()
+                                .filter((column) => column.getCanHide())
+                                .map((column) => {
+                                    const columnName = typeof column.columnDef.header === 'string'
+                                        ? column.columnDef.header
+                                        : column.id;
+
+                                    return (
+                                        <div
+                                            key={column.id}
+                                            className="flex items-center justify-between space-x-2"
+                                        >
+                                            <Label
+                                                htmlFor={column.id}
+                                                className="text-xs font-normal capitalize cursor-pointer"
+                                            >
+                                                {columnName}
+                                            </Label>
+                                            <Switch
+                                                id={column.id}
+                                                checked={column.getIsVisible()}
+                                                onCheckedChange={(value) => {
+                                                    const newVisibility = {
+                                                        ...columnVisibility,
+                                                        [column.id]: value,
+                                                    };
+                                                    onColumnVisibilityChange?.(newVisibility);
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </div>
     );
 }

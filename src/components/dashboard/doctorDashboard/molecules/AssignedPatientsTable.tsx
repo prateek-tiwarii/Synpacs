@@ -43,14 +43,16 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
-type TabType = 'Unreported' | 'Signed Off' | 'All Cases' | 'Drafted';
+type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'Signed Off' | 'All Cases' | 'Review';
 
 // Map tab names to backend reporitng_status values
 const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'Unreported': 'unreported',
+    'Drafted': 'drafted',
+    'Reported': 'reported',
     'Signed Off': 'signed_off',
     'All Cases': 'all',
-    'Drafted': 'drafted',
+    'Review': 'review',
 };
 
 interface AssignedPatientsTableProps {

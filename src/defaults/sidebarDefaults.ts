@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, Users, Zap, Settings, ClipboardMinus, Search, Bookmark } from "lucide-react"
+import { Activity, LayoutDashboard, Users, Zap, Settings, ClipboardMinus, Search, Database } from "lucide-react"
 
 export const sidebarItems = [
   { label: 'Queue', href: '/dashboard', icon: LayoutDashboard },
@@ -9,8 +9,8 @@ export const sidebarItems = [
 ]
 
 export const doctorSidebarItems = [
-  { label: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Research', href: '/research', icon: Search },
+  { label: 'Worklist', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'PACS List', href: '/pacs-list', icon: Database },
+  { label: 'Research and Audit', href: '/research', icon: Search },
   { label: 'Viewer Settings', href: '/viewer-settings', icon: Settings },
-  { label: 'Bookmarks', href: '/bookmarks', icon: Bookmark },
 ]
