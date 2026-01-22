@@ -291,7 +291,7 @@ export function ReportView() {
                     content: reportData.content,
                     content_html: reportData.content_html,
                     content_plain_text: reportData.content_plain_text,
-                    is_draft: true,
+                    reporting_status: 'drafted',
                 });
             } else {
                 // Create new report
@@ -361,8 +361,7 @@ export function ReportView() {
                 content: editorState,
                 content_html: html || '',
                 content_plain_text: plainText,
-                is_draft: false,
-                is_signed_off: true,
+                reporting_status: 'signed_off',
             });
 
             if (response.success) {

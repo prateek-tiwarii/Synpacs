@@ -26,9 +26,18 @@ import { Check, ChevronsUpDown } from "lucide-react"
 import { useState, useEffect } from "react"
 import { apiService } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { doctorSidebarItems, sidebarItems } from '@/defaults/sidebarDefaults'
+import { useLocation } from "react-router-dom"
+import { useAppDispatch } from '@/store/hooks'
+import { logout } from '@/store/authSlice'
 
 export function TopBar() {
   const { user } = useUser()
+  const dispatch = useAppDispatch()
+
+  const handleLogout = () => {
+    dispatch(logout())
+  }
   interface Hospital {
     _id: string
     name: string
@@ -38,6 +47,13 @@ export function TopBar() {
   const [hospitals, setHospitals] = useState<Hospital[]>([])
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("")
+  const location = useLocation()
+  const [activeTab, setActiveTab] = useState(location.pathname)
+
+  // Update activeTab when route changes
+  useEffect(() => {
+    setActiveTab(location.pathname)
+  }, [location.pathname])
 
   useEffect(() => {
     const fetchHospitals = async () => {
@@ -58,13 +74,14 @@ export function TopBar() {
     fetchHospitals()
   }, [])
 
+
   const formatRole = (role?: string) => {
     if (!role) return 'User'
     return role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-between px-6">
+    <header className="fixed top-0 w-full h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-between px-6">
       {/* Logo */}
       <Link to="/dashboard" className="flex items-center gap-3 shrink-0">
         <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
@@ -73,8 +90,25 @@ export function TopBar() {
         <span className="text-xl font-bold text-gray-900">SynPACS</span>
       </Link>
 
+      <div className='flex gap-4'>
+        {(user?.role === 'doctor' ? doctorSidebarItems : sidebarItems).map((item) => (
+          <Link
+            key={item.href}
+            to={item.href}
+            className={`flex items-center gap-2 px-2 py-2 rounded-lg transition-all ${activeTab === item.href
+              ? 'bg-black! text-white! shadow-sm'
+              : 'text-gray-700! hover:bg-gray-100!'
+              }`}
+            title={item.label}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-medium">{item.label}</span>
+          </Link>
+        ))}
+      </div>
+
       {/* Right Side Icons */}
-      <div className="flex items-center gap-2 shrink-0 ml-auto">
+      <div className="flex items-center gap-2 shrink-0">
 
         {(user?.role === 'coordinator' || user?.role === 'super_coordinator') && (
           <Popover open={open} onOpenChange={setOpen}>
@@ -195,9 +229,9 @@ export function TopBar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
               <div className="p-3 border-b">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-semibold text-sm">{user?.full_name || 'Guest'}</p>
-                  <Badge variant="info" className="text-[10px] px-2 py-0">
+                <div className="flex flex-col  mb-1">
+                  <p className="font-semibold text-sm whitespace-nowrap">{user?.full_name || 'Guest'}</p>
+                  <Badge variant="info" className="text-[10px] px-2 py-0 whitespace-nowrap w-fit">
                     {formatRole(user?.role)}
                   </Badge>
                 </div>
@@ -205,7 +239,7 @@ export function TopBar() {
               </div>
               <DropdownMenuItem className="cursor-pointer">Profile</DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer">Account Settings</DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer text-red-600">Logout</DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer text-red-600" onClick={handleLogout}>Logout</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import BookmarkDialog from "./BookmarkDialog";
 import DownloadModal from "@/components/common/DownloadModal";
+import PatientHistoryModal from "./PatientHistoryModal";
 
 import type { FilterState } from "@/components/common/FilterPanel";
 import toast from "react-hot-toast";
@@ -42,14 +43,15 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
-type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted' | 'Review';
+type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'Signed Off' | 'All Cases' | 'Review';
 
-// Map tab names to backend status values
-const TAB_TO_STATUS_MAP: Record<TabType, string> = {
+// Map tab names to backend reporitng_status values
+const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'Unreported': 'unreported',
-    'Reported': 'reported',
-    'All Cases': 'all',
     'Drafted': 'drafted',
+    'Reported': 'reported',
+    'Signed Off': 'signed_off',
+    'All Cases': 'all',
     'Review': 'review',
 };
 
@@ -76,6 +78,8 @@ const AssignedPatientsTable = ({
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<Patient | null>(null);
 
     // Initialize column visibility from localStorage or use default
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -108,7 +112,7 @@ const AssignedPatientsTable = ({
 
             // Build API filters from FilterState - always include all properties
             // Map activeTab to status
-            const status = TAB_TO_STATUS_MAP[activeTab] || 'all';
+            const reporting_status = TAB_TO_REPORTING_STATUS_MAP[activeTab] || 'all';
 
             const apiFilters: any = {
                 start_date: filters?.startDate || '',
@@ -116,7 +120,7 @@ const AssignedPatientsTable = ({
                 patient_name: filters?.patientName || '',
                 patient_id: filters?.patientId || '',
                 body_part: filters?.bodyPart || '',
-                status: status,
+                reporting_status: reporting_status,
                 gender: '',
                 modality: '',
             };
@@ -204,6 +208,8 @@ const AssignedPatientsTable = ({
                         isBookmarked: caseItem.isBookmarked || false,
                         notes: caseItem.notes || [],
                         attached_report: caseItem.attached_report || null,
+                        reporting_status: caseItem.reporting_status || '',
+                        patient_history: caseItem.patient_history || [],
                     } as Patient;
                 });
                 setPatients(mappedPatients);
@@ -294,12 +300,18 @@ const AssignedPatientsTable = ({
                     <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button className="p-1 hover:bg-blue-50 rounded cursor-pointer">
+                                <button
+                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        setSelectedPatientForHistory(props.row.original);
+                                        setHistoryModalOpen(true);
+                                    }}
+                                >
                                     <ClipboardCheck className="w-4 h-4 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>???</p>
+                                <p>Patient History</p>
                             </TooltipContent>
                         </Tooltip>
 
@@ -352,7 +364,8 @@ const AssignedPatientsTable = ({
                                                     <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
                                                     <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
                                                         <span className="font-medium">
-                                                            {note.created_by?.full_name || 'Unknown User'}
+                                                            {note.created_by?.full_name ||
+                                                                (typeof note.user_id === 'object' ? note.user_id.full_name : 'Unknown User')}
                                                         </span>
                                                         <span>
                                                             {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
@@ -518,25 +531,7 @@ const AssignedPatientsTable = ({
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
             },
         }),
-        columnHelper.display({
-            id: 'reporting_date_time',
-            header: 'Reporting Date & Time',
-            cell: (props) => {
-                const attachedReport = (props.row.original as any).attached_report;
-                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
-                const date = new Date(attachedReport.created_at);
-                const formatted = date.toLocaleString('en-GB', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false
-                });
-                return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
-            },
-        }),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
@@ -583,22 +578,70 @@ const AssignedPatientsTable = ({
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
         }),
         columnHelper.display({
+            id: 'reporting_date_time',
+            header: 'Reporting Date & Time',
+            cell: (props) => {
+                const attachedReport = (props.row.original as any).attached_report;
+                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
+
+                const date = new Date(attachedReport.created_at);
+                const formatted = date.toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+                return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
+            },
+        }),
+        columnHelper.display({
             id: 'reported',
             header: 'Reported',
             cell: (props) => {
-                const attachedReport = (props.row.original as any).attached_report;
-                if (attachedReport) {
+                const reportingStatus = (props.row.original as any).reporting_status;
+
+                // Check for attached report first
+                if (reportingStatus === 'drafted') {
                     return (
                         <Link
                             to={`/case/${props.row.original._id}/report`}
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                            className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full transition-colors bg-yellow-100 border-2 border-yellow-500 text-yellow-800 hover:bg-yellow-200`}
                         >
-                            {attachedReport.is_draft ? 'Draft' : 'Available'}
+                            Drafted
                         </Link>
                     );
                 }
-                return <span className="text-gray-400">-</span>;
+
+                // Check for reporting_status field
+                if (reportingStatus === 'signed_off') {
+                    return (
+                        <Link
+                            to={`/case/${props.row.original._id}/report`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 border-2 border-green-500 text-green-800 hover:bg-green-200 transition-colors"
+                        >
+                            Signed Off
+                        </Link>
+                    );
+                }
+
+                if (reportingStatus === 'unreported') {
+                    return (
+                        <Link
+                            to={`/case/${props.row.original._id}/report`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex justify-center"
+                        >
+                            -
+                        </Link>
+                    );
+                }
+
+                // Default: unreported
+                return <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">Unreported</span>;
             },
         }),
     ], []);
@@ -718,6 +761,12 @@ const AssignedPatientsTable = ({
                 }}
                 caseId={selectedCaseForDownload?.id || ''}
                 caseName={selectedCaseForDownload?.name}
+            />
+            <PatientHistoryModal
+                open={historyModalOpen}
+                onOpenChange={setHistoryModalOpen}
+                images={selectedPatientForHistory?.patient_history || []}
+                patientName={selectedPatientForHistory?.name}
             />
         </>
     );

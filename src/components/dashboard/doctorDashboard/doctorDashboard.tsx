@@ -86,14 +86,14 @@ const DoctorDashboard = () => {
     if (periodParam && VALID_PERIODS.includes(periodParam)) {
       return periodParam;
     }
-    return '1W';
+    return '1M';
   }, [searchParams]);
 
-  // Helper to get default dates (7 days ago to today)
+  // Helper to get default dates (30 days ago to today)
   const getDefaultDates = () => {
     const today = new Date();
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(today.getDate() - 7);
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
 
     const formatDate = (date: Date) => {
       const year = date.getFullYear();
@@ -103,7 +103,7 @@ const DoctorDashboard = () => {
     };
 
     return {
-      startDate: formatDate(sevenDaysAgo),
+      startDate: formatDate(thirtyDaysAgo),
       endDate: formatDate(today),
     };
   };
@@ -235,7 +235,7 @@ const DoctorDashboard = () => {
       newParams.delete('gender');
       newParams.delete('modalities');
       // Reset period to default
-      newParams.set('period', '1W');
+      newParams.set('period', '1M');
       return newParams;
     });
   }, [setSearchParams]);

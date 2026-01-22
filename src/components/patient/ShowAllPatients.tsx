@@ -5,7 +5,7 @@ import {
   type RowSelectionState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Badge } from "@/components/ui/badge";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ import PatientDetailsModal from "./PacDetailsModal";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { createColumnHelper } from "@tanstack/react-table";
 import { formatDate, formatTime } from "@/lib/helperFunctions";
-import { Check, Copy } from "lucide-react";
+
 import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
 import { format } from "date-fns";
 
@@ -137,55 +137,6 @@ interface DoctorResponse {
   data: Doctor[];
 }
 
-// Component for status cell with copy functionality
-const StatusCellWithCopy = ({ value, cellId }: { value: any; cellId: string }) => {
-  const [copiedCell, setCopiedCell] = useState<string | null>(null);
-  const displayValue = value || "-";
-
-  const handleCopy = (text: string, cellId: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedCell(cellId);
-    setTimeout(() => setCopiedCell(null), 2000);
-  };
-
-  const getStatusVariant = (status: string) => {
-    if (!status || typeof status !== 'string') return "secondary";
-    switch (status.toLowerCase()) {
-      case "assigned":
-        return "success";
-      case "unassigned":
-        return "warning";
-      case "in_progress":
-      case "in progress":
-        return "info";
-      default:
-        return "secondary";
-    }
-  };
-
-  return (
-    <div className="group relative">
-      <div className="pr-6">
-        <Badge variant={getStatusVariant(String(value || ""))}>
-          {String(displayValue)}
-        </Badge>
-      </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          handleCopy(String(displayValue), cellId);
-        }}
-        className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded"
-      >
-        {copiedCell === cellId ? (
-          <Check className="w-3.5 h-3.5 text-green-600" />
-        ) : (
-          <Copy className="w-3.5 h-3.5 text-gray-600" />
-        )}
-      </button>
-    </div>
-  );
-};
 
 // Helper function to calculate age from date of birth (YYYYMMDD format)
 const calculateAge = (dob: string): string => {
@@ -203,29 +154,22 @@ const calculateAge = (dob: string): string => {
   return age.toString();
 };
 
-// Helper function to flatten case data and merge patient info
 const flattenCaseData = (cases: PacCase[]): any[] => {
   return cases.map((caseItem) => {
-    // Extract assigned_to doctor name
     const assignedDoctorName =
       caseItem.assigned_to && typeof caseItem.assigned_to === 'object' && 'full_name' in caseItem.assigned_to
         ? (caseItem.assigned_to as AssignedDoctor).full_name
         : caseItem.assigned_to || "";
 
     const flattened: any = {
-      ...caseItem, // Keep all original fields including new backend fields
-      // Flatten patient data to top level
+      ...caseItem,
       name: caseItem.patient?.name || "",
       sex: caseItem.patient?.sex || "",
       date_of_birth: caseItem.patient?.dob || "",
       age: calculateAge(caseItem.patient?.dob || ""),
-      // Map description to case_description for compatibility
       case_description: caseItem.description || "",
-      // Extract assigned_to doctor name
       assigned_to: assignedDoctorName,
-      // Keep attached_report
       attached_report: caseItem.attached_report,
-      // Ensure new backend fields are preserved
       uploaded_images_count: caseItem.uploaded_images_count || 0,
       present_images_count: caseItem.present_images_count || 0,
       history_date_time: caseItem.history_date_time || null,
@@ -233,25 +177,20 @@ const flattenCaseData = (cases: PacCase[]): any[] => {
       center_name: caseItem.center_name || caseItem.hospital_name || null,
       hospital_name: caseItem.hospital_name || caseItem.center_name || null,
       referring_doctor_name: caseItem.referring_doctor_name || null,
-      // Add synthetic study_date_time field for column detection
       study_date_time: caseItem.case_date ? `${caseItem.case_date} ${caseItem.case_time || ''}` : null,
     };
     return flattened;
   });
 };
 
-// Helper function to get all unique keys from data
 const getAllKeys = (data: any[]): string[] => {
   const keys = new Set<string>();
   data.forEach((item) => {
     Object.keys(item).forEach((key) => {
-      // Always include attached_report as a key (it has special rendering)
       if (key === 'attached_report') {
         keys.add(key);
       }
-      // Skip nested objects and functions
       else if (item[key] !== null && typeof item[key] === 'object' && !Array.isArray(item[key])) {
-        // Flatten nested objects
         Object.keys(item[key]).forEach((nestedKey) => {
           keys.add(`${key}.${nestedKey}`);
         });
@@ -762,292 +701,170 @@ const ShowAllPatients = () => {
     });
   };
 
-  // Generate dynamic columns based on the data
-  const columns = useMemo(() => {
-    if (cases.length === 0) return [];
+  const columnHelper = createColumnHelper<any>();
 
-    const flattened = flattenCaseData(cases);
-    const allKeys = getAllKeys(flattened);
+  const columns = useMemo(() => [
+    // Select checkbox
+    columnHelper.display({
+      id: 'select',
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          aria-label="Select row"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    }),
+    // Name
+    columnHelper.accessor('name', {
+      header: 'Name',
+      cell: (info) => (
+        <div className="flex items-center justify-between gap-2">
+          <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-name`} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const patientName = info.getValue() || '';
+              handleFilterChange({ ...filters, patientName });
+              setIsFilterCollapsed(false); // Expand filter panel to show the change
+            }}
+            className="w-4 h-4 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center cursor-pointer shrink-0"
+            title="Filter Patient"
+          >
+            <span className="text-white text-[8px] font-bold">F</span>
+          </button>
+        </div>
+      ),
+    }),
+    // Case UID
+    columnHelper.accessor('case_uid', {
+      header: 'Case ID',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-uid`} />,
+    }),
+    // Accession Number
+    columnHelper.accessor('accession_number', {
+      header: 'Accession Number',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
+    }),
+    // Age
+    columnHelper.accessor('age', {
+      header: 'Age',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-age`} />,
+    }),
+    // Sex
+    columnHelper.accessor('sex', {
+      header: 'Sex',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-sex`} />,
+    }),
+    // Study Date & Time
+    columnHelper.display({
+      id: 'study_date_time',
+      header: 'Study Date & Time',
+      cell: (props) => {
+        const value = props.row.original.study_date_time;
+        if (!value || value === '-') return <span className="text-gray-400">-</span>;
 
-    // Filter out technical/internal fields and nested objects
-    const displayKeys = allKeys.filter(key =>
-      !['_id', 'patient_id', 'hospital_id', '__v', 'patient'].includes(key) &&
-      !key.includes('.') // Exclude nested object paths
-    );
+        // Parse "YYYYMMDD HHMMSS.ms" format
+        const parts = value.trim().split(' ');
+        const dateStr = parts[0] || '';
+        const timeStr = parts[1] || '';
 
-    const columnHelper = createColumnHelper<any>();
+        let formattedDate = '-';
+        if (dateStr.length === 8) {
+          formattedDate = `${dateStr.slice(6, 8)}-${dateStr.slice(4, 6)}-${dateStr.slice(0, 4)}`;
+        }
 
-    const dynamicColumns = [
-      columnHelper.display({
-        id: "select",
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && "indeterminate")
-            }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label="Select row"
-            onClick={(e) => e.stopPropagation()}
-          />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      }),
-    ];
+        let formattedTime = '';
+        if (timeStr) {
+          const timePart = timeStr.split('.')[0]; // Remove milliseconds
+          if (timePart.length >= 4) {
+            formattedTime = `${timePart.slice(0, 2)}:${timePart.slice(2, 4)}`;
+          }
+        }
 
-    // Check if both age and sex exist to combine them
-    const hasAge = displayKeys.includes('age');
-    const hasSex = displayKeys.includes('sex');
-    const shouldCombineAgeSex = hasAge && hasSex;
-    const processedKeys = new Set<string>();
-
-    // Generate columns for each key
-    displayKeys.forEach((key) => {
-      // Skip if already processed (for age/sex combination)
-      if (processedKeys.has(key)) return;
-
-      const headerLabel = key
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, l => l.toUpperCase());
-
-      // Special handling for age/sex combination
-      if (shouldCombineAgeSex && (key === 'age' || key === 'sex')) {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: "age_sex",
-            header: "Age/Sex",
-            cell: ({ row }) => {
-              const ageValue = row.original.age || "";
-              const sexValue = row.original.sex || "";
-              const combinedValue = `${ageValue || "-"} / ${sexValue || "-"}`;
-              return (
-                <CellWithCopy
-                  content={combinedValue}
-                  cellId={`${row.id}-age_sex`}
-                />
-              );
-            },
-          })
-        );
-        processedKeys.add('age');
-        processedKeys.add('sex');
-        return;
-      }
-
-      // Special handling for status field
-      if (key === 'status') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: headerLabel,
-            cell: ({ row }) => {
-              const value = (row.original as any)[key];
-              return (
-                <StatusCellWithCopy
-                  value={value}
-                  cellId={`${row.id}-${key}`}
-                />
-              );
-            },
-          })
-        );
-      } else if (key === 'name') {
-        // Special handling for patient name - make it clickable to open both viewer and report
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: headerLabel,
-            cell: ({ row }) => {
-              const name = (row.original as any)[key] || '-';
-              const caseId = row.original._id;
-              return (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Open only viewer in new window
-                    window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                  }}
-                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
-                >
-                  {name}
-                </button>
-              );
-            },
-          })
-        );
-      } else if (key === 'attached_report') {
-        // Special handling for attached_report field
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: "Report",
-            cell: ({ row }) => {
-              const value = (row.original as any)[key];
-              const caseId = row.original._id;
-              return value ? (
-                <Badge
-                  variant="success"
-                  className="text-xs px-2 py-0 cursor-pointer hover:opacity-80"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(`/case/${caseId}/report`, '_blank');
-                  }}
-                >
-                  Available
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">N/A</span>
-              );
-            },
-          })
-        );
-      } else if (key === 'study_date_time') {
-        // Add combined Study Date & Time column
-        dynamicColumns.push(
-          columnHelper.display({
-            id: 'study_date_time',
-            header: 'Study Date & Time',
-            cell: ({ row }) => {
-              const date = (row.original as any).case_date;
-              const time = (row.original as any).case_time;
-              if (!date) return '-';
-              // Format: YYYYMMDD to YYYY-MM-DD and HHMMSS to HH:MM:SS
-              const formattedDate = date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
-              const formattedTime = time ? time.replace(/(\d{2})(\d{2})(\d{2})/, '$1:$2:$3') : '';
-              return <span className="text-xs">{formattedDate} {formattedTime}</span>;
-            },
-          })
-        );
-      } else if (key === 'history_date_time') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: 'History Date & Time',
-            cell: ({ row }) => {
-              const value = (row.original as any)[key];
-              if (!value) return '-';
-              const date = new Date(value);
-              return <span className="text-xs">{date.toLocaleString()}</span>;
-            },
-          })
-        );
-      } else if (key === 'reporting_date_time') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: 'Reporting Date & Time',
-            cell: ({ row }) => {
-              const value = (row.original as any)[key];
-              if (!value) return '-';
-              const date = new Date(value);
-              return <span className="text-xs">{date.toLocaleString()}</span>;
-            },
-          })
-        );
-      } else if (key === 'uploaded_images_count') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: 'Uploaded Images',
-            cell: ({ row }) => {
-              const uploaded = (row.original as any).uploaded_images_count || 0;
-              const present = (row.original as any).present_images_count || 0;
-              return <span className="text-xs">{uploaded}/{present}</span>;
-            },
-          })
-        );
-      } else if (key === 'present_images_count') {
-        // Skip - handled in uploaded_images_count
-        processedKeys.add(key);
-      } else if (key === 'patient.dob') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: 'Age',
-            cell: ({ row }) => {
-              const dob = (row.original as any).patient?.dob;
-              if (!dob) return '-';
-              // Calculate age from DOB (format: YYYYMMDD)
-              const year = parseInt(dob.substring(0, 4));
-              const month = parseInt(dob.substring(4, 6)) - 1;
-              const day = parseInt(dob.substring(6, 8));
-              const birthDate = new Date(year, month, day);
-              const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-              return <span className="text-xs">{age}y</span>;
-            },
-          })
-        );
-      } else if (key === 'patient.sex') {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: 'Sex',
-            cell: ({ row }) => {
-              const sex = (row.original as any).patient?.sex;
-              return <span className="text-xs">{sex || '-'}</span>;
-            },
-          })
-        );
-      } else {
-        dynamicColumns.push(
-          columnHelper.display({
-            id: key,
-            header: headerLabel,
-            cell: ({ row }) => {
-              const value = (row.original as any)[key];
-              let displayValue: string = "-";
-
-              // Format based on value type
-              if (value === null || value === undefined || value === "") {
-                displayValue = "-";
-              } else if (typeof value === 'boolean') {
-                displayValue = value ? 'Yes' : 'No';
-              } else if (Array.isArray(value)) {
-                displayValue = value.length.toString();
-              } else if (typeof value === 'object') {
-                // Handle objects - try to extract meaningful data
-                if ('full_name' in value) {
-                  displayValue = (value as any).full_name || "-";
-                } else {
-                  displayValue = "-";
-                }
-              } else {
-                // Format time fields
-                if (key === 'case_time' || key === 'time_of_capture' || key.toLowerCase().includes('time')) {
-                  displayValue = formatTime(String(value));
-                }
-                // Format date fields
-                else if (key === 'case_date' || key === 'date_of_birth' || key === 'date_of_capture' || key.toLowerCase().includes('date')) {
-                  displayValue = formatDate(String(value));
-                } else {
-                  displayValue = String(value);
-                }
-              }
-
-              return (
-                <div className="whitespace-nowrap text-xs">
-                  <CellWithCopy
-                    content={displayValue}
-                    cellId={`${row.id}-${key}`}
-                  />
-                </div>
-              );
-            },
-          })
-        );
-      }
-    });
-
-    return dynamicColumns;
-  }, [cases]);
+        return <CellWithCopy content={`${formattedDate} ${formattedTime}`.trim()} cellId={`${props.row.id}-study-dt`} />;
+      },
+    }),
+    // History Date & Time
+    columnHelper.display({
+      id: 'history_date_time',
+      header: 'History Date & Time',
+      cell: (props) => {
+        const value = props.row.original.history_date_time;
+        if (!value) return <span className="text-gray-400">-</span>;
+        const date = new Date(value);
+        const formatted = date.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
+      },
+    }),
+    // Reporting Date & Time
+    columnHelper.display({
+      id: 'reporting_date_time',
+      header: 'Reporting Date & Time',
+      cell: (props) => {
+        const value = props.row.original.reporting_date_time;
+        if (!value) return <span className="text-gray-400">-</span>;
+        const date = new Date(value);
+        const formatted = date.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
+      },
+    }),
+    // Center
+    columnHelper.accessor('center_name', {
+      header: 'Center',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-center`} />,
+    }),
+    // Hospital Name
+    columnHelper.accessor('hospital_name', {
+      header: 'Hospital',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-hospital`} />,
+    }),
+    // Referring Doctor
+    columnHelper.accessor('referring_doctor_name', {
+      header: 'Referring Doctor',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-ref-doc`} />,
+    }),
+    // Image Count
+    columnHelper.accessor('uploaded_images_count', {
+      header: 'Image Count',
+      cell: (info) => <CellWithCopy content={String(info.getValue() || 0)} cellId={`${info.row.id}-img-count`} />,
+    }),
+    // Modality
+    columnHelper.accessor('modality', {
+      header: 'Modality',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
+    }),
+    // Status
+    columnHelper.accessor('status', {
+      header: 'Status',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-status`} />,
+    }),
+    // Assigned To
+    columnHelper.accessor('assigned_to', {
+      header: 'Assigned To',
+      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-assigned`} />,
+    }),
+    // Attached Report
+    columnHelper.display({
+      id: 'attached_report',
+      header: 'Report',
+      cell: (props) => {
+        const report = props.row.original.attached_report;
+        if (!report) return <span className="text-gray-400">-</span>;
+        return <span className="text-green-600 font-medium">Yes</span>;
+      },
+    }),
+  ], []);
 
   // Error state
   if (error) {
@@ -1070,12 +887,10 @@ const ShowAllPatients = () => {
     );
   }
 
-  // Flatten cases data for display
   const flattenedCases = useMemo(() => {
     return flattenCaseData(cases);
   }, [cases]);
 
-  // Get selected cases from row selection
   const selectedCases = useMemo(() => {
     return Object.keys(rowSelection)
       .filter(key => rowSelection[key])
@@ -1083,7 +898,6 @@ const ShowAllPatients = () => {
       .filter(Boolean);
   }, [rowSelection, flattenedCases]);
 
-  // Handle bulk viewer action
   const handleBulkViewStudies = () => {
     selectedCases.forEach((caseItem, index) => {
       if (caseItem?._id) {
@@ -1095,7 +909,6 @@ const ShowAllPatients = () => {
     });
   };
 
-  // Handle bulk report action
   const handleBulkViewReports = () => {
     selectedCases.forEach((caseItem, index) => {
       if (caseItem?._id) {
@@ -1106,10 +919,11 @@ const ShowAllPatients = () => {
     });
   };
 
-  // Clear selection
   const handleClearSelection = () => {
     setRowSelection({});
   };
+
+  console.log('Case', selectedCase)
 
   return (
     <>
@@ -1302,6 +1116,7 @@ const ShowAllPatients = () => {
           status: "",
           case_date: selectedCase.case_date || "",
           modality: selectedCase.modality || "",
+          patient_history: selectedCase.patient_history || [],
           assigned_to: null,
           pac_images_count: 0,
         } as Patient : null}
@@ -1311,6 +1126,7 @@ const ShowAllPatients = () => {
         onAssignDoctor={handleAssignDoctor}
         isAssigning={assigning}
         isLoadingDoctors={loadingDoctors}
+        case_id={selectedCase?._id || ""}
       />
     </>
   );

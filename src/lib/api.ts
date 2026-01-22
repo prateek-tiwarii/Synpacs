@@ -367,10 +367,8 @@ class ApiService {
     content_html?: string;
     content_plain_text?: string;
     title?: string;
-    impression?: string;
-    is_draft?: boolean;
-    is_reviewed?: boolean;
-    is_signed_off?: boolean;
+    change_description?: string;
+    reporting_status?: string; // e.g., 'draft', 'drafted', 'reviewed', 'signed_off'
   }) {
     return this.request(`/api/v1/reports/${reportId}`, {
       method: 'PUT',
@@ -437,6 +435,76 @@ class ApiService {
         limit
       })
     });
-  }}
+  }
+
+  async updateCase(caseId: string, caseData: {
+    accession_number?: string;
+    body_part?: string;
+    description?: string;
+    priority?: string;
+  }, patientHistoryFiles?: File[]) {
+    const token = getCookie('jwt')
+
+    // If there are files to upload, use FormData
+    if (patientHistoryFiles && patientHistoryFiles.length > 0) {
+      const formData = new FormData()
+
+      // Add metadata fields
+      if (caseData.accession_number) formData.append('accession_number', caseData.accession_number)
+      if (caseData.body_part) formData.append('body_part', caseData.body_part)
+      if (caseData.description) formData.append('description', caseData.description)
+      if (caseData.priority) formData.append('priority', caseData.priority)
+
+      // Add patient history files
+      patientHistoryFiles.forEach(file => {
+        formData.append('patient_history', file)
+      })
+
+      const response = await fetch(`${this.baseUrl}/api/v1/cases/update/${caseId}`, {
+        method: 'PUT',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      })
+
+      if (response.status === 401) {
+        removeCookie('jwt')
+        window.location.href = '/login'
+        throw new Error('Unauthorized')
+      }
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Update failed' }))
+        throw new Error(error.message || 'Update failed')
+      }
+
+      return response.json()
+    }
+
+    // If no files, use JSON request
+    const response = await fetch(`${this.baseUrl}/api/v1/cases/update/${caseId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(caseData),
+    })
+
+    if (response.status === 401) {
+      removeCookie('jwt')
+      window.location.href = '/login'
+      throw new Error('Unauthorized')
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Update failed' }))
+      throw new Error(error.message || 'Update failed')
+    }
+
+    return response.json()
+  }
+}
 
 export const apiService = new ApiService(API_BASE_URL)
