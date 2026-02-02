@@ -20,14 +20,14 @@ export const CellWithCopy = ({ content, cellId }: CellWithCopyProps) => {
     };
 
     return (
-        <div className="group relative flex items-center" title={content}>
-            <div className="pr-6 truncate max-w-[120px]">{content}</div>
+        <div className="group relative flex items-center min-w-0" title={content}>
+            <span className="truncate pr-4">{content}</span>
             <button
                 onClick={(e) => {
                     e.stopPropagation();
                     handleCopy(content, cellId);
                 }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
+                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded flex-shrink-0"
             >
                 {copiedCell === cellId ? (
                     <Check className="w-3 h-3 text-green-600" />
@@ -93,7 +93,7 @@ export const PriorityCell = ({ priority }: PriorityCellProps) => {
     };
 
     return (
-        <Badge variant={getPriorityVariant(priority)} className="whitespace-nowrap">
+        <Badge variant={getPriorityVariant(priority)} className="truncate">
             {priority}
         </Badge>
     );
@@ -139,7 +139,7 @@ interface DateCellProps {
 
 export const DateCell = ({ date }: DateCellProps) => {
     return (
-        <div className="whitespace-pre-line text-xs">
+        <div className="text-xs truncate" title={formatDate(date)}>
             {formatDate(date)}
         </div>
     );
@@ -155,8 +155,8 @@ interface AgeSexCellProps {
 
 export const AgeSexCell = ({ age, sex }: AgeSexCellProps) => {
     return (
-        <span className="text-sm whitespace-nowrap">
-            {age} / {sex}
+        <span className="text-sm truncate">
+            {age}/{sex}
         </span>
     );
 };

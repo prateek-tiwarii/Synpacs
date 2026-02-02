@@ -2,34 +2,21 @@ import { useState, useMemo, useEffect } from "react";
 
 import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Bookmark as BookmarkIcon, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Settings, X } from "lucide-react";
+import { Bookmark as BookmarkIcon, ClipboardCheck, Download, FileText, FolderOpen, ImageIcon, MessageSquare, Settings, X } from "lucide-react";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import DownloadModal from "@/components/common/DownloadModal";
+import PatientHistoryModal from "@/components/dashboard/doctorDashboard/molecules/PatientHistoryModal";
+import MessageDialog from "@/components/dashboard/doctorDashboard/molecules/MessageDialog";
+import DocumentDialog from "@/components/dashboard/doctorDashboard/molecules/DocumentDialog";
 import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
-import type { Patient } from "@/components/patient/PacDetailsModal";
+import type { Patient, Note } from "@/components/patient/PacDetailsModal";
 
-// Note interface
-interface Note {
-    _id: string;
-    note: string;
-    flag_type: 'urgent' | 'routine' | 'info' | 'warning' | 'error';
-    created_by?: {
-        _id: string;
-        full_name: string;
-        email: string;
-    };
-    createdAt: string;
-    updatedAt: string;
-    created_at?: string;
-    updated_at?: string;
-}
-
-type BookmarkedCase = Patient & { notes?: Note[] };
+type BookmarkedCase = Patient & { notes?: Note[]; patient_history?: any[] };
 
 const COLUMN_VISIBILITY_KEY = 'bookmarks_table_columns';
 
@@ -63,6 +50,12 @@ const Bookmark = () => {
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
+
+    // Dialog states for actions aligned with PACS List
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+    const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+    const [selectedPatient, setSelectedPatient] = useState<BookmarkedCase | null>(null);
 
     // Initialize column visibility from localStorage
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -142,6 +135,7 @@ const Bookmark = () => {
                         attached_report: caseItem.attached_report || null,
                         notes: caseItem.notes || [],
                         patient: caseItem.patient,
+                        patient_history: caseItem.patient_history || [],
                     } as Patient;
                 });
                 setBookmarks(mappedBookmarks);
@@ -237,41 +231,34 @@ const Bookmark = () => {
             cell: (props: any) => (
                 <TooltipProvider>
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        {/* Patient History - aligned with PACS List */}
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
                                     className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                                    }}
-                                >
-                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                                </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>View Images</p>
-                            </TooltipContent>
-                        </Tooltip>
-
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button
-                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                        setSelectedPatient(props.row.original);
+                                        setHistoryModalOpen(true);
                                     }}
                                 >
                                     <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>View Report</p>
+                                <p>Patient History</p>
                             </TooltipContent>
                         </Tooltip>
 
+                        {/* Attached Documents */}
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => { /* attached documents */ }}>
+                                <button
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        setSelectedPatient(props.row.original);
+                                        setDocumentDialogOpen(true);
+                                    }}
+                                >
                                     <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
                             </TooltipTrigger>
@@ -280,17 +267,63 @@ const Bookmark = () => {
                             </TooltipContent>
                         </Tooltip>
 
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button className="p-0.5 hover:bg-blue-50 rounded cursor-pointer" onClick={() => { /* messages */ }}>
+                        {/* Messages with notes indicator */}
+                        <HoverCard openDelay={200} closeDelay={100}>
+                            <HoverCardTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer relative"
+                                    onClick={() => {
+                                        setSelectedPatient(props.row.original);
+                                        setMessageDialogOpen(true);
+                                    }}
+                                >
                                     <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                                    {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                        <span className="absolute bottom-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white" />
+                                    )}
                                 </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Messages</p>
-                            </TooltipContent>
-                        </Tooltip>
+                            </HoverCardTrigger>
+                            {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                <HoverCardContent className="w-80 max-h-60 overflow-y-auto" align="start">
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-gray-900">Notes ({props.row.original.notes.length})</h4>
+                                        <div className="space-y-2">
+                                            {props.row.original.notes.map((note: Note) => (
+                                                <div key={note._id} className="p-2.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                                            note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
+                                                            note.flag_type === 'routine' ? 'bg-gray-100 text-gray-700' :
+                                                            note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
+                                                            note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                                                            note.flag_type === 'error' ? 'bg-red-100 text-red-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                        }`}>
+                                                            {(note.flag_type || 'routine').toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
+                                                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                                        <span className="font-medium">
+                                                            {note.created_by?.full_name || 'Unknown User'}
+                                                        </span>
+                                                        <span>
+                                                            {new Date(note.createdAt || note.created_at || Date.now()).toLocaleDateString('en-US', {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                year: 'numeric'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </HoverCardContent>
+                            )}
+                        </HoverCard>
 
+                        {/* Download */}
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
@@ -311,6 +344,41 @@ const Bookmark = () => {
                             </TooltipContent>
                         </Tooltip>
 
+                        {/* View Images */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                    }}
+                                >
+                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>View Images</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        {/* View Report */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                    }}
+                                >
+                                    <FileText className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>View Report</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        {/* Remove Bookmark */}
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
@@ -660,6 +728,32 @@ const Bookmark = () => {
                     }}
                     caseId={selectedCaseForDownload?.id || ''}
                     caseName={selectedCaseForDownload?.name}
+                />
+
+                {/* Patient History Modal - aligned with PACS List */}
+                <PatientHistoryModal
+                    open={historyModalOpen}
+                    onOpenChange={setHistoryModalOpen}
+                    images={selectedPatient?.patient_history || []}
+                    patientName={selectedPatient?.name}
+                />
+
+                {/* Message Dialog - aligned with PACS List */}
+                <MessageDialog
+                    open={messageDialogOpen}
+                    onOpenChange={setMessageDialogOpen}
+                    patient={selectedPatient as Patient | null}
+                    onSuccess={() => {
+                        toast.success('Note added successfully');
+                        fetchBookmarks();
+                    }}
+                />
+
+                {/* Document Dialog - aligned with PACS List */}
+                <DocumentDialog
+                    open={documentDialogOpen}
+                    onOpenChange={setDocumentDialogOpen}
+                    patient={selectedPatient as Patient | null}
                 />
             </div>
         </div>

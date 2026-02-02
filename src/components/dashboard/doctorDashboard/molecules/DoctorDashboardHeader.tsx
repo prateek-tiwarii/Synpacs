@@ -11,7 +11,8 @@ const DoctorDashboardHeader = ({
     onFilterReset,
     setActivePeriod,
     activePeriod,
-    filters }
+    filters,
+    availableCenters = [] }
     : {
         activeTab: string,
         setActiveTab: any
@@ -21,7 +22,8 @@ const DoctorDashboardHeader = ({
         onFilterReset: any,
         setActivePeriod: any,
         activePeriod: string,
-        filters: FilterState
+        filters: FilterState,
+        availableCenters?: { id: string; name: string }[]
     }) => {
 
     const tabs = [
@@ -29,7 +31,6 @@ const DoctorDashboardHeader = ({
         { id: 'Drafted', label: 'Drafted', color: 'bg-sky-500' },
         { id: 'Reported', label: 'Reported', color: 'bg-emerald-500' },
         { id: 'All Cases', label: 'All Cases', color: 'bg-slate-600' },
-        { id: 'Review', label: 'Review', color: 'bg-purple-500' },
     ];
 
     return (
@@ -78,6 +79,9 @@ const DoctorDashboardHeader = ({
                     activePeriod={activePeriod}
                     setActivePeriod={setActivePeriod}
                     initialFilters={filters}
+                    availableCenters={availableCenters}
+                    showCenters={true}
+                    showStudyStatus={true}
                 />
             )}
         </div>

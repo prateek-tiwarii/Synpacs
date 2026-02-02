@@ -5,6 +5,45 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
+
+// Shared export columns configuration - used across all export locations
+// These columns match the standard patient data columns displayed in tables
+export const EXPORT_COLUMNS = [
+  { id: 'patientId', label: 'Patient ID', defaultChecked: true },
+  { id: 'patientName', label: 'Patient Name', defaultChecked: true },
+  { id: 'dob', label: 'Date of Birth', defaultChecked: false },
+  { id: 'age', label: 'Age', defaultChecked: true },
+  { id: 'sex', label: 'Sex', defaultChecked: true },
+  { id: 'modality', label: 'Modality', defaultChecked: true },
+  { id: 'caseId', label: 'Case ID', defaultChecked: true },
+  { id: 'studyDate', label: 'Study Date', defaultChecked: true },
+  { id: 'studyTime', label: 'Study Time', defaultChecked: true },
+  { id: 'historyDate', label: 'History Date & Time', defaultChecked: true },
+  { id: 'reportingDate', label: 'Reporting Date & Time', defaultChecked: true },
+  { id: 'accessionNumber', label: 'Accession Number', defaultChecked: true },
+  { id: 'center', label: 'Center', defaultChecked: true },
+  { id: 'referringDoctor', label: 'Referring Doctor', defaultChecked: true },
+  { id: 'assignedDoctor', label: 'Assigned Doctor', defaultChecked: false },
+  { id: 'imageCount', label: 'Image Count', defaultChecked: true },
+  { id: 'description', label: 'Study Description', defaultChecked: true },
+  { id: 'bodyPart', label: 'Body Part', defaultChecked: false },
+  { id: 'caseType', label: 'Case Type', defaultChecked: true },
+  { id: 'reported', label: 'Reported', defaultChecked: true },
+  { id: 'reportStatus', label: 'Report Status (Draft/Final)', defaultChecked: false },
+  { id: 'status', label: 'Status', defaultChecked: false },
+  { id: 'priority', label: 'Priority', defaultChecked: false },
+  { id: 'seriesCount', label: 'Series Count', defaultChecked: true },
+  { id: 'instanceCount', label: 'Instance Count', defaultChecked: true },
+] as const;
+
+// Helper to get default selected columns
+export const getDefaultExportColumns = (): Record<string, boolean> => {
+  return EXPORT_COLUMNS.reduce((acc, col) => {
+    acc[col.id] = col.defaultChecked;
+    return acc;
+  }, {} as Record<string, boolean>);
+};
 
 interface ExportModalProps {
   open: boolean;
@@ -29,47 +68,24 @@ interface ExportModalProps {
       endDateIso: string;
       modalities: string[];
     };
-  }) => void;
+  }) => void | Promise<void>;
 }
 
-export const ExportModal: React.FC<ExportModalProps> = ({ 
-  open, 
-  onOpenChange, 
+export const ExportModal: React.FC<ExportModalProps> = ({
+  open,
+  onOpenChange,
   exportType = 'search',
   bookmarkedCases = [],
   auditParams,
   onDownload,
 }) => {
   const [fileFormat, setFileFormat] = useState('excel');
-  const [selectedColumns, setSelectedColumns] = useState({
-    patientId: true,
-    patientName: true,
-    dob: false,
-    age: true,
-    sex: true,
-    modality: true,
-    caseId: true,
-    studyDate: true,
-    studyTime: true,
-    historyDate: true,
-    reportingDate: true,
-    accessionNumber: true,
-    center: true,
-    referringDoctor: true,
-    imageCount: true,
-    description: true,
-    caseType: true,
-    reported: true,
-    status: false,
-    priority: false,
-    seriesCount: true,
-    instanceCount: true,
-  });
-  
+  const [selectedColumns, setSelectedColumns] = useState<Record<string, boolean>>(getDefaultExportColumns);
   const [includeBookmarkNotes, setIncludeBookmarkNotes] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleColumnToggle = (column: string) => {
-    setSelectedColumns(prev => ({ ...prev, [column]: !(prev as any)[column] }));
+    setSelectedColumns(prev => ({ ...prev, [column]: !prev[column] }));
   };
 
   const exportTitle =
@@ -97,10 +113,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         <Tabs defaultValue="format" className="w-full">
           <TabsList className={`grid w-full ${exportType === 'bookmarks' ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            <TabsTrigger value="format">Format</TabsTrigger>
-            <TabsTrigger value="columns">Columns</TabsTrigger>
+            <TabsTrigger value="format" className="flex-1">Format</TabsTrigger>
+            <TabsTrigger value="columns" className="flex-1">Columns</TabsTrigger>
             {exportType === 'bookmarks' && (
-              <TabsTrigger value="notes">Bookmark Notes</TabsTrigger>
+              <TabsTrigger value="notes" className="flex-1">Bookmark Notes</TabsTrigger>
             )}
           </TabsList>
 
@@ -129,183 +145,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <TabsContent value="columns" className="space-y-4 py-4">
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Select Columns to Include</h3>
-              <div className="grid grid-cols-2 gap-3 max-h-100 overflow-y-auto pr-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="patientId" 
-                    checked={selectedColumns.patientId}
-                    onCheckedChange={() => handleColumnToggle('patientId')}
-                  />
-                  <Label htmlFor="patientId" className="cursor-pointer text-sm">Patient ID</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="patientName" 
-                    checked={selectedColumns.patientName}
-                    onCheckedChange={() => handleColumnToggle('patientName')}
-                  />
-                  <Label htmlFor="patientName" className="cursor-pointer text-sm">Patient Name</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="dob" 
-                    checked={(selectedColumns as any).dob}
-                    onCheckedChange={() => handleColumnToggle('dob')}
-                  />
-                  <Label htmlFor="dob" className="cursor-pointer text-sm">DOB</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="age" 
-                    checked={selectedColumns.age}
-                    onCheckedChange={() => handleColumnToggle('age')}
-                  />
-                  <Label htmlFor="age" className="cursor-pointer text-sm">Age</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="sex" 
-                    checked={selectedColumns.sex}
-                    onCheckedChange={() => handleColumnToggle('sex')}
-                  />
-                  <Label htmlFor="sex" className="cursor-pointer text-sm">Sex</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="modality" 
-                    checked={selectedColumns.modality}
-                    onCheckedChange={() => handleColumnToggle('modality')}
-                  />
-                  <Label htmlFor="modality" className="cursor-pointer text-sm">Modality</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="caseId" 
-                    checked={(selectedColumns as any).caseId}
-                    onCheckedChange={() => handleColumnToggle('caseId')}
-                  />
-                  <Label htmlFor="caseId" className="cursor-pointer text-sm">Case ID</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="studyDate" 
-                    checked={selectedColumns.studyDate}
-                    onCheckedChange={() => handleColumnToggle('studyDate')}
-                  />
-                  <Label htmlFor="studyDate" className="cursor-pointer text-sm">Study Date</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="studyTime" 
-                    checked={(selectedColumns as any).studyTime}
-                    onCheckedChange={() => handleColumnToggle('studyTime')}
-                  />
-                  <Label htmlFor="studyTime" className="cursor-pointer text-sm">Study Time</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="historyDate" 
-                    checked={(selectedColumns as any).historyDate}
-                    onCheckedChange={() => handleColumnToggle('historyDate')}
-                  />
-                  <Label htmlFor="historyDate" className="cursor-pointer text-sm">History Date & Time</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="reportingDate" 
-                    checked={(selectedColumns as any).reportingDate}
-                    onCheckedChange={() => handleColumnToggle('reportingDate')}
-                  />
-                  <Label htmlFor="reportingDate" className="cursor-pointer text-sm">Reporting Date & Time</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="accessionNumber" 
-                    checked={selectedColumns.accessionNumber}
-                    onCheckedChange={() => handleColumnToggle('accessionNumber')}
-                  />
-                  <Label htmlFor="accessionNumber" className="cursor-pointer text-sm">Accession Number</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="center" 
-                    checked={selectedColumns.center}
-                    onCheckedChange={() => handleColumnToggle('center')}
-                  />
-                  <Label htmlFor="center" className="cursor-pointer text-sm">Center</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="referringDoctor" 
-                    checked={selectedColumns.referringDoctor}
-                    onCheckedChange={() => handleColumnToggle('referringDoctor')}
-                  />
-                  <Label htmlFor="referringDoctor" className="cursor-pointer text-sm">Referring Doctor</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="imageCount" 
-                    checked={(selectedColumns as any).imageCount}
-                    onCheckedChange={() => handleColumnToggle('imageCount')}
-                  />
-                  <Label htmlFor="imageCount" className="cursor-pointer text-sm">Image Count</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="description" 
-                    checked={(selectedColumns as any).description}
-                    onCheckedChange={() => handleColumnToggle('description')}
-                  />
-                  <Label htmlFor="description" className="cursor-pointer text-sm">Study Description</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="caseType" 
-                    checked={(selectedColumns as any).caseType}
-                    onCheckedChange={() => handleColumnToggle('caseType')}
-                  />
-                  <Label htmlFor="caseType" className="cursor-pointer text-sm">Case Type</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="reported" 
-                    checked={(selectedColumns as any).reported}
-                    onCheckedChange={() => handleColumnToggle('reported')}
-                  />
-                  <Label htmlFor="reported" className="cursor-pointer text-sm">Reported</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="status" 
-                    checked={(selectedColumns as any).status}
-                    onCheckedChange={() => handleColumnToggle('status')}
-                  />
-                  <Label htmlFor="status" className="cursor-pointer text-sm">Status</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="priority" 
-                    checked={(selectedColumns as any).priority}
-                    onCheckedChange={() => handleColumnToggle('priority')}
-                  />
-                  <Label htmlFor="priority" className="cursor-pointer text-sm">Priority</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="seriesCount" 
-                    checked={(selectedColumns as any).seriesCount}
-                    onCheckedChange={() => handleColumnToggle('seriesCount')}
-                  />
-                  <Label htmlFor="seriesCount" className="cursor-pointer text-sm">Series Count</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="instanceCount" 
-                    checked={(selectedColumns as any).instanceCount}
-                    onCheckedChange={() => handleColumnToggle('instanceCount')}
-                  />
-                  <Label htmlFor="instanceCount" className="cursor-pointer text-sm">Instance Count</Label>
-                </div>
+              <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-2">
+                {EXPORT_COLUMNS.map((column) => (
+                  <div key={column.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={column.id}
+                      checked={selectedColumns[column.id] ?? false}
+                      onCheckedChange={() => handleColumnToggle(column.id)}
+                    />
+                    <Label htmlFor={column.id} className="cursor-pointer text-sm">{column.label}</Label>
+                  </div>
+                ))}
               </div>
             </div>
           </TabsContent>
@@ -359,29 +209,45 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             Exporting {exportCount} row(s)
           </span>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isExporting}>
               Cancel
             </Button>
-            <Button onClick={() => {
-              const payload = {
-                exportType,
-                fileFormat,
-                selectedColumns: selectedColumns as unknown as Record<string, boolean>,
-                includeBookmarkNotes: exportType === 'bookmarks' ? includeBookmarkNotes : false,
-                bookmarkedCases: exportType === 'bookmarks' ? bookmarkedCases : [],
-                auditParams: exportType === 'audit' ? auditParams : undefined,
-              };
+            <Button
+              disabled={isExporting}
+              onClick={async () => {
+                const payload = {
+                  exportType,
+                  fileFormat,
+                  selectedColumns,
+                  includeBookmarkNotes: exportType === 'bookmarks' ? includeBookmarkNotes : false,
+                  bookmarkedCases: exportType === 'bookmarks' ? bookmarkedCases : [],
+                  auditParams: exportType === 'audit' ? auditParams : undefined,
+                };
 
-              if (onDownload) {
-                onDownload(payload);
-              } else {
-                // Backwards-compatible fallback until real export is wired everywhere.
-                console.log('Exporting...', payload);
-              }
-
-              onOpenChange(false);
-            }}>
-              Download
+                if (onDownload) {
+                  setIsExporting(true);
+                  try {
+                    await onDownload(payload);
+                    onOpenChange(false);
+                  } catch {
+                    // Error is handled in the onDownload callback
+                  } finally {
+                    setIsExporting(false);
+                  }
+                } else {
+                  console.log('Exporting...', payload);
+                  onOpenChange(false);
+                }
+              }}
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                'Download'
+              )}
             </Button>
           </div>
         </DialogFooter>

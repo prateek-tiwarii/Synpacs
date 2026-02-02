@@ -135,6 +135,26 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
   const [error, setError] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
+  const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
+
+  // Fetch available centers
+  useEffect(() => {
+    const fetchCenters = async () => {
+      try {
+        const response = await apiService.getAllManagedHospitals() as any;
+        if (response.success && response.data) {
+          const centers = response.data.map((hospital: any) => ({
+            id: hospital._id,
+            name: hospital.hospital_name || hospital.name
+          }));
+          setAvailableCenters(centers);
+        }
+      } catch (error) {
+        console.error('Failed to fetch centers:', error);
+      }
+    };
+    fetchCenters();
+  }, []);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -170,6 +190,8 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
     endDate: defaultDates.end,
     status: "all",
     gender: { M: false, F: false },
+    centers: [],
+    studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
     reportStatus: { reported: false, drafted: false, unreported: false },
     modalities: {
       ALL: false,
@@ -398,6 +420,8 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
       endDate: defaultDates.end,
       status: "all",
       gender: { M: false, F: false },
+      centers: [],
+      studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
       reportStatus: { reported: false, drafted: false, unreported: false },
       modalities: {
         ALL: false,
@@ -631,6 +655,9 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
           onFilterChange={handleFilterChange}
           onFilterReset={handleFilterReset}
           initialFilters={filters}
+          availableCenters={availableCenters}
+          showCenters={true}
+          showStudyStatus={true}
         />
       )}
 

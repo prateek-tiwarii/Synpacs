@@ -33,6 +33,7 @@ import {
   Check,
   Box,
   Settings,
+  ChevronDown,
 } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -70,6 +71,7 @@ interface ToolButtonProps {
   onClick?: () => void;
   disabled?: boolean;
   description?: string;
+  isToggle?: boolean; // Toggle style: no bg, dull when off
 }
 
 const ToolButton = ({
@@ -79,29 +81,47 @@ const ToolButton = ({
   onClick,
   disabled = false,
   description,
-}: ToolButtonProps) => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <button
-        onClick={disabled ? undefined : onClick}
-        disabled={disabled}
-        className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${active ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
-          } ${disabled ? "opacity-30 cursor-not-allowed" : ""}`}
-      >
-        {icon}
-        <span className="text-[10px] mt-1 whitespace-nowrap">{label}</span>
-      </button>
-    </TooltipTrigger>
-    {description && (
-      <TooltipContent
-        side="bottom"
-        className="bg-gray-800 border-gray-700 text-gray-200"
-      >
-        <p>{description}</p>
-      </TooltipContent>
-    )}
-  </Tooltip>
-);
+  isToggle = false,
+}: ToolButtonProps) => {
+  const getButtonClass = () => {
+    if (disabled) {
+      return "opacity-30 cursor-not-allowed text-gray-500";
+    }
+    if (isToggle) {
+      // Toggle style: no background, just dull when inactive
+      return active
+        ? "text-white hover:bg-gray-700/50"
+        : "text-gray-500 opacity-50 hover:opacity-75";
+    }
+    // Default style: blue bg when active
+    return active
+      ? "bg-blue-600 text-white"
+      : "text-gray-300 hover:bg-gray-700";
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={disabled ? undefined : onClick}
+          disabled={disabled}
+          className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${getButtonClass()}`}
+        >
+          {icon}
+          <span className="text-[10px] mt-1 whitespace-nowrap">{label}</span>
+        </button>
+      </TooltipTrigger>
+      {description && (
+        <TooltipContent
+          side="bottom"
+          className="bg-gray-800 border-gray-700 text-gray-200"
+        >
+          <p>{description}</p>
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
+};
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
@@ -156,6 +176,8 @@ const ViewerHeader = () => {
     showOverlays,
     setShowOverlays,
     shortcuts,
+    stackSpeed,
+    setStackSpeed,
   } = useViewerContext();
 
   const [activeTab, setActiveTab] = useState<
@@ -221,7 +243,7 @@ const ViewerHeader = () => {
     setViewTransform({
       x: 0,
       y: 0,
-      scale: 1,
+      scale: 1.2,
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -258,6 +280,7 @@ const ViewerHeader = () => {
           case "Window4": applyPreset(CT_PRESETS[3]); break;
           case "Window5": applyPreset(CT_PRESETS[4]); break;
           case "Window6": applyPreset(CT_PRESETS[5]); break;
+          case "Window7": applyPreset(CT_PRESETS[6]); break;
           case "ToolLine": setActiveTool("Length"); break;
           case "ToolDistance": setActiveTool("Length"); break;
           case "ToolAngle": setActiveTool("Angle"); break;
@@ -301,6 +324,7 @@ const ViewerHeader = () => {
     onClick?: () => void;
     disabled?: boolean;
     description?: string;
+    isToggle?: boolean;
   }
 
   const AVAILABLE_TOOLS: ViewerToolConfig[] = useMemo(
@@ -310,7 +334,7 @@ const ViewerHeader = () => {
         label: "Stack",
         icon: <Layers size={18} />,
         category: "Tools",
-        type: "tool",
+        type: "dropdown",
         active: activeTool === "Stack",
         description: "Scroll through slices (Mouse Wheel or Drag)",
       },
@@ -339,7 +363,7 @@ const ViewerHeader = () => {
         category: "Tools",
         type: "action",
         onClick: () =>
-          setViewTransform((prev) => ({ ...prev, x: 0, y: 0, scale: 1 })),
+          setViewTransform((prev) => ({ ...prev, x: 0, y: 0, scale: 1.2 })),
         description: "Reset zoom to fit container",
       },
       {
@@ -514,12 +538,13 @@ const ViewerHeader = () => {
       {
         id: "Overlays",
         label: "Overlays",
-        icon: showOverlays ? <Layers size={18} /> : <Box size={18} />,
+        icon: <Layers size={18} />,
         category: "Tools",
         type: "action",
         active: showOverlays,
         onClick: () => setShowOverlays(!showOverlays),
         description: "Toggle patient info and image metadata overlays",
+        isToggle: true,
       },
     ],
     [
@@ -592,7 +617,59 @@ const ViewerHeader = () => {
             <div className="flex items-center gap-1">
               {AVAILABLE_TOOLS.filter((t) => t.category === "Tools").map(
                 (tool) =>
-                  tool.type === "dropdown" && tool.id === "Presets" ? (
+                  tool.type === "dropdown" && tool.id === "Stack" ? (
+                    <Tooltip key={tool.id}>
+                      <TooltipTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              onClick={() => setActiveTool("Stack")}
+                              className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
+                                activeTool === "Stack"
+                                  ? "bg-blue-600 text-white"
+                                  : "text-gray-300 hover:bg-gray-700"
+                              }`}
+                            >
+                              <div className="flex items-center gap-0.5">
+                                {tool.icon}
+                                <ChevronDown size={12} className="opacity-60" />
+                              </div>
+                              <span className="text-[10px] mt-1 whitespace-nowrap">
+                                {tool.label}
+                              </span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="w-48 bg-gray-900 border-gray-700 text-gray-200 p-3"
+                          >
+                            <div className="text-xs text-gray-400 mb-2">Stack Speed</div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-500">Slow</span>
+                              <input
+                                type="range"
+                                min="1"
+                                max="10"
+                                value={stackSpeed}
+                                onChange={(e) => setStackSpeed(Number(e.target.value))}
+                                className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                              />
+                              <span className="text-xs text-gray-500">Fast</span>
+                            </div>
+                            <div className="text-center text-xs text-white mt-2 font-mono">{stackSpeed}</div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TooltipTrigger>
+                      {tool.description && (
+                        <TooltipContent
+                          side="bottom"
+                          className="bg-gray-800 border-gray-700 text-gray-200"
+                        >
+                          <p>{tool.description}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  ) : tool.type === "dropdown" && tool.id === "Presets" ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
                         <DropdownMenu>
@@ -801,6 +878,7 @@ const ViewerHeader = () => {
                       disabled={tool.disabled}
                       description={tool.description}
                       onClick={() => handleToolClick(tool)}
+                      isToggle={tool.isToggle}
                     />
                   ),
               )}
@@ -819,6 +897,7 @@ const ViewerHeader = () => {
                     disabled={!!tool.disabled}
                     description={tool.description}
                     onClick={() => handleToolClick(tool)}
+                    isToggle={tool.isToggle}
                   />
                 ),
               )}
@@ -830,6 +909,61 @@ const ViewerHeader = () => {
               {favourites.map((favId) => {
                 const tool = AVAILABLE_TOOLS.find((t) => t.id === favId);
                 if (!tool) return null;
+                if (tool.type === "dropdown" && tool.id === "Stack") {
+                  return (
+                    <Tooltip key={tool.id}>
+                      <TooltipTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              onClick={() => setActiveTool("Stack")}
+                              className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
+                                activeTool === "Stack"
+                                  ? "bg-blue-600 text-white"
+                                  : "text-gray-300 hover:bg-gray-700"
+                              }`}
+                            >
+                              <div className="flex items-center gap-0.5">
+                                {tool.icon}
+                                <ChevronDown size={12} className="opacity-60" />
+                              </div>
+                              <span className="text-[10px] mt-1 whitespace-nowrap">
+                                {tool.label}
+                              </span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="w-48 bg-gray-900 border-gray-700 text-gray-200 p-3"
+                          >
+                            <div className="text-xs text-gray-400 mb-2">Stack Speed</div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-500">Slow</span>
+                              <input
+                                type="range"
+                                min="1"
+                                max="10"
+                                value={stackSpeed}
+                                onChange={(e) => setStackSpeed(Number(e.target.value))}
+                                className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                              />
+                              <span className="text-xs text-gray-500">Fast</span>
+                            </div>
+                            <div className="text-center text-xs text-white mt-2 font-mono">{stackSpeed}</div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TooltipTrigger>
+                      {tool.description && (
+                        <TooltipContent
+                          side="bottom"
+                          className="bg-gray-800 border-gray-700 text-gray-200"
+                        >
+                          <p>{tool.description}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  );
+                }
                 if (tool.type === "dropdown" && tool.id === "Presets") {
                   return (
                     <Tooltip key={tool.id}>
@@ -1048,6 +1182,7 @@ const ViewerHeader = () => {
                     disabled={!!tool.disabled}
                     description={tool.description}
                     onClick={() => handleToolClick(tool)}
+                    isToggle={tool.isToggle}
                   />
                 );
               })}

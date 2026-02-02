@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import dicomParser from "dicom-parser";
 import { decode as decodeJ2K } from "@abasb75/openjpeg";
-import { Loader2, Maximize, Minimize, Trash2 } from "lucide-react";
+import { Maximize, Minimize, Trash2, Plus, Minus } from "lucide-react";
 import {
   useViewerContext,
   type Annotation,
@@ -180,13 +180,13 @@ export function DicomViewer({
     showOverlays,
     selectedSeries,
     setSeriesLoadProgress,
+    stackSpeed,
   } = useViewerContext();
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [prefetchProgress, setPrefetchProgress] = useState<{
@@ -248,6 +248,10 @@ export function DicomViewer({
 
   // For multi-click tools (Angle, CobbsAngle)
   const angleClickCount = useRef(0);
+
+  // For smooth rotation
+  const pendingRotation = useRef(0);
+  const rotationAnimationFrame = useRef<number | null>(null);
 
   // Prefetch state (cache is now global singleton)
   const prefetchStarted = useRef(false);
@@ -684,8 +688,13 @@ export function DicomViewer({
       const currentInstance = sortedInstances[currentImageIndex];
       const pixelSpacing = currentInstance?.pixel_spacing;
 
+      // Filter annotations to only show those for the current slice
+      const sliceAnnotations = annotations.filter(
+        (ann) => ann.imageIndex === undefined || ann.imageIndex === currentImageIndex
+      );
+
       const allAnnotations = [
-        ...annotations,
+        ...sliceAnnotations,
         ...(currentAnnotation.current ? [currentAnnotation.current] : []),
       ];
 
@@ -768,25 +777,26 @@ export function DicomViewer({
           const p2 = ann.points[1] || p1;
           ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
 
-          // Display HU stats
+          // Display HU stats outside the shape (below bottom edge)
           if (ann.huStats) {
-            const centerX = (p1.x + p2.x) / 2;
-            const centerY = (p1.y + p2.y) / 2;
-            const lineHeight = 16 / viewTransform.scale;
+            const minX = Math.min(p1.x, p2.x);
+            const maxY = Math.max(p1.y, p2.y);
+            const lineHeight = 14 / viewTransform.scale;
+            const padding = 8 / viewTransform.scale;
             ctx.fillText(
               `${ann.index ?? annIndex + 1}: Mean: ${ann.huStats.mean.toFixed(0)} HU`,
-              centerX - 40 / viewTransform.scale,
-              centerY - lineHeight,
+              minX,
+              maxY + padding + lineHeight,
             );
             ctx.fillText(
               `Min: ${ann.huStats.min.toFixed(0)}, Max: ${ann.huStats.max.toFixed(0)} HU`,
-              centerX - 40 / viewTransform.scale,
-              centerY,
+              minX,
+              maxY + padding + lineHeight * 2,
             );
             ctx.fillText(
               `Area: ${ann.huStats.area.toFixed(1)} mm²`,
-              centerX - 40 / viewTransform.scale,
-              centerY + lineHeight,
+              minX,
+              maxY + padding + lineHeight * 3,
             );
           }
         } else if (ann.type === "Ellipse") {
@@ -800,29 +810,33 @@ export function DicomViewer({
             ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
             ctx.stroke();
 
-            // Display HU stats
+            // Display HU stats outside the shape (below bottom edge)
             if (ann.huStats) {
-              const lineHeight = 16 / viewTransform.scale;
+              const minX = Math.min(p1.x, p2.x);
+              const maxY = Math.max(p1.y, p2.y);
+              const lineHeight = 14 / viewTransform.scale;
+              const padding = 8 / viewTransform.scale;
               ctx.fillText(
                 `${ann.index ?? annIndex + 1}: Mean: ${ann.huStats.mean.toFixed(0)} HU`,
-                centerX - 40 / viewTransform.scale,
-                centerY - lineHeight,
+                minX,
+                maxY + padding + lineHeight,
               );
               ctx.fillText(
                 `Min: ${ann.huStats.min.toFixed(0)}, Max: ${ann.huStats.max.toFixed(0)} HU`,
-                centerX - 40 / viewTransform.scale,
-                centerY,
+                minX,
+                maxY + padding + lineHeight * 2,
               );
               ctx.fillText(
                 `Area: ${ann.huStats.area.toFixed(1)} mm²`,
-                centerX - 40 / viewTransform.scale,
-                centerY + lineHeight,
+                minX,
+                maxY + padding + lineHeight * 3,
               );
             }
           }
         } else if (ann.type === "Text") {
-          // Draw text annotation with better visibility
-          const fontSize = 18 / viewTransform.scale;
+          // Draw text annotation with customizable size
+          const baseFontSize = ann.textSize || 18;
+          const fontSize = baseFontSize / viewTransform.scale;
           ctx.font = `bold ${fontSize}px Arial, sans-serif`;
           ctx.fillStyle = baseColor;
           // Draw text shadow/outline for better visibility
@@ -1027,6 +1041,15 @@ export function DicomViewer({
     window.addEventListener("resize", renderCanvas);
     return () => window.removeEventListener("resize", renderCanvas);
   }, [renderCanvas]);
+
+  // Cleanup rotation animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (rotationAnimationFrame.current !== null) {
+        cancelAnimationFrame(rotationAnimationFrame.current);
+      }
+    };
+  }, []);
 
   // Keyboard handler for deletion
   useEffect(() => {
@@ -1295,13 +1318,11 @@ export function DicomViewer({
 
         if (mounted) {
           renderCanvas();
-          setIsLoading(false);
         }
       } catch (err) {
         console.error(err);
         if (mounted) {
           setError(err instanceof Error ? err.message : "Render Error");
-          setIsLoading(false);
         }
       }
     };
@@ -1408,6 +1429,7 @@ export function DicomViewer({
             color: "#ffff00",
             huValue: huValue,
             index: annotations.length + 1,
+            imageIndex: currentImageIndex,
           };
           setAnnotations((prev) => [...prev, newAnnotation]);
           saveToHistory();
@@ -1468,6 +1490,7 @@ export function DicomViewer({
               type: "Angle",
               points: [pos],
               color: "#00ff00",
+              imageIndex: currentImageIndex,
             };
             angleClickCount.current = 1;
           } else if (angleClickCount.current === 1) {
@@ -1486,6 +1509,7 @@ export function DicomViewer({
               type: "CobbsAngle",
               points: [pos],
               color: "#ffff00",
+              imageIndex: currentImageIndex,
             };
             angleClickCount.current = 1;
           } else if (angleClickCount.current === 2) {
@@ -1502,6 +1526,7 @@ export function DicomViewer({
             type: activeTool as Annotation["type"],
             points: [pos],
             color: "#00ff00",
+            imageIndex: currentImageIndex,
           };
         }
         renderCanvas();
@@ -1517,6 +1542,7 @@ export function DicomViewer({
       hitTestAnnotation,
       setSelectedAnnotationId,
       renderCanvas,
+      currentImageIndex,
     ],
   );
 
@@ -1579,11 +1605,11 @@ export function DicomViewer({
           scale: Math.max(0.1, prev.scale - deltaY * 0.01),
         }));
       } else if (activeTool === "Stack") {
+        // Sensitivity based on stackSpeed (lower threshold = more responsive)
+        const threshold = Math.max(1, 11 - stackSpeed); // stackSpeed 1 -> threshold 10, stackSpeed 10 -> threshold 1
         accumulatedStackDelta.current += deltaY;
-        if (Math.abs(accumulatedStackDelta.current) >= 1) {
-          const step =
-            Math.sign(accumulatedStackDelta.current) *
-            Math.floor(Math.abs(accumulatedStackDelta.current));
+        if (Math.abs(accumulatedStackDelta.current) >= threshold) {
+          const step = Math.sign(accumulatedStackDelta.current) * stackSpeed;
           setCurrentImageIndex((prev) =>
             Math.max(0, Math.min(prev + step, sortedInstances.length - 1)),
           );
@@ -1595,8 +1621,9 @@ export function DicomViewer({
           setViewTransform((prev) => {
             const currentWidth = prev.windowWidth ?? defaultWinWidth;
             const currentCenter = prev.windowCenter ?? defaultWinCenter;
-            const widthDelta = deltaX * 2;
-            const centerDelta = deltaY * 2;
+            // Reduced sensitivity: 0.5 multiplier instead of 2
+            const widthDelta = deltaX * 0.5;
+            const centerDelta = deltaY * 0.5;
             return {
               ...prev,
               windowWidth: Math.max(1, currentWidth + widthDelta),
@@ -1605,10 +1632,22 @@ export function DicomViewer({
           });
         }
       } else if (activeTool === "FreeRotate") {
-        setViewTransform((prev) => ({
-          ...prev,
-          rotation: (prev.rotation + deltaX * 0.5 + 360) % 360,
-        }));
+        // Accumulate rotation delta for smooth animation
+        pendingRotation.current += deltaX * 0.3;
+
+        // Use requestAnimationFrame for smooth updates
+        if (rotationAnimationFrame.current === null) {
+          rotationAnimationFrame.current = requestAnimationFrame(() => {
+            const delta = pendingRotation.current;
+            pendingRotation.current = 0;
+            rotationAnimationFrame.current = null;
+
+            setViewTransform((prev) => ({
+              ...prev,
+              rotation: (prev.rotation + delta + 360) % 360,
+            }));
+          });
+        }
       } else if (["Length", "Ellipse", "Rectangle"].includes(activeTool)) {
         if (currentAnnotation.current) {
           const pos = screenToImage(e.clientX, e.clientY);
@@ -1649,6 +1688,7 @@ export function DicomViewer({
       renderCanvas,
       selectedAnnotationId,
       setAnnotations,
+      stackSpeed,
     ],
   );
 
@@ -1774,6 +1814,13 @@ export function DicomViewer({
       renderCanvas();
     }
     isDragging.current = false;
+
+    // Cleanup rotation animation frame
+    if (rotationAnimationFrame.current !== null) {
+      cancelAnimationFrame(rotationAnimationFrame.current);
+      rotationAnimationFrame.current = null;
+      pendingRotation.current = 0;
+    }
   }, [
     setAnnotations,
     saveToHistory,
@@ -1790,16 +1837,13 @@ export function DicomViewer({
       event.preventDefault();
       if (sortedInstances.length <= 1) return;
       const direction = Math.sign(event.deltaY);
-      const intensity = Math.max(
-        4,
-        Math.ceil(Math.abs(event.deltaY) / 100) * 4,
-      );
-      const step = direction * intensity;
+      // Use stackSpeed to control scroll intensity (1-10 maps to 1-10 images per scroll)
+      const step = direction * stackSpeed;
       setCurrentImageIndex((prev) =>
         Math.max(0, Math.min(prev + step, sortedInstances.length - 1)),
       );
     },
-    [sortedInstances.length],
+    [sortedInstances.length, stackSpeed],
   );
 
   useEffect(() => {
@@ -1819,6 +1863,8 @@ export function DicomViewer({
         text: textInputValue.trim(),
         color: "#00ff00",
         index: annotations.length + 1,
+        imageIndex: currentImageIndex,
+        textSize: 18, // Default text size
       };
       setAnnotations((prev) => [...prev, newAnnotation]);
       saveToHistory();
@@ -1833,6 +1879,7 @@ export function DicomViewer({
     annotations.length,
     setAnnotations,
     saveToHistory,
+    currentImageIndex,
   ]);
 
   const handleTextInputCancel = useCallback(() => {
@@ -1841,6 +1888,33 @@ export function DicomViewer({
     setTextInputPosition(null);
     setTextInputScreenPos(null);
   }, []);
+
+  // Update text size for a Text annotation
+  const updateTextSize = useCallback(
+    (annotationId: string, delta: number) => {
+      setAnnotations((prev) =>
+        prev.map((ann) => {
+          if (ann.id === annotationId && ann.type === "Text") {
+            const currentSize = ann.textSize || 18;
+            const newSize = Math.max(8, Math.min(72, currentSize + delta));
+            return { ...ann, textSize: newSize };
+          }
+          return ann;
+        })
+      );
+      renderCanvas();
+    },
+    [setAnnotations, renderCanvas]
+  );
+
+  // Get annotations for current slice only
+  const currentSliceAnnotations = useMemo(
+    () =>
+      annotations.filter(
+        (ann) => ann.imageIndex === undefined || ann.imageIndex === currentImageIndex
+      ),
+    [annotations, currentImageIndex]
+  );
 
   // Get summary text for measurement list
   const getMeasurementSummary = useCallback((ann: Annotation): string => {
@@ -1865,6 +1939,8 @@ export function DicomViewer({
         return ann.type;
       case "Text":
         return ann.text || "Text";
+      case "HU":
+        return ann.huValue !== undefined ? `${ann.huValue} HU` : "HU";
       default:
         return ann.type;
     }
@@ -1881,21 +1957,21 @@ export function DicomViewer({
     >
       <canvas ref={canvasRef} className="w-full h-full" />
 
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-        </div>
-      )}
-
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-4 text-center">
           <p className="text-red-400 text-sm">Error: {error}</p>
         </div>
       )}
 
-      {!error && sortedInstances.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 px-4 py-2 rounded-lg pointer-events-none text-white text-sm font-mono">
-          Image {currentImageIndex + 1} / {sortedInstances.length}
+      {/* Download Progress Bar - Horizontal at top of viewer */}
+      {prefetchProgress && prefetchProgress.total > 0 && (
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gray-800 pointer-events-none z-20">
+          <div
+            className="h-full bg-white transition-all duration-300"
+            style={{
+              width: `${(prefetchProgress.fetched / prefetchProgress.total) * 100}%`,
+            }}
+          />
         </div>
       )}
 
@@ -1910,13 +1986,14 @@ export function DicomViewer({
         {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
       </button>
 
-      {/* Measurement List - Bottom Left (above image info) */}
-      {annotations.length > 0 && (
-        <div className="absolute bottom-28 left-4 bg-black/70 p-2 rounded-lg border border-white/10 max-h-40 overflow-y-auto pointer-events-auto z-10">
+
+      {/* Measurement List - Bottom Left (above image info) - Shows only current slice annotations */}
+      {currentSliceAnnotations.length > 0 && (
+        <div className="absolute bottom-28 left-4 bg-black/70 p-2 rounded-lg border border-white/10 max-h-48 overflow-y-auto pointer-events-auto z-10">
           <div className="text-[10px] text-gray-400 mb-1 font-semibold">
-            Measurements
+            Measurements (Slice {currentImageIndex + 1})
           </div>
-          {annotations.map((ann, idx) => (
+          {currentSliceAnnotations.map((ann, idx) => (
             <div
               key={ann.id}
               onClick={(e) => {
@@ -1931,16 +2008,46 @@ export function DicomViewer({
               <span>
                 {ann.index ?? idx + 1} – {getMeasurementSummary(ann)}
               </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteAnnotationById(ann.id);
-                }}
-                className="p-0.5 hover:bg-red-500/30 rounded text-gray-400 hover:text-red-400 transition-colors"
-                title="Delete measurement"
-              >
-                <Trash2 size={12} />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Text size controls for Text annotations */}
+                {ann.type === "Text" && ann.id === selectedAnnotationId && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateTextSize(ann.id, -2);
+                      }}
+                      className="p-0.5 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      title="Decrease text size"
+                    >
+                      <Minus size={10} />
+                    </button>
+                    <span className="text-[8px] text-gray-500 w-4 text-center">
+                      {ann.textSize || 18}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateTextSize(ann.id, 2);
+                      }}
+                      className="p-0.5 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      title="Increase text size"
+                    >
+                      <Plus size={10} />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteAnnotationById(ann.id);
+                  }}
+                  className="p-0.5 hover:bg-red-500/30 rounded text-gray-400 hover:text-red-400 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1983,56 +2090,46 @@ export function DicomViewer({
         </div>
       )}
 
-      {/* Corner Overlays */}
+      {/* Corner Overlays - White text only, no background boxes */}
       {showOverlays && (
-        <div className="absolute inset-0 pointer-events-none p-4 text-[10px] md:text-sm font-mono text-white">
+        <div className="absolute inset-4 pointer-events-none text-[11px] md:text-xs font-mono text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
           {/* Top Left: Patient Info */}
           {caseData?.patient && (
-            <div className="absolute top-2 left-2 flex flex-col gap-1">
-              <span className="font-bold uppercase tracking-widest text-base mb-0.5">
+            <div className="absolute top-0 left-0 flex flex-col gap-0.5">
+              <span className="font-bold uppercase tracking-wide text-sm">
                 {caseData.patient.name}
               </span>
-              <div className="flex flex-col gap-0.5">
-                <span>ID: {caseData.patient.patient_id}</span>
-                <span>
-                  DOB:{" "}
-                  {caseData.patient.dob || caseData.patient.date_of_birth
-                    ? formatDicomDate(
-                      caseData.patient.dob || caseData.patient.date_of_birth,
-                    )
-                    : "N/A"}
-                </span>
-                <span>Sex: {caseData.patient.sex}</span>
-              </div>
+              <span>ID: {caseData.patient.patient_id}</span>
+              <span>
+                DOB:{" "}
+                {caseData.patient.dob || caseData.patient.date_of_birth
+                  ? formatDicomDate(
+                    caseData.patient.dob || caseData.patient.date_of_birth,
+                  )
+                  : "N/A"}
+              </span>
+              <span>Sex: {caseData.patient.sex}</span>
             </div>
           )}
 
           {/* Top Right: Study Info */}
           {caseData && (
-            <div className="absolute top-2 right-2 text-right flex flex-col gap-1">
-              <span className="font-bold uppercase tracking-widest text-base mb-0.5">
+            <div className="absolute top-0 right-0 text-right flex flex-col gap-0.5">
+              <span className="font-bold uppercase tracking-wide text-sm">
                 {caseData.center_name ||
                   caseData.hospital_name ||
                   caseData.hospital_id}
               </span>
-              <div className="flex flex-col gap-0.5">
-                <div>
-                  <span className="font-semibold">
-                    {formatDicomDate(caseData.case_date)}
-                  </span>
-                  <span className="ml-3 font-semibold">
-                    {formatDicomTime(caseData.case_time)}
-                  </span>
-                </div>
-                <span>
-                  Acc: {caseData.accession_number || "N/A"}
-                </span>
-              </div>
+              <span>
+                {formatDicomDate(caseData.case_date)}{" "}
+                {formatDicomTime(caseData.case_time)}
+              </span>
+              <span>Acc: {caseData.accession_number || "N/A"}</span>
             </div>
           )}
 
           {/* Bottom Left: Image Info */}
-          <div className="absolute bottom-4 left-4 flex flex-col gap-0.5">
+          <div className="absolute bottom-0 left-0 flex flex-col gap-0.5">
             <span className="font-bold">
               {sortedInstances[currentImageIndex]?.modality || "DICOM"}
             </span>
@@ -2047,7 +2144,7 @@ export function DicomViewer({
           </div>
 
           {/* Bottom Right: Window/Level Info */}
-          <div className="absolute bottom-4 right-4 text-right flex flex-col gap-0.5">
+          <div className="absolute bottom-0 right-0 text-right flex flex-col gap-0.5">
             <span>
               W:{" "}
               {viewTransform.windowWidth?.toFixed(0) ??
@@ -2058,9 +2155,7 @@ export function DicomViewer({
                 sortedInstances[currentImageIndex]?.window_center ??
                 "N/A"}
             </span>
-            <span>
-              Zoom: {(viewTransform.scale * 100).toFixed(0)}%
-            </span>
+            <span>Zoom: {(viewTransform.scale * 100).toFixed(0)}%</span>
           </div>
         </div>
       )}

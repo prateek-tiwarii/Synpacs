@@ -43,7 +43,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
-type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'All Cases' | 'Review';
+type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'All Cases';
 
 // Map tab names to backend reporitng_status values
 const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
@@ -51,7 +51,6 @@ const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'Drafted': 'drafted',
     'Reported': 'reported',
     'All Cases': 'all',
-    'Review': 'review',
 };
 
 interface AssignedPatientsTableProps {
@@ -321,7 +320,21 @@ const AssignedPatientsTable = ({
         }),
         columnHelper.display({
             id: 'actions',
-            header: 'Action',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <span>Action</span>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                </div>
+            ),
             enableHiding: false, // Always visible, cannot be hidden
             enableSorting: false,
             cell: (props) => (
@@ -472,21 +485,7 @@ const AssignedPatientsTable = ({
             ),
         }),
         columnHelper.accessor('name', {
-            header: () => (
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsColumnModalOpen(true);
-                        }}
-                        className="p-0.5 hover:bg-gray-200 rounded"
-                        title="Column Settings"
-                    >
-                        <Settings className="w-3 h-3 text-gray-600" />
-                    </button>
-                    <span>Patient Name</span>
-                </div>
-            ),
+            header: 'Patient Name',
             enableSorting: true,
             cell: (info) => {
                 const name = info.getValue();
@@ -598,7 +597,7 @@ const AssignedPatientsTable = ({
                 const centerName = props.row.original.hospital_name;
                 if (!centerName) return <span className="text-gray-400">-</span>;
                 return (
-                    <Badge variant="info" className="font-normal text-[10px] px-2 py-0.5 whitespace-nowrap">
+                    <Badge variant="info" className="font-normal text-[10px] px-1.5 py-0.5 truncate max-w-full" title={centerName}>
                         {centerName}
                     </Badge>
                 );

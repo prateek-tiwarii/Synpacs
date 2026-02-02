@@ -113,17 +113,65 @@ const Research = () => {
         {/* Audit Section - Below bookmarks */}
         <AuditSection onExportAudit={handleExportAudit} />
         
-        <ExportModal 
-          open={isExportModalOpen} 
+        <ExportModal
+          open={isExportModalOpen}
           onOpenChange={setIsExportModalOpen}
           exportType={exportType}
           bookmarkedCases={exportType === 'bookmarks' ? selectedBookmarkedCases : undefined}
           auditParams={exportType === 'audit' && auditExportParams ? auditExportParams : undefined}
-          onDownload={(payload) => {
-            // NOTE: Backend export endpoint is not wired yet in apiService.
-            // This keeps UI consistent while we await the export API contract.
-            console.log('Export requested:', payload);
-            toast.success('Export download initiated');
+          onDownload={async (payload) => {
+            try {
+              // Build the API request payload
+              const selectedColumns = Object.entries(payload.selectedColumns)
+                .filter(([_, isSelected]) => isSelected)
+                .map(([columnId]) => columnId);
+
+              const apiPayload: Parameters<typeof apiService.exportData>[0] = {
+                exportType: payload.exportType,
+                fileFormat: payload.fileFormat as 'excel' | 'csv' | 'word',
+                columns: selectedColumns,
+              };
+
+              // Add type-specific filters
+              if (payload.exportType === 'search' && searchFilters) {
+                apiPayload.searchFilters = {
+                  minAge: searchFilters.minAge ? parseInt(searchFilters.minAge) : undefined,
+                  maxAge: searchFilters.maxAge ? parseInt(searchFilters.maxAge) : undefined,
+                  startDate: searchFilters.startDate || undefined,
+                  endDate: searchFilters.endDate || undefined,
+                  modality: searchFilters.modality || undefined,
+                  sex: searchFilters.sex !== 'all' ? searchFilters.sex : null,
+                  centerId: searchFilters.centerId !== 'all' ? searchFilters.centerId : null,
+                  reportedOnly: true,
+                };
+              } else if (payload.exportType === 'bookmarks' && payload.bookmarkedCases) {
+                apiPayload.bookmarkOptions = {
+                  caseIds: payload.bookmarkedCases.map((c: any) => c._id),
+                  includeNotes: payload.includeBookmarkNotes,
+                };
+              } else if (payload.exportType === 'audit' && payload.auditParams) {
+                apiPayload.auditFilters = {
+                  startDate: payload.auditParams.startDateIso,
+                  endDate: payload.auditParams.endDateIso,
+                  modalities: payload.auditParams.modalities,
+                };
+              }
+
+              // Call the export API
+              const blob = await apiService.exportData(apiPayload);
+
+              // Generate filename
+              const fileExtension = payload.fileFormat === 'excel' ? 'xlsx' : payload.fileFormat === 'word' ? 'docx' : 'csv';
+              const timestamp = new Date().toISOString().split('T')[0];
+              const filename = `export_${payload.exportType}_${timestamp}.${fileExtension}`;
+
+              // Trigger download
+              apiService.downloadBlob(blob, filename);
+              toast.success('Export downloaded successfully');
+            } catch (error) {
+              console.error('Export failed:', error);
+              toast.error(error instanceof Error ? error.message : 'Export failed');
+            }
           }}
         />
       </div>

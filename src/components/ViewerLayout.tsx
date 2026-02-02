@@ -149,6 +149,8 @@ export interface Annotation {
   huStats?: HUStats; // HU statistics for regions
   angleDegrees?: number; // For angle measurements
   distanceMm?: number; // For length measurements
+  imageIndex?: number; // Slice index where annotation was created
+  textSize?: number; // Font size for text annotations (default 18)
 }
 
 // Keyboard Shortcut interface
@@ -230,6 +232,9 @@ interface ViewerContextType {
   // Shortcuts
   shortcuts: Shortcut[];
   updateShortcut: (id: string, newKey: string) => void;
+  // Stack speed (1-10, default 4)
+  stackSpeed: number;
+  setStackSpeed: (speed: number) => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -253,7 +258,7 @@ export function ViewerLayout() {
   const [viewTransform, setViewTransform] = useState<ViewTransform>({
     x: 0,
     y: 0,
-    scale: 1,
+    scale: 1.2,
     rotation: 0,
     flipH: false,
     flipV: false,
@@ -301,30 +306,33 @@ export function ViewerLayout() {
     fetched: number;
     total: number;
   } | null>(null);
+  const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
 
+  // Window presets have fixed keys (1-7), other shortcuts start empty for user to assign
   const DEFAULT_SHORTCUTS: Shortcut[] = [
-    { id: "Window1", label: "Original Window", key: "1", category: "Display Windows" },
-    { id: "Window2", label: "Lung Window", key: "2", category: "Display Windows" },
-    { id: "Window3", label: "Bone Window", key: "3", category: "Display Windows" },
-    { id: "Window4", label: "Brain Window", key: "4", category: "Display Windows" },
-    { id: "Window5", label: "Liver Window", key: "5", category: "Display Windows" },
-    { id: "Window6", label: "Infarct", key: "6", category: "Display Windows" },
-    { id: "ToolLine", label: "Line Measurement", key: "l", category: "Tools" },
-    { id: "ToolDistance", label: "Distance Measurement", key: "d", category: "Tools" },
-    { id: "ToolAngle", label: "Angle Measurement", key: "a", category: "Tools" },
-    { id: "ToolEllipse", label: "Ellipse", key: "e", category: "Tools" },
-    { id: "ToolCircle", label: "Circle", key: "c", category: "Tools" },
-    { id: "ToolFreehand", key: "f", label: "Freehand", category: "Tools" },
-    { id: "ToolHU", key: "h", label: "HU Point", category: "Tools" },
-    { id: "NavZoom", key: "z", label: "Zoom", category: "Navigation" },
-    { id: "NavPan", key: "p", label: "Pan", category: "Navigation" },
-    { id: "NavScroll", key: "s", label: "Scroll", category: "Navigation" },
-    { id: "NavContrast", key: "w", label: "Contrast Adjustment", category: "Navigation" },
-    { id: "NavReset", key: "Escape", label: "Reset", category: "Navigation" },
-    { id: "TransRotateCW", key: "r", label: "Rotate 90° CW", category: "Transform" },
-    { id: "TransRotateCCW", key: "R", label: "Rotate 90° CCW", category: "Transform" },
-    { id: "TransFlipH", key: "h", label: "Flip Horizontal", category: "Transform" },
-    { id: "TransFlipV", key: "v", label: "Flip Vertical", category: "Transform" },
+    { id: "Window1", label: "Original", key: "1", category: "Display Windows" },
+    { id: "Window2", label: "Lung", key: "2", category: "Display Windows" },
+    { id: "Window3", label: "Mediastinum", key: "3", category: "Display Windows" },
+    { id: "Window4", label: "Bone", key: "4", category: "Display Windows" },
+    { id: "Window5", label: "Brain", key: "5", category: "Display Windows" },
+    { id: "Window6", label: "Stroke", key: "6", category: "Display Windows" },
+    { id: "Window7", label: "Liver", key: "7", category: "Display Windows" },
+    { id: "ToolLine", label: "Line", key: "", category: "Tools" },
+    { id: "ToolDistance", label: "Distance", key: "", category: "Tools" },
+    { id: "ToolAngle", label: "Angle", key: "", category: "Tools" },
+    { id: "ToolEllipse", label: "Ellipse", key: "", category: "Tools" },
+    { id: "ToolCircle", label: "Circle", key: "", category: "Tools" },
+    { id: "ToolFreehand", label: "Freehand", key: "", category: "Tools" },
+    { id: "ToolHU", label: "HU Point", key: "", category: "Tools" },
+    { id: "NavZoom", label: "Zoom", key: "", category: "Navigation" },
+    { id: "NavPan", label: "Pan", key: "", category: "Navigation" },
+    { id: "NavScroll", label: "Scroll", key: "", category: "Navigation" },
+    { id: "NavContrast", label: "Contrast", key: "", category: "Navigation" },
+    { id: "NavReset", label: "Reset", key: "", category: "Navigation" },
+    { id: "TransRotateCW", label: "Rotate CW", key: "", category: "Transform" },
+    { id: "TransRotateCCW", label: "Rotate CCW", key: "", category: "Transform" },
+    { id: "TransFlipH", label: "Flip H", key: "", category: "Transform" },
+    { id: "TransFlipV", label: "Flip V", key: "", category: "Transform" },
   ];
 
   const [shortcuts, setShortcuts] = useState<Shortcut[]>(() => {
@@ -417,7 +425,7 @@ export function ViewerLayout() {
             viewTransform: {
               x: 0,
               y: 0,
-              scale: 1,
+              scale: 1.2,
               rotation: 0,
               flipH: false,
               flipV: false,
@@ -513,6 +521,33 @@ export function ViewerLayout() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  // Wrapper to reset W/L and view state when switching series
+  const handleSetSelectedSeries = (series: Series | null) => {
+    setSelectedSeries(series);
+    // Reset W/L to original (null means use DICOM default)
+    setViewTransform((prev) => ({
+      ...prev,
+      windowWidth: null,
+      windowCenter: null,
+      // Also reset other view transforms
+      x: 0,
+      y: 0,
+      scale: 1.2,
+      rotation: 0,
+      flipH: false,
+      flipV: false,
+      invert: false,
+    }));
+    // Reset image index
+    setCurrentImageIndex(0);
+    // Clear annotations for new series
+    setAnnotations([]);
+    setSelectedAnnotationId(null);
+    // Clear history
+    setHistory([]);
+    setHistoryIndex(-1);
+  };
+
   const saveToHistory = () => {
     const newState = {
       annotations: [...annotations],
@@ -536,7 +571,7 @@ export function ViewerLayout() {
       setViewTransform({
         x: 0,
         y: 0,
-        scale: 1,
+        scale: 1.2,
         rotation: 0,
         flipH: false,
         flipV: false,
@@ -594,7 +629,7 @@ export function ViewerLayout() {
   const contextValue: ViewerContextType = {
     caseData,
     selectedSeries,
-    setSelectedSeries,
+    setSelectedSeries: handleSetSelectedSeries,
     loading,
     error,
     currentImageIndex,
@@ -640,6 +675,8 @@ export function ViewerLayout() {
     setSeriesLoadProgress,
     shortcuts,
     updateShortcut,
+    stackSpeed,
+    setStackSpeed,
   };
 
   if (loading) {

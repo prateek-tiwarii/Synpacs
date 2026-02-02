@@ -161,13 +161,17 @@ export function DataTable<TData>({
     const skeletonColumnCount = columns.length > 0 ? columns.length : 8;
 
     const TableSkeleton = () => (
-        <div className="overflow-x-auto overflow-y-visible">
+        <div className="overflow-hidden">
             <div className={showBorder ? "rounded-md border" : ""}>
-                <Table>
+                <Table className="w-full" style={{ tableLayout: 'fixed' }}>
                     <TableHeader>
                         <TableRow className={headerClassName}>
                             {[...Array(skeletonColumnCount)].map((_, index) => (
-                                <TableHead key={index} className="font-semibold whitespace-nowrap text-[11px] px-1.5 py-1">
+                                <TableHead
+                                    key={index}
+                                    className="font-semibold text-[11px] px-1 py-1"
+                                    style={index === 0 ? { width: '32px' } : index === 1 ? { width: '140px' } : {}}
+                                >
                                     <Skeleton className="h-3 w-16" />
                                 </TableHead>
                             ))}
@@ -177,7 +181,7 @@ export function DataTable<TData>({
                         {[...Array(10)].map((_, rowIndex) => (
                             <TableRow key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-green-100/30' : 'bg-blue-100/30'}>
                                 {[...Array(skeletonColumnCount)].map((_, colIndex) => (
-                                    <TableCell key={colIndex} className="whitespace-nowrap text-[11px] px-1.5 py-1">
+                                    <TableCell key={colIndex} className="text-[11px] px-1 py-1">
                                         <Skeleton className="h-3 w-full max-w-[100px]" />
                                     </TableCell>
                                 ))}
@@ -393,42 +397,64 @@ export function DataTable<TData>({
                     </div>
                 </div>
             )}
-            <div className="overflow-x-auto overflow-y-visible">
+            <div className="overflow-hidden">
                 <div className={showBorder ? "rounded-md border" : ""}>
-                    <Table>
+                    <Table className="w-full" style={{ tableLayout: 'fixed' }}>
                         <TableHeader>
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <TableRow key={headerGroup.id} className={headerClassName}>
-                                    {headerGroup.headers.map((header) => (
-                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-[11px] px-1.5 py-1">
-                                            {header.isPlaceholder ? null : (
-                                                <div
-                                                    className={
-                                                        header.column.getCanSort()
-                                                            ? 'flex items-center gap-1 cursor-pointer select-none hover:text-gray-900'
-                                                            : ''
-                                                    }
-                                                    onClick={header.column.getToggleSortingHandler()}
-                                                >
-                                                    {flexRender(
-                                                        header.column.columnDef.header,
-                                                        header.getContext()
-                                                    )}
-                                                    {header.column.getCanSort() && (
-                                                        <span className="ml-1">
-                                                            {header.column.getIsSorted() === 'asc' ? (
-                                                                <ArrowUp className="h-3 w-3" />
-                                                            ) : header.column.getIsSorted() === 'desc' ? (
-                                                                <ArrowDown className="h-3 w-3" />
-                                                            ) : (
-                                                                <ArrowUpDown className="h-3 w-3 opacity-50" />
+                                    {headerGroup.headers.map((header) => {
+                                        const isSelectCol = header.id === 'select';
+                                        const isActionsCol = header.id === 'actions';
+                                        const isNameCol = header.id === 'name';
+                                        const isFixedCol = isSelectCol || isActionsCol || isNameCol;
+
+                                        // Set specific widths for fixed columns
+                                        const colStyle: React.CSSProperties = isSelectCol
+                                            ? { width: '32px' }
+                                            : isActionsCol
+                                                ? { width: '140px' }
+                                                : isNameCol
+                                                    ? { width: '180px' }
+                                                    : {};
+
+                                        return (
+                                            <TableHead
+                                                key={header.id}
+                                                style={colStyle}
+                                                className={`font-semibold text-[11px] px-1 py-1 ${isFixedCol ? 'whitespace-nowrap' : 'overflow-hidden'}`}
+                                            >
+                                                {header.isPlaceholder ? null : (
+                                                    <div
+                                                        className={
+                                                            header.column.getCanSort()
+                                                                ? `flex items-center gap-0.5 cursor-pointer select-none hover:text-gray-900 ${isFixedCol ? '' : 'truncate'}`
+                                                                : isFixedCol ? '' : 'truncate'
+                                                        }
+                                                        onClick={header.column.getToggleSortingHandler()}
+                                                    >
+                                                        <span className={isFixedCol ? '' : 'truncate'}>
+                                                            {flexRender(
+                                                                header.column.columnDef.header,
+                                                                header.getContext()
                                                             )}
                                                         </span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </TableHead>
-                                    ))}
+                                                        {header.column.getCanSort() && (
+                                                            <span className="flex-shrink-0 ml-0.5">
+                                                                {header.column.getIsSorted() === 'asc' ? (
+                                                                    <ArrowUp className="h-3 w-3" />
+                                                                ) : header.column.getIsSorted() === 'desc' ? (
+                                                                    <ArrowDown className="h-3 w-3" />
+                                                                ) : (
+                                                                    <ArrowUpDown className="h-3 w-3 opacity-50" />
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </TableHead>
+                                        );
+                                    })}
                                 </TableRow>
                             ))}
                         </TableHeader>
@@ -442,11 +468,19 @@ export function DataTable<TData>({
                                         onClick={() => onRowClick?.(row.original)}
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >
-                                        {row.getVisibleCells().map((cell) => (
-                                            <TableCell key={cell.id} className="whitespace-nowrap text-[11px] px-1.5 py-1">
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </TableCell>
-                                        ))}
+                                        {row.getVisibleCells().map((cell) => {
+                                            const isFixedCol = cell.column.id === 'actions' || cell.column.id === 'select' || cell.column.id === 'name';
+                                            return (
+                                                <TableCell
+                                                    key={cell.id}
+                                                    className={`text-[11px] px-1 py-1 ${isFixedCol ? 'whitespace-nowrap' : 'overflow-hidden'}`}
+                                                >
+                                                    <div className={isFixedCol ? '' : 'truncate'} title={isFixedCol ? undefined : String(cell.getValue() ?? '')}>
+                                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                    </div>
+                                                </TableCell>
+                                            );
+                                        })}
                                     </TableRow>
                                 ))
                             ) : (

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DoctorDashboardHeader from './molecules/DoctorDashboardHeader';
 import MessageDialog from './molecules/MessageDialog';
@@ -7,8 +7,9 @@ import AssignedPatientsTable from './molecules/AssignedPatientsTable';
 import type { Patient } from '@/components/patient/PacDetailsModal';
 import type { FilterState } from '@/components/common/FilterPanel';
 import { toast } from 'react-hot-toast';
+import { apiService } from '@/lib/api';
 
-type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted' | 'Review';
+type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted';
 
 const DEFAULT_MODALITIES = {
   ALL: true, DT: true, SC: true, AN: true,
@@ -17,7 +18,7 @@ const DEFAULT_MODALITIES = {
   MR2: true, NM: true, RF: true, CT: true,
 };
 
-const VALID_TABS: TabType[] = ['Unreported', 'Drafted', 'Reported', 'All Cases', 'Review'];
+const VALID_TABS: TabType[] = ['Unreported', 'Drafted', 'Reported', 'All Cases'];
 const VALID_PERIODS = ['1D', '2D', '3D', '1W', '2W'];
 
 // Helper to parse modalities from URL
@@ -64,12 +65,67 @@ const serializeReportStatusToUrl = (reportStatus: { reported: boolean; drafted: 
   return selected.length > 0 ? selected.join(',') : null;
 };
 
+// Helper to parse centers from URL
+const parseCentersFromUrl = (centersParam: string | null): string[] => {
+  if (!centersParam) return [];
+  return centersParam.split(',');
+};
+
+// Helper to serialize centers to URL
+const serializeCentersToUrl = (centers: string[]): string | null => {
+  return centers.length > 0 ? centers.join(',') : null;
+};
+
+// Helper to parse study status from URL
+const parseStudyStatusFromUrl = (studyStatusParam: string | null): { reported: boolean; drafted: boolean; unreported: boolean; reviewed: boolean } => {
+  const defaultStatus = { reported: false, drafted: false, unreported: false, reviewed: false };
+  if (!studyStatusParam) return defaultStatus;
+
+  const selected = studyStatusParam.split(',');
+  return {
+    reported: selected.includes('reported'),
+    drafted: selected.includes('drafted'),
+    unreported: selected.includes('unreported'),
+    reviewed: selected.includes('reviewed'),
+  };
+};
+
+// Helper to serialize study status to URL
+const serializeStudyStatusToUrl = (studyStatus: { reported: boolean; drafted: boolean; unreported: boolean; reviewed: boolean }): string | null => {
+  const selected = [];
+  if (studyStatus.reported) selected.push('reported');
+  if (studyStatus.drafted) selected.push('drafted');
+  if (studyStatus.unreported) selected.push('unreported');
+  if (studyStatus.reviewed) selected.push('reviewed');
+  return selected.length > 0 ? selected.join(',') : null;
+};
+
 const DoctorDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
+
+  // Fetch available centers
+  useEffect(() => {
+    const fetchCenters = async () => {
+      try {
+        const response = await apiService.getAllManagedHospitals() as any;
+        if (response.success && response.data) {
+          const centers = response.data.map((hospital: any) => ({
+            id: hospital._id,
+            name: hospital.hospital_name || hospital.name
+          }));
+          setAvailableCenters(centers);
+        }
+      } catch (error) {
+        console.error('Failed to fetch centers:', error);
+      }
+    };
+    fetchCenters();
+  }, []);
 
   // Derive activeTab from URL
   const activeTab = useMemo<TabType>(() => {
@@ -124,6 +180,8 @@ const DoctorDashboard = () => {
         F: genderParam === 'F' || genderParam === 'MF',
       },
       hospital: searchParams.get('hospital') || '',
+      centers: parseCentersFromUrl(searchParams.get('centers')),
+      studyStatus: parseStudyStatusFromUrl(searchParams.get('studyStatus')),
       reportStatus: parseReportStatusFromUrl(searchParams.get('reportStatus')),
       modalities: parseModalitiesFromUrl(searchParams.get('modalities')),
     };
@@ -216,6 +274,22 @@ const DoctorDashboard = () => {
         newParams.delete('modalities');
       }
 
+      // Handle centers
+      const centersStr = serializeCentersToUrl(newFilters.centers || []);
+      if (centersStr) {
+        newParams.set('centers', centersStr);
+      } else {
+        newParams.delete('centers');
+      }
+
+      // Handle study status
+      const studyStatusStr = serializeStudyStatusToUrl(newFilters.studyStatus || { reported: false, drafted: false, unreported: false, reviewed: false });
+      if (studyStatusStr) {
+        newParams.set('studyStatus', studyStatusStr);
+      } else {
+        newParams.delete('studyStatus');
+      }
+
       return newParams;
     });
   }, [setSearchParams]);
@@ -234,6 +308,8 @@ const DoctorDashboard = () => {
       newParams.delete('reportStatus');
       newParams.delete('gender');
       newParams.delete('modalities');
+      newParams.delete('centers');
+      newParams.delete('studyStatus');
       // Reset period to default
       newParams.set('period', '1M');
       return newParams;
@@ -259,6 +335,7 @@ const DoctorDashboard = () => {
         setActivePeriod={setActivePeriod}
         activePeriod={activePeriod}
         filters={filters}
+        availableCenters={availableCenters}
       />
 
       <div className='flex flex-col gap-2 px-4 py-2 rounded-2xl bg-white'>

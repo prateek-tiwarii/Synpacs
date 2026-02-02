@@ -437,6 +437,68 @@ class ApiService {
     });
   }
 
+  // Export API - Downloads file as blob
+  async exportData(payload: {
+    exportType: 'search' | 'bookmarks' | 'audit';
+    fileFormat: 'excel' | 'csv' | 'word';
+    columns: string[];
+    searchFilters?: {
+      minAge?: number;
+      maxAge?: number;
+      startDate?: string;
+      endDate?: string;
+      modality?: string;
+      sex?: string | null;
+      centerId?: string | null;
+      reportedOnly?: boolean;
+    };
+    bookmarkOptions?: {
+      caseIds: string[];
+      includeNotes: boolean;
+    };
+    auditFilters?: {
+      startDate: string;
+      endDate: string;
+      modalities: string[];
+    };
+  }): Promise<Blob> {
+    const token = getCookie('jwt')
+
+    const response = await fetch(`${this.baseUrl}/api/v1/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (response.status === 401) {
+      removeCookie('jwt')
+      window.location.href = '/login'
+      throw new Error('Unauthorized')
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Export failed' }))
+      throw new Error(error.message || 'Export failed')
+    }
+
+    return response.blob()
+  }
+
+  // Helper to trigger file download from blob
+  downloadBlob(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   async updateCase(caseId: string, caseData: {
     accession_number?: string;
     body_part?: string;

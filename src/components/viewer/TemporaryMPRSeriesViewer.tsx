@@ -142,13 +142,14 @@ export function TemporaryMPRSeriesViewer({
           }}
         />
 
-        {/* Patient Details Overlay - Top Left */}
-        {caseData?.patient && (
-          <div className="absolute top-2 left-2 bg-black/60 p-2.5 rounded-lg border border-white/5 shadow-2xl pointer-events-none select-none">
-            <span className="text-blue-400 font-bold uppercase tracking-widest text-base mb-0.5 block">
-              {caseData.patient.name}
-            </span>
-            <div className="flex flex-col gap-0.5 opacity-90 text-xs text-gray-300">
+        {/* Corner Overlays - White text only, no background boxes */}
+        <div className="absolute inset-4 pointer-events-none select-none text-[11px] md:text-xs font-mono text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          {/* Patient Details - Top Left */}
+          {caseData?.patient && (
+            <div className="absolute top-0 left-0 flex flex-col gap-0.5">
+              <span className="font-bold uppercase tracking-wide text-sm">
+                {caseData.patient.name}
+              </span>
               <span>ID: {caseData.patient.patient_id}</span>
               <span>
                 DOB:{" "}
@@ -159,28 +160,24 @@ export function TemporaryMPRSeriesViewer({
                 )}
               </span>
               <span>Sex: {caseData.patient?.sex || "U"}</span>
-              <div className="text-purple-400 font-medium mt-1">
-                {series.mprMode} MPR
-              </div>
+              <span className="font-medium mt-1">{series.mprMode} MPR</span>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Image Info - Top Right */}
-        <div className="absolute top-2 right-2 bg-black/70 px-3 py-2 rounded text-xs text-gray-300 space-y-0.5 pointer-events-none select-none">
-          <div className="text-purple-400 font-medium">
-            Generated MPR Series
+          {/* Image Info - Top Right */}
+          <div className="absolute top-0 right-0 text-right flex flex-col gap-0.5">
+            <span className="font-bold">Generated MPR Series</span>
+            <span>Slices: {series.sliceCount}</span>
+            <span>
+              W/L: {series.windowWidth.toFixed(0)} /{" "}
+              {series.windowCenter.toFixed(0)}
+            </span>
           </div>
-          <div>Slices: {series.sliceCount}</div>
-          <div>
-            W/L: {series.windowWidth.toFixed(0)} /{" "}
-            {series.windowCenter.toFixed(0)}
-          </div>
-        </div>
 
-        {/* Slice Counter - Bottom Left */}
-        <div className="absolute bottom-2 left-2 bg-black/70 px-3 py-2 rounded text-sm text-white font-medium pointer-events-none select-none">
-          {currentIndex + 1} / {series.sliceCount}
+          {/* Slice Counter - Bottom Left */}
+          <div className="absolute bottom-0 left-0 font-medium">
+            {currentIndex + 1} / {series.sliceCount}
+          </div>
         </div>
 
         {/* Fullscreen Button - Bottom Right */}

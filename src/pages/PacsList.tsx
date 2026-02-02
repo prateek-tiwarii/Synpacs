@@ -6,8 +6,16 @@ import type { Patient } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Link } from "react-router-dom";
 import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
+import MessageDialog from "@/components/dashboard/doctorDashboard/molecules/MessageDialog";
+import DocumentDialog from "@/components/dashboard/doctorDashboard/molecules/DocumentDialog";
+import BookmarkDialog from "@/components/dashboard/doctorDashboard/molecules/BookmarkDialog";
+import DownloadModal from "@/components/common/DownloadModal";
+import PatientHistoryModal from "@/components/dashboard/doctorDashboard/molecules/PatientHistoryModal";
+import toast from "react-hot-toast";
+import type { Note } from "@/components/patient/PacDetailsModal";
 
 // Default column visibility configuration
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
@@ -38,10 +46,20 @@ const PacsList = () => {
     const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [totalCases, setTotalCases] = useState(0);
     const pageSize = 20;
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [activePeriod, setActivePeriod] = useState('1M');
     const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
+
+    // Dialog states
+    const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+    const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+    const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
+    const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+    const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
 
     // Initialize filters with default values
     const [filters, setFilters] = useState<FilterState>({
@@ -135,6 +153,7 @@ const PacsList = () => {
                 if (response.pagination) {
                     setCurrentPage(response.pagination.currentPage);
                     setTotalPages(response.pagination.totalPages);
+                    setTotalCases(response.pagination.totalCases || response.data.cases.length);
                 }
 
                 // Apply client-side filtering
@@ -213,6 +232,9 @@ const PacsList = () => {
                         updatedAt: caseItem.updatedAt || '',
                         attached_report: caseItem.attached_report || null,
                         patient: caseItem.patient,
+                        notes: caseItem.notes || [],
+                        isBookmarked: caseItem.isBookmarked || false,
+                        patient_history: caseItem.patient_history || [],
                     } as Patient;
                 });
                 setPatients(mappedPatients);
@@ -266,12 +288,85 @@ const PacsList = () => {
         });
     };
 
+    // Action handlers
+    const handleMessageClick = (patient: Patient) => {
+        setSelectedPatient(patient);
+        setMessageDialogOpen(true);
+    };
+
+    const handleDocumentClick = (patient: Patient) => {
+        setSelectedPatient(patient);
+        setDocumentDialogOpen(true);
+    };
+
+    const handleHistoryClick = (patient: Patient) => {
+        setSelectedPatient(patient);
+        setHistoryModalOpen(true);
+    };
+
+    const handleZipDownload = (caseId: string, patientName?: string) => {
+        setSelectedCaseForDownload({
+            id: caseId,
+            name: patientName || 'Study Files'
+        });
+        setDownloadModalOpen(true);
+    };
+
+    const handleSaveBookmark = (patient: Patient) => {
+        setSelectedPatient(patient);
+        setBookmarkDialogOpen(true);
+    };
+
+    const handleBookmarkSuccess = () => {
+        if (selectedPatient) {
+            setPatients(prevPatients =>
+                prevPatients.map(p =>
+                    p._id === selectedPatient._id ? { ...p, isBookmarked: true } : p
+                )
+            );
+            toast.success('Case bookmarked successfully');
+        }
+    };
+
+    const handleDeleteBookmark = async (patient: Patient) => {
+        try {
+            await apiService.deleteBookmark(patient._id);
+            setPatients(prevPatients =>
+                prevPatients.map(p =>
+                    p._id === patient._id ? { ...p, isBookmarked: false } : p
+                )
+            );
+            toast.success('Bookmark removed successfully');
+        } catch (error) {
+            console.error('Failed to remove bookmark:', error);
+            toast.error('Failed to remove bookmark');
+        }
+    };
+
+    const handleNoteSuccess = () => {
+        toast.success('Note added successfully');
+    };
+
     const columnHelper = createColumnHelper<Patient>();
 
     const columns = useMemo(() => [
         columnHelper.display({
             id: 'actions',
-            header: 'Action',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <span>Action</span>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                </div>
+            ),
             enableHiding: false,
             cell: (props: any) => (
                 <TooltipProvider>
@@ -280,31 +375,13 @@ const PacsList = () => {
                             <TooltipTrigger asChild>
                                 <button
                                     className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                                    }}
-                                >
-                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                                </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>View Images</p>
-                            </TooltipContent>
-                        </Tooltip>
-
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button
-                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                                    }}
+                                    onClick={() => handleHistoryClick(props.row.original)}
                                 >
                                     <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>View Report</p>
+                                <p>Patient History</p>
                             </TooltipContent>
                         </Tooltip>
 
@@ -312,9 +389,7 @@ const PacsList = () => {
                             <TooltipTrigger asChild>
                                 <button
                                     className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        // Document functionality
-                                    }}
+                                    onClick={() => handleDocumentClick(props.row.original)}
                                 >
                                     <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
@@ -324,29 +399,71 @@ const PacsList = () => {
                             </TooltipContent>
                         </Tooltip>
 
-                        <Tooltip>
-                            <TooltipTrigger asChild>
+                        {/* Message icon with notes indicator and hover popup */}
+                        <HoverCard openDelay={200} closeDelay={100}>
+                            <HoverCardTrigger asChild>
                                 <button
-                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        // Message functionality
-                                    }}
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer relative"
+                                    onClick={() => handleMessageClick(props.row.original)}
                                 >
                                     <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                                    {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                        <span className="absolute bottom-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white" />
+                                    )}
                                 </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Messages</p>
-                            </TooltipContent>
-                        </Tooltip>
+                            </HoverCardTrigger>
+                            {props.row.original.notes && props.row.original.notes.length >= 1 && (
+                                <HoverCardContent className="w-80 max-h-60 overflow-y-auto" align="start">
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-gray-900">Notes ({props.row.original.notes.length})</h4>
+                                        <div className="space-y-2">
+                                            {props.row.original.notes.map((note: Note) => (
+                                                <div key={note._id} className="p-2.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
+                                                                note.flag_type === 'routine' ? 'bg-gray-100 text-gray-700' :
+                                                                    note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
+                                                                        note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                                                                            note.flag_type === 'error' ? 'bg-red-100 text-red-700' :
+                                                                                'bg-gray-100 text-gray-700'
+                                                                }`}>
+                                                                {note.flag_type === 'urgent' ? 'URGENT' :
+                                                                    note.flag_type === 'routine' ? 'ROUTINE' :
+                                                                        String(note.flag_type || 'ROUTINE').toUpperCase()}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
+                                                    <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                                        <span className="font-medium">
+                                                            {note.created_by?.full_name ||
+                                                                (typeof note.user_id === 'object' ? note.user_id.full_name : 'Unknown User')}
+                                                        </span>
+                                                        <span>
+                                                            {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                year: 'numeric'
+                                                            })} at {new Date(note.createdAt || note.created_at).toLocaleTimeString('en-US', {
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </HoverCardContent>
+                            )}
+                        </HoverCard>
 
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
+                                    onClick={() => handleZipDownload(props.row.original._id, props.row.original.patient?.name)}
                                     className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
-                                    onClick={() => {
-                                        // Download functionality
-                                    }}
                                 >
                                     <Download className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
@@ -359,16 +476,37 @@ const PacsList = () => {
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-0.5 hover:bg-green-50 rounded cursor-pointer"
                                     onClick={() => {
-                                        // Bookmark functionality
+                                        window.open(`/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                 >
-                                    <Bookmark className="w-3.5 h-3.5 text-green-500" />
+                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                                <p>Save Bookmark</p>
+                                <p>View Images</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
+                                    onClick={() => props.row.original.isBookmarked
+                                        ? handleDeleteBookmark(props.row.original)
+                                        : handleSaveBookmark(props.row.original)
+                                    }
+                                >
+                                    {props.row.original.isBookmarked ? (
+                                        <Bookmark className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                                    ) : (
+                                        <Bookmark className="w-3.5 h-3.5 text-yellow-500" />
+                                    )}
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{props.row.original.isBookmarked ? 'Remove Bookmark' : 'Save to Bookmarks'}</p>
                             </TooltipContent>
                         </Tooltip>
                     </div>
@@ -376,21 +514,7 @@ const PacsList = () => {
             ),
         }),
         columnHelper.accessor('name', {
-            header: () => (
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsColumnModalOpen(true);
-                        }}
-                        className="p-0.5 hover:bg-gray-200 rounded"
-                        title="Column Settings"
-                    >
-                        <Settings className="w-3 h-3 text-gray-600" />
-                    </button>
-                    <span>Patient Name</span>
-                </div>
-            ),
+            header: 'Patient Name',
             enableSorting: true,
             cell: (info: any) => {
                 const name = info.getValue();
@@ -582,45 +706,20 @@ const PacsList = () => {
             {/* Header with Filter Toggle */}
             <div className="border border-slate-200 bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="flex items-center justify-end px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                    <div className="flex items-center gap-3">
-                        {/* Pagination Controls */}
-                        {totalPages > 1 && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-md border border-slate-200">
-                                <button
-                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                    disabled={currentPage === 1 || isLoading}
-                                    className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    Previous
-                                </button>
-                                <span className="text-xs text-slate-600 font-medium">
-                                    Page {currentPage} of {totalPages}
-                                </span>
-                                <button
-                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                    disabled={currentPage === totalPages || isLoading}
-                                    className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
-                            className={`
-                                flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200
-                                ${!isFilterCollapsed
-                                    ? 'bg-slate-700 text-white shadow-sm'
-                                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                                }
-                            `}
-                        >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                            <span>Filters</span>
-                            {isFilterCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
+                        className={`
+                            flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200
+                            ${!isFilterCollapsed
+                                ? 'bg-slate-700 text-white shadow-sm'
+                                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }
+                        `}
+                    >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>Filters</span>
+                        {isFilterCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                    </button>
                 </div>
 
                 {/* Filter Panel */}
@@ -652,6 +751,74 @@ const PacsList = () => {
                 onColumnVisibilityChange={setColumnVisibility}
                 isColumnModalOpen={isColumnModalOpen}
                 onColumnModalOpenChange={setIsColumnModalOpen}
+            />
+
+            {/* Footer with Total Cases and Pagination */}
+            {!isLoading && !error && (
+                <div className="flex items-center justify-end gap-4">
+                    <span className="text-xs text-slate-600">
+                        Total: <span className="font-semibold">{totalCases}</span> cases
+                    </span>
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-md border border-slate-200">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1 || isLoading}
+                                className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            <span className="text-xs text-slate-600 font-medium">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages || isLoading}
+                                className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Dialogs */}
+            <MessageDialog
+                open={messageDialogOpen}
+                onOpenChange={setMessageDialogOpen}
+                patient={selectedPatient}
+                onSuccess={handleNoteSuccess}
+            />
+
+            <DocumentDialog
+                open={documentDialogOpen}
+                onOpenChange={setDocumentDialogOpen}
+                patient={selectedPatient}
+            />
+
+            <BookmarkDialog
+                open={bookmarkDialogOpen}
+                onOpenChange={setBookmarkDialogOpen}
+                patient={selectedPatient}
+                onSuccess={handleBookmarkSuccess}
+            />
+
+            <DownloadModal
+                open={downloadModalOpen}
+                onClose={() => {
+                    setDownloadModalOpen(false);
+                    setSelectedCaseForDownload(null);
+                }}
+                caseId={selectedCaseForDownload?.id || ''}
+                caseName={selectedCaseForDownload?.name}
+            />
+
+            <PatientHistoryModal
+                open={historyModalOpen}
+                onOpenChange={setHistoryModalOpen}
+                images={selectedPatient?.patient_history || []}
+                patientName={selectedPatient?.name}
             />
         </div>
     );
