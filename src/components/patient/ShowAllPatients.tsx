@@ -24,7 +24,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, Eye, X, ImageIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, Eye, X, ImageIcon, Settings } from "lucide-react";
 import { Heading } from "@/components/common/Heading";
 import PatientDetailsModal from "./PacDetailsModal";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
@@ -255,6 +255,7 @@ const ShowAllPatients = () => {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -293,22 +294,22 @@ const ShowAllPatients = () => {
     gender: { M: false, F: false },
     reportStatus: { reported: false, drafted: false, unreported: false },
     modalities: {
-      ALL: false,
-      DT: false,
-      SC: false,
-      AN: false,
-      US: false,
-      ECHO: false,
-      CR: false,
-      XA: false,
-      MR: false,
-      CTMR: false,
-      PX: false,
-      DX: false,
-      MR2: false,
-      NM: false,
-      RF: false,
-      CT: false,
+      ALL: true,
+      DT: true,
+      SC: true,
+      AN: true,
+      US: true,
+      ECHO: true,
+      CR: true,
+      XA: true,
+      MR: true,
+      CTMR: true,
+      PX: true,
+      DX: true,
+      MR2: true,
+      NM: true,
+      RF: true,
+      CT: true,
     },
   });
 
@@ -366,22 +367,22 @@ const ShowAllPatients = () => {
         unreported: false,
       },
       modalities: {
-        ALL: false,
-        DT: false,
-        SC: false,
-        AN: false,
-        US: false,
-        ECHO: false,
-        CR: false,
-        XA: false,
-        MR: false,
-        CTMR: false,
-        PX: false,
-        DX: false,
-        MR2: false,
-        NM: false,
-        RF: false,
-        CT: false,
+        ALL: true,
+        DT: true,
+        SC: true,
+        AN: true,
+        US: true,
+        ECHO: true,
+        CR: true,
+        XA: true,
+        MR: true,
+        CTMR: true,
+        PX: true,
+        DX: true,
+        MR2: true,
+        NM: true,
+        RF: true,
+        CT: true,
       },
     };
 
@@ -493,12 +494,18 @@ const ShowAllPatients = () => {
       }
       // If both are selected or neither, don't send gender filter
 
-      // Handle modality filter - get the first selected modality
-      const selectedModality = Object.entries(filters.modalities).find(
-        ([_, isSelected]) => isSelected && _ !== "ALL"
-      );
-      if (selectedModality) {
-        apiFilters.modality = selectedModality[0];
+      // Handle modality filter - only send if specific modalities are selected (not all)
+      const selectedModalities = Object.entries(filters.modalities)
+        .filter(([key, isSelected]) => isSelected && key !== "ALL")
+        .map(([key]) => key);
+      
+      // Check if all modalities are selected (excluding ALL)
+      const allModalityKeys = Object.keys(filters.modalities).filter(k => k !== "ALL");
+      const allModalitiesSelected = allModalityKeys.every(key => filters.modalities[key as keyof typeof filters.modalities]);
+      
+      // Only send modality filter if not all are selected
+      if (selectedModalities.length > 0 && !allModalitiesSelected) {
+        apiFilters.modality = selectedModalities[0]; // API likely only supports single modality
       }
 
       const response = await apiService.getAllPacCases(page, limit, apiFilters) as ApiResponse;
@@ -665,22 +672,22 @@ const ShowAllPatients = () => {
       gender: { M: false, F: false },
       reportStatus: { reported: false, drafted: false, unreported: false },
       modalities: {
-        ALL: false,
-        DT: false,
-        SC: false,
-        AN: false,
-        US: false,
-        ECHO: false,
-        CR: false,
-        XA: false,
-        MR: false,
-        CTMR: false,
-        PX: false,
-        DX: false,
-        MR2: false,
-        NM: false,
-        RF: false,
-        CT: false,
+        ALL: true,
+        DT: true,
+        SC: true,
+        AN: true,
+        US: true,
+        ECHO: true,
+        CR: true,
+        XA: true,
+        MR: true,
+        CTMR: true,
+        PX: true,
+        DX: true,
+        MR2: true,
+        NM: true,
+        RF: true,
+        CT: true,
       },
     };
 
@@ -727,7 +734,22 @@ const ShowAllPatients = () => {
     }),
     // Name
     columnHelper.accessor('name', {
-      header: 'Name',
+      header: () => (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsColumnModalOpen(true);
+            }}
+            className="p-0.5 hover:bg-gray-200 rounded"
+            title="Column Settings"
+          >
+            <Settings className="w-3 h-3 text-gray-600" />
+          </button>
+          <span>Name</span>
+        </div>
+      ),
+      enableSorting: true,
       cell: (info) => (
         <div className="flex items-center justify-between gap-2">
           <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-name`} />
@@ -738,10 +760,10 @@ const ShowAllPatients = () => {
               handleFilterChange({ ...filters, patientName });
               setIsFilterCollapsed(false); // Expand filter panel to show the change
             }}
-            className="w-4 h-4 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center cursor-pointer shrink-0"
+            className="w-3.5 h-3.5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center cursor-pointer shrink-0"
             title="Filter Patient"
           >
-            <span className="text-white text-[8px] font-bold">F</span>
+            <span className="text-white text-[7px] font-bold">F</span>
           </button>
         </div>
       ),
@@ -749,27 +771,32 @@ const ShowAllPatients = () => {
     // Case UID
     columnHelper.accessor('case_uid', {
       header: 'Case ID',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-uid`} />,
     }),
     // Accession Number
     columnHelper.accessor('accession_number', {
       header: 'Accession Number',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
     }),
     // Age
     columnHelper.accessor('age', {
       header: 'Age',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-age`} />,
     }),
     // Sex
     columnHelper.accessor('sex', {
       header: 'Sex',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-sex`} />,
     }),
     // Study Date & Time
     columnHelper.display({
       id: 'study_date_time',
       header: 'Study Date & Time',
+      enableSorting: true,
       cell: (props) => {
         const value = props.row.original.study_date_time;
         if (!value || value === '-') return <span className="text-gray-400">-</span>;
@@ -799,6 +826,7 @@ const ShowAllPatients = () => {
     columnHelper.display({
       id: 'history_date_time',
       header: 'History Date & Time',
+      enableSorting: true,
       cell: (props) => {
         const value = props.row.original.history_date_time;
         if (!value) return <span className="text-gray-400">-</span>;
@@ -811,6 +839,7 @@ const ShowAllPatients = () => {
     columnHelper.display({
       id: 'reporting_date_time',
       header: 'Reporting Date & Time',
+      enableSorting: true,
       cell: (props) => {
         const value = props.row.original.reporting_date_time;
         if (!value) return <span className="text-gray-400">-</span>;
@@ -822,42 +851,50 @@ const ShowAllPatients = () => {
     // Center
     columnHelper.accessor('center_name', {
       header: 'Center',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-center`} />,
     }),
     // Hospital Name
     columnHelper.accessor('hospital_name', {
       header: 'Hospital',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-hospital`} />,
     }),
     // Referring Doctor
     columnHelper.accessor('referring_doctor_name', {
       header: 'Referring Doctor',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-ref-doc`} />,
     }),
     // Image Count
     columnHelper.accessor('uploaded_images_count', {
       header: 'Image Count',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={String(info.getValue() || 0)} cellId={`${info.row.id}-img-count`} />,
     }),
     // Modality
     columnHelper.accessor('modality', {
       header: 'Modality',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
     }),
     // Status
     columnHelper.accessor('status', {
       header: 'Status',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-status`} />,
     }),
     // Assigned To
     columnHelper.accessor('assigned_to', {
       header: 'Assigned To',
+      enableSorting: false,
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-assigned`} />,
     }),
     // Attached Report
     columnHelper.display({
       id: 'attached_report',
       header: 'Report',
+      enableSorting: false,
       cell: (props) => {
         const report = props.row.original.attached_report;
         if (!report) return <span className="text-gray-400">-</span>;
@@ -1012,6 +1049,8 @@ const ShowAllPatients = () => {
           onRowSelectionChange={setRowSelection}
           showDoctorsOnSelect={true}
           manualPagination={true}
+          isColumnModalOpen={isColumnModalOpen}
+          onColumnModalOpenChange={setIsColumnModalOpen}
         />
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-2 py-3">
           <div className="flex items-center gap-2">

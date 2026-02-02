@@ -65,6 +65,8 @@ export interface DataTableProps<TData> {
     showDoctorsOnSelect?: boolean;
     showEmptyTable?: boolean;
     tableDescription?: string;
+    isColumnModalOpen?: boolean;
+    onColumnModalOpenChange?: (open: boolean) => void;
     // onRefresh?: () => void | Promise<void>;
 }
 
@@ -92,16 +94,29 @@ export function DataTable<TData>({
     showDoctorsOnSelect = false,
     showEmptyTable = false,
     tableDescription = "",
+    isColumnModalOpen: externalIsColumnModalOpen,
+    onColumnModalOpenChange: externalOnColumnModalOpenChange,
     // onRefresh,
 }: DataTableProps<TData>) {
+    console.log('=== DataTable Render ===');
+    console.log('Data received:', data);
+    console.log('Data length:', data?.length);
+    console.log('Columns:', columns);
+    console.log('isLoading:', isLoading);
+    console.log('error:', error);
+    
     const { toast } = useToast();
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [internalIsColumnModalOpen, setInternalIsColumnModalOpen] = useState(false);
     const [availableDoctors, setAvailableDoctors] = useState<Doctor[]>([]);
     const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    
+    // Use external state if provided, otherwise use internal state
+    const isColumnModalOpen = externalIsColumnModalOpen ?? internalIsColumnModalOpen;
+    const setIsColumnModalOpen = externalOnColumnModalOpenChange ?? setInternalIsColumnModalOpen;
     // const [isRefreshing, setIsRefreshing] = useState(false);
 
     const table = useReactTable({
@@ -152,8 +167,8 @@ export function DataTable<TData>({
                     <TableHeader>
                         <TableRow className={headerClassName}>
                             {[...Array(skeletonColumnCount)].map((_, index) => (
-                                <TableHead key={index} className="font-semibold whitespace-nowrap text-[12px] px-2 py-1">
-                                    <Skeleton className="h-4 w-20" />
+                                <TableHead key={index} className="font-semibold whitespace-nowrap text-[11px] px-1.5 py-1">
+                                    <Skeleton className="h-3 w-16" />
                                 </TableHead>
                             ))}
                         </TableRow>
@@ -162,8 +177,8 @@ export function DataTable<TData>({
                         {[...Array(10)].map((_, rowIndex) => (
                             <TableRow key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-green-100/30' : 'bg-blue-100/30'}>
                                 {[...Array(skeletonColumnCount)].map((_, colIndex) => (
-                                    <TableCell key={colIndex} className="whitespace-nowrap text-[12px] px-2 py-1">
-                                        <Skeleton className="h-4 w-full max-w-[120px]" />
+                                    <TableCell key={colIndex} className="whitespace-nowrap text-[11px] px-1.5 py-1">
+                                        <Skeleton className="h-3 w-full max-w-[100px]" />
                                     </TableCell>
                                 ))}
                             </TableRow>
@@ -308,16 +323,16 @@ export function DataTable<TData>({
 
     return (
         <div className={containerClassName}>
-            {(tableTitle || showSettings || showDoctorsDropdown) && (
-                <div className="flex items-center justify-between py-2 px-1">
-                    <div className="flex flex-col">
+            {(tableTitle || showDoctorsDropdown) && (
+                <div className="flex items-center justify-between py-1 px-1">
+                    <div className="flex items-center gap-2">
                         {tableTitle && (
-                            <p className="text-lg font-semibold">{tableTitle}</p>
-                        )}
-                        {tableDescription && (
-                            <p className="text-sm text-muted-foreground">{tableDescription}</p>
+                            <p className="text-base font-semibold">{tableTitle}</p>
                         )}
                     </div>
+                    {tableDescription && (
+                        <p className="text-xs text-muted-foreground">{tableDescription}</p>
+                    )}
                     <div className="flex items-center gap-2 ml-auto">
                         {showDoctorsDropdown && (
                             <DropdownMenu open={isDropdownOpen} onOpenChange={(open) => {
@@ -378,19 +393,6 @@ export function DataTable<TData>({
                     </div>
                 </div>
             )}
-            {showSettings && (
-                <div className="flex items-start gap-2 py-2 px-1">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => setIsColumnModalOpen(true)}
-                    >
-                        <Settings className="h-4 w-4 mr-2" />
-                        <span className="text-xs">Column Settings</span>
-                    </Button>
-                </div>
-            )}
             <div className="overflow-x-auto overflow-y-visible">
                 <div className={showBorder ? "rounded-md border" : ""}>
                     <Table>
@@ -398,7 +400,7 @@ export function DataTable<TData>({
                             {table.getHeaderGroups().map((headerGroup) => (
                                 <TableRow key={headerGroup.id} className={headerClassName}>
                                     {headerGroup.headers.map((header) => (
-                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-[12px] py-1">
+                                        <TableHead key={header.id} className="font-semibold whitespace-nowrap text-[11px] px-1.5 py-1">
                                             {header.isPlaceholder ? null : (
                                                 <div
                                                     className={
@@ -441,7 +443,7 @@ export function DataTable<TData>({
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >
                                         {row.getVisibleCells().map((cell) => (
-                                            <TableCell key={cell.id} className="whitespace-nowrap text-[12px] px-2 py-1">
+                                            <TableCell key={cell.id} className="whitespace-nowrap text-[11px] px-1.5 py-1">
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                             </TableCell>
                                         ))}

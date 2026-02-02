@@ -1,8 +1,7 @@
-import { Download, ImageIcon, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
+import { Download, ImageIcon, ChevronDown, ChevronUp, SlidersHorizontal, ClipboardCheck, FolderOpen, MessageSquare, Bookmark, Settings } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Badge } from "@/components/ui/badge";
 import type { Patient } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
@@ -39,8 +38,10 @@ const PacsList = () => {
     const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
-    const [totalPatients, setTotalPatients] = useState(0);
     const pageSize = 20;
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [activePeriod, setActivePeriod] = useState('1M');
+    const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
 
     // Initialize filters with default values
     const [filters, setFilters] = useState<FilterState>({
@@ -52,12 +53,14 @@ const PacsList = () => {
         status: 'all',
         gender: { M: false, F: false },
         hospital: '',
+        centers: [],
+        studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
         reportStatus: { reported: false, drafted: false, unreported: false },
         modalities: {
-            ALL: false, DT: false, SC: false, AN: false,
-            US: false, ECHO: false, CR: false, XA: false,
-            MR: false, CTMR: false, PX: false, DX: false,
-            MR2: false, NM: false, RF: false, CT: false,
+            ALL: true, DT: true, SC: true, AN: true,
+            US: true, ECHO: true, CR: true, XA: true,
+            MR: true, CTMR: true, PX: true, DX: true,
+            MR2: true, NM: true, RF: true, CT: true,
         },
     });
 
@@ -83,6 +86,25 @@ const PacsList = () => {
             console.error('Failed to save column visibility to localStorage:', error);
         }
     }, [columnVisibility]);
+
+    // Fetch available centers
+    useEffect(() => {
+        const fetchCenters = async () => {
+            try {
+                const response = await apiService.getAllManagedHospitals() as any;
+                if (response.success && response.data) {
+                    const centers = response.data.map((hospital: any) => ({
+                        id: hospital._id,
+                        name: hospital.hospital_name || hospital.name
+                    }));
+                    setAvailableCenters(centers);
+                }
+            } catch (error) {
+                console.error('Failed to fetch centers:', error);
+            }
+        };
+        fetchCenters();
+    }, []);
 
     const fetchAllCases = useCallback(async () => {
         try {
@@ -113,7 +135,6 @@ const PacsList = () => {
                 if (response.pagination) {
                     setCurrentPage(response.pagination.currentPage);
                     setTotalPages(response.pagination.totalPages);
-                    setTotalPatients(response.pagination.totalCases || response.pagination.totalPatients);
                 }
 
                 // Apply client-side filtering
@@ -138,7 +159,12 @@ const PacsList = () => {
                     .filter(([_, isSelected]) => isSelected)
                     .map(([modality]) => modality);
                 
-                if (selectedModalities.length > 0 && !selectedModalities.includes('ALL')) {
+                // Check if all modalities are selected (excluding ALL)
+                const allModalityKeys = Object.keys(filters.modalities).filter(k => k !== "ALL");
+                const allModalitiesSelected = allModalityKeys.every(key => filters.modalities[key as keyof typeof filters.modalities]);
+                
+                // Only filter if not all modalities are selected
+                if (selectedModalities.length > 0 && !allModalitiesSelected && !selectedModalities.includes('ALL')) {
                     filteredData = filteredData.filter((caseItem: any) => 
                         selectedModalities.includes(caseItem.modality)
                     );
@@ -228,12 +254,14 @@ const PacsList = () => {
             status: 'all',
             gender: { M: false, F: false },
             hospital: '',
+            centers: [],
+            studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
             reportStatus: { reported: false, drafted: false, unreported: false },
             modalities: {
-                ALL: false, DT: false, SC: false, AN: false,
-                US: false, ECHO: false, CR: false, XA: false,
-                MR: false, CTMR: false, PX: false, DX: false,
-                MR2: false, NM: false, RF: false, CT: false,
+                ALL: true, DT: true, SC: true, AN: true,
+                US: true, ECHO: true, CR: true, XA: true,
+                MR: true, CTMR: true, PX: true, DX: true,
+                MR2: true, NM: true, RF: true, CT: true,
             },
         });
     };
@@ -247,16 +275,16 @@ const PacsList = () => {
             enableHiding: false,
             cell: (props: any) => (
                 <TooltipProvider>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-green-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
                                         window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
                                 >
-                                    <ImageIcon className="w-4 h-4 text-blue-500" />
+                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -267,16 +295,80 @@ const PacsList = () => {
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
-                                        // Download functionality can be added later
+                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
                                 >
-                                    <Download className="w-4 h-4 text-green-500" />
+                                    <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>View Report</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        // Document functionality
+                                    }}
+                                >
+                                    <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Attached Documents</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        // Message functionality
+                                    }}
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Messages</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        // Download functionality
+                                    }}
+                                >
+                                    <Download className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
                                 <p>Download</p>
+                            </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-green-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        // Bookmark functionality
+                                    }}
+                                >
+                                    <Bookmark className="w-3.5 h-3.5 text-green-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Save Bookmark</p>
                             </TooltipContent>
                         </Tooltip>
                     </div>
@@ -284,25 +376,45 @@ const PacsList = () => {
             ),
         }),
         columnHelper.accessor('name', {
-            header: 'Patient Name',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                    <span>Patient Name</span>
+                </div>
+            ),
+            enableSorting: true,
             cell: (info: any) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
                 return (
-                    <button
-                        onClick={() => {
-                            window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                        }}
-                        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
-                    >
-                        {name}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <CellWithCopy content={name || '-'} cellId={`${info.row.id}-name`} />
+                        <button
+                            onClick={() => {
+                                window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-[10px] font-medium shrink-0"
+                            title="Open Viewer"
+                        >
+                            [View]
+                        </button>
+                    </div>
                 );
             },
         }),
         columnHelper.display({
             id: 'case_id',
             header: 'Case ID',
+            enableSorting: false,
             cell: (props: any) => {
                 const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
                 return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
@@ -311,6 +423,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'age',
             header: 'Age',
+            enableSorting: false,
             cell: (props: any) => {
                 const age = props.row.original.age || props.row.original.patient?.age || '-';
                 return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
@@ -319,6 +432,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'sex',
             header: 'Sex',
+            enableSorting: false,
             cell: (props: any) => {
                 const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
@@ -327,6 +441,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'study_date_time',
             header: 'Study Date & Time',
+            enableSorting: true,
             cell: (props: any) => {
                 const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
@@ -352,6 +467,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'history_date_time',
             header: 'History Date & Time',
+            enableSorting: true,
             cell: (props: any) => {
                 const updatedAt = props.row.original.updatedAt;
                 if (!updatedAt) return <span className="text-gray-400">-</span>;
@@ -371,6 +487,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'reporting_date_time',
             header: 'Reporting Date & Time',
+            enableSorting: true,
             cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
@@ -389,24 +506,22 @@ const PacsList = () => {
         }),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
+            enableSorting: false,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
         }),
         columnHelper.display({
             id: 'center',
             header: 'Center',
+            enableSorting: false,
             cell: (props: any) => {
-                const centerName = props.row.original.hospital_name;
-                if (!centerName) return <span className="text-gray-400">-</span>;
-                return (
-                    <Badge variant="info" className="font-normal text-[10px] px-2 py-0.5 whitespace-nowrap">
-                        {centerName}
-                    </Badge>
-                );
+                const centerName = props.row.original.hospital_name || '-';
+                return <CellWithCopy content={centerName} cellId={`${props.row.id}-center`} />;
             },
         }),
         columnHelper.display({
             id: 'referring_doctor',
             header: 'Referring Doctor',
+            enableSorting: false,
             cell: (props: any) => {
                 const referringDoctor = props.row.original.referring_doctor || '-';
                 return <CellWithCopy content={referringDoctor} cellId={`${props.row.id}-ref-doc`} />;
@@ -415,6 +530,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'image_count',
             header: 'Image Count',
+            enableSorting: false,
             cell: (props: any) => {
                 const instanceCount = props.row.original.instance_count || 0;
                 return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
@@ -422,15 +538,18 @@ const PacsList = () => {
         }),
         columnHelper.accessor('case_description', {
             header: 'Study Description',
+            enableSorting: false,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
         columnHelper.accessor('modality', {
             header: 'Modality',
+            enableSorting: false,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
         columnHelper.display({
             id: 'case_type',
             header: 'Case Type',
+            enableSorting: false,
             cell: (props: any) => {
                 const caseType = props.row.original.treatment_type || '-';
                 return <CellWithCopy content={caseType} cellId={`${props.row.id}-case-type`} />;
@@ -439,6 +558,7 @@ const PacsList = () => {
         columnHelper.display({
             id: 'reported',
             header: 'Reported',
+            enableSorting: false,
             cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (attachedReport) {
@@ -461,13 +581,7 @@ const PacsList = () => {
         <div className="p-6 space-y-4">
             {/* Header with Filter Toggle */}
             <div className="border border-slate-200 bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                    <div>
-                        <p className="text-sm text-slate-600">
-                            {totalPatients > 0 ? `${totalPatients} total cases` : 'All cases from your center'}
-                        </p>
-                    </div>
-
+                <div className="flex items-center justify-end px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
                     <div className="flex items-center gap-3">
                         {/* Pagination Controls */}
                         {totalPages > 1 && (
@@ -515,6 +629,11 @@ const PacsList = () => {
                         onFilterChange={handleFilterChange}
                         onFilterReset={handleFilterReset}
                         initialFilters={filters}
+                        activePeriod={activePeriod}
+                        setActivePeriod={setActivePeriod}
+                        availableCenters={availableCenters}
+                        showCenters={true}
+                        showStudyStatus={true}
                     />
                 )}
             </div>
@@ -531,6 +650,8 @@ const PacsList = () => {
                 showColumnToggle={true}
                 columnVisibility={columnVisibility}
                 onColumnVisibilityChange={setColumnVisibility}
+                isColumnModalOpen={isColumnModalOpen}
+                onColumnModalOpenChange={setIsColumnModalOpen}
             />
         </div>
     );

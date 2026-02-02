@@ -23,14 +23,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [selectedColumns, setSelectedColumns] = useState({
     patientId: true,
     patientName: true,
+    dob: false,
     age: true,
     sex: true,
     modality: true,
-    case: true,
+    caseId: true,
     studyDate: true,
+    studyTime: true,
+    historyDate: true,
+    reportingDate: true,
     accessionNumber: true,
     center: true,
     referringDoctor: true,
+    imageCount: true,
+    description: true,
+    caseType: true,
+    reported: true,
+    status: false,
+    priority: false,
+    seriesCount: true,
+    instanceCount: true,
   });
   
   const [includeBookmarkNotes, setIncludeBookmarkNotes] = useState(true);
@@ -43,7 +55,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-150 max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             Export - {exportType === 'bookmarks' ? 'Bookmarked Cases' : 'Patient Results'}
@@ -51,7 +63,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </DialogHeader>
 
         <Tabs defaultValue="format" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className={`grid w-full ${exportType === 'bookmarks' ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="format">Format</TabsTrigger>
             <TabsTrigger value="columns">Columns</TabsTrigger>
             {exportType === 'bookmarks' && (
@@ -84,14 +96,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <TabsContent value="columns" className="space-y-4 py-4">
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Select Columns to Include</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-h-100 overflow-y-auto pr-2">
                 <div className="flex items-center space-x-2">
                   <Checkbox 
                     id="patientId" 
                     checked={selectedColumns.patientId}
                     onCheckedChange={() => handleColumnToggle('patientId')}
                   />
-                  <Label htmlFor="patientId" className="cursor-pointer">Patient ID</Label>
+                  <Label htmlFor="patientId" className="cursor-pointer text-sm">Patient ID</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -99,7 +111,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.patientName}
                     onCheckedChange={() => handleColumnToggle('patientName')}
                   />
-                  <Label htmlFor="patientName" className="cursor-pointer">Patient Name</Label>
+                  <Label htmlFor="patientName" className="cursor-pointer text-sm">Patient Name</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="dob" 
+                    checked={(selectedColumns as any).dob}
+                    onCheckedChange={() => handleColumnToggle('dob')}
+                  />
+                  <Label htmlFor="dob" className="cursor-pointer text-sm">DOB</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -107,7 +127,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.age}
                     onCheckedChange={() => handleColumnToggle('age')}
                   />
-                  <Label htmlFor="age" className="cursor-pointer">Age</Label>
+                  <Label htmlFor="age" className="cursor-pointer text-sm">Age</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -115,7 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.sex}
                     onCheckedChange={() => handleColumnToggle('sex')}
                   />
-                  <Label htmlFor="sex" className="cursor-pointer">Sex</Label>
+                  <Label htmlFor="sex" className="cursor-pointer text-sm">Sex</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -123,15 +143,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.modality}
                     onCheckedChange={() => handleColumnToggle('modality')}
                   />
-                  <Label htmlFor="modality" className="cursor-pointer">Modality</Label>
+                  <Label htmlFor="modality" className="cursor-pointer text-sm">Modality</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
-                    id="case" 
-                    checked={selectedColumns.case}
-                    onCheckedChange={() => handleColumnToggle('case')}
+                    id="caseId" 
+                    checked={(selectedColumns as any).caseId}
+                    onCheckedChange={() => handleColumnToggle('caseId')}
                   />
-                  <Label htmlFor="case" className="cursor-pointer">Case</Label>
+                  <Label htmlFor="caseId" className="cursor-pointer text-sm">Case ID</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -139,7 +159,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.studyDate}
                     onCheckedChange={() => handleColumnToggle('studyDate')}
                   />
-                  <Label htmlFor="studyDate" className="cursor-pointer">Study Date</Label>
+                  <Label htmlFor="studyDate" className="cursor-pointer text-sm">Study Date</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="studyTime" 
+                    checked={(selectedColumns as any).studyTime}
+                    onCheckedChange={() => handleColumnToggle('studyTime')}
+                  />
+                  <Label htmlFor="studyTime" className="cursor-pointer text-sm">Study Time</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="historyDate" 
+                    checked={(selectedColumns as any).historyDate}
+                    onCheckedChange={() => handleColumnToggle('historyDate')}
+                  />
+                  <Label htmlFor="historyDate" className="cursor-pointer text-sm">History Date & Time</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="reportingDate" 
+                    checked={(selectedColumns as any).reportingDate}
+                    onCheckedChange={() => handleColumnToggle('reportingDate')}
+                  />
+                  <Label htmlFor="reportingDate" className="cursor-pointer text-sm">Reporting Date & Time</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -147,7 +191,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.accessionNumber}
                     onCheckedChange={() => handleColumnToggle('accessionNumber')}
                   />
-                  <Label htmlFor="accessionNumber" className="cursor-pointer">Accession Number</Label>
+                  <Label htmlFor="accessionNumber" className="cursor-pointer text-sm">Accession Number</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -155,7 +199,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.center}
                     onCheckedChange={() => handleColumnToggle('center')}
                   />
-                  <Label htmlFor="center" className="cursor-pointer">Center</Label>
+                  <Label htmlFor="center" className="cursor-pointer text-sm">Center</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox 
@@ -163,7 +207,71 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     checked={selectedColumns.referringDoctor}
                     onCheckedChange={() => handleColumnToggle('referringDoctor')}
                   />
-                  <Label htmlFor="referringDoctor" className="cursor-pointer">Referring Doctor</Label>
+                  <Label htmlFor="referringDoctor" className="cursor-pointer text-sm">Referring Doctor</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="imageCount" 
+                    checked={(selectedColumns as any).imageCount}
+                    onCheckedChange={() => handleColumnToggle('imageCount')}
+                  />
+                  <Label htmlFor="imageCount" className="cursor-pointer text-sm">Image Count</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="description" 
+                    checked={(selectedColumns as any).description}
+                    onCheckedChange={() => handleColumnToggle('description')}
+                  />
+                  <Label htmlFor="description" className="cursor-pointer text-sm">Study Description</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="caseType" 
+                    checked={(selectedColumns as any).caseType}
+                    onCheckedChange={() => handleColumnToggle('caseType')}
+                  />
+                  <Label htmlFor="caseType" className="cursor-pointer text-sm">Case Type</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="reported" 
+                    checked={(selectedColumns as any).reported}
+                    onCheckedChange={() => handleColumnToggle('reported')}
+                  />
+                  <Label htmlFor="reported" className="cursor-pointer text-sm">Reported</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="status" 
+                    checked={(selectedColumns as any).status}
+                    onCheckedChange={() => handleColumnToggle('status')}
+                  />
+                  <Label htmlFor="status" className="cursor-pointer text-sm">Status</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="priority" 
+                    checked={(selectedColumns as any).priority}
+                    onCheckedChange={() => handleColumnToggle('priority')}
+                  />
+                  <Label htmlFor="priority" className="cursor-pointer text-sm">Priority</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="seriesCount" 
+                    checked={(selectedColumns as any).seriesCount}
+                    onCheckedChange={() => handleColumnToggle('seriesCount')}
+                  />
+                  <Label htmlFor="seriesCount" className="cursor-pointer text-sm">Series Count</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="instanceCount" 
+                    checked={(selectedColumns as any).instanceCount}
+                    onCheckedChange={() => handleColumnToggle('instanceCount')}
+                  />
+                  <Label htmlFor="instanceCount" className="cursor-pointer text-sm">Instance Count</Label>
                 </div>
               </div>
             </div>

@@ -11,10 +11,10 @@ import { toast } from 'react-hot-toast';
 type TabType = 'Unreported' | 'Reported' | 'All Cases' | 'Drafted' | 'Review';
 
 const DEFAULT_MODALITIES = {
-  ALL: false, DT: false, SC: false, AN: false,
-  US: false, ECHO: false, CR: false, XA: false,
-  MR: false, CTMR: false, PX: false, DX: false,
-  MR2: false, NM: false, RF: false, CT: false,
+  ALL: true, DT: true, SC: true, AN: true,
+  US: true, ECHO: true, CR: true, XA: true,
+  MR: true, CTMR: true, PX: true, DX: true,
+  MR2: true, NM: true, RF: true, CT: true,
 };
 
 const VALID_TABS: TabType[] = ['Unreported', 'Drafted', 'Reported', 'All Cases', 'Review'];
