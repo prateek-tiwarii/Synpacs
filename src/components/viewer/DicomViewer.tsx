@@ -178,6 +178,8 @@ export function DicomViewer({
     isFullscreen,
     toggleFullscreen,
     showOverlays,
+    selectedSeries,
+    setSeriesLoadProgress,
   } = useViewerContext();
 
   const API_BASE_URL =
@@ -1076,6 +1078,13 @@ export function DicomViewer({
       if (queue.length === 0) return;
 
       setPrefetchProgress({ fetched: 0, total: queue.length });
+      if (selectedSeries) {
+        setSeriesLoadProgress({
+          seriesId: selectedSeries._id,
+          fetched: 0,
+          total: queue.length,
+        });
+      }
 
       let queueIndex = 0;
       let currentFetched = 0;
@@ -1104,6 +1113,13 @@ export function DicomViewer({
                 fetched: currentFetched,
                 total: queue.length,
               });
+              if (selectedSeries) {
+                setSeriesLoadProgress({
+                  seriesId: selectedSeries._id,
+                  fetched: currentFetched,
+                  total: queue.length,
+                });
+              }
             })
             .catch((err) =>
               console.error(
@@ -1114,7 +1130,10 @@ export function DicomViewer({
             .finally(() => {
               activeRequests.current--;
               if (currentFetched === queue.length) {
-                setTimeout(() => setPrefetchProgress(null), 2000);
+                setTimeout(() => {
+                  setPrefetchProgress(null);
+                  setSeriesLoadProgress(null);
+                }, 2000);
               }
               processQueue();
             });
@@ -1134,7 +1153,6 @@ export function DicomViewer({
 
     const loadImage = async () => {
       try {
-        setIsLoading(true);
         setError(null);
 
         // Use global cache - no auth token needed for plain fetch
@@ -1142,6 +1160,7 @@ export function DicomViewer({
         let arrayBuffer: ArrayBuffer;
 
         if (cached) {
+          // Image is cached, no need to show loading spinner
           arrayBuffer = cached;
         } else {
           const instanceUrl = `${API_BASE_URL}/api/v1/instances/${currentInstance.instance_uid}/dicom`;
@@ -1860,7 +1879,7 @@ export function DicomViewer({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <canvas ref={canvasRef} className="max-w-full max-h-full" />
+      <canvas ref={canvasRef} className="w-full h-full" />
 
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -1966,14 +1985,14 @@ export function DicomViewer({
 
       {/* Corner Overlays */}
       {showOverlays && (
-        <div className="absolute inset-0 pointer-events-none p-4 text-[10px] md:text-sm font-mono text-gray-300">
+        <div className="absolute inset-0 pointer-events-none p-4 text-[10px] md:text-sm font-mono text-white">
           {/* Top Left: Patient Info */}
           {caseData?.patient && (
-            <div className="absolute top-2 left-2 flex flex-col gap-1 bg-black/60 p-2.5 rounded-lg border border-white/5 shadow-2xl">
-              <span className="text-blue-400 font-bold uppercase tracking-widest text-base mb-0.5">
+            <div className="absolute top-2 left-2 flex flex-col gap-1">
+              <span className="font-bold uppercase tracking-widest text-base mb-0.5">
                 {caseData.patient.name}
               </span>
-              <div className="flex flex-col gap-0.5 opacity-90">
+              <div className="flex flex-col gap-0.5">
                 <span>ID: {caseData.patient.patient_id}</span>
                 <span>
                   DOB:{" "}
@@ -1990,13 +2009,13 @@ export function DicomViewer({
 
           {/* Top Right: Study Info */}
           {caseData && (
-            <div className="absolute top-2 right-2 text-right flex flex-col gap-1 bg-black/60 p-2.5 rounded-lg border border-white/5 shadow-2xl">
-              <span className="text-blue-400 font-bold uppercase tracking-widest text-base mb-0.5">
+            <div className="absolute top-2 right-2 text-right flex flex-col gap-1">
+              <span className="font-bold uppercase tracking-widest text-base mb-0.5">
                 {caseData.center_name ||
                   caseData.hospital_name ||
                   caseData.hospital_id}
               </span>
-              <div className="flex flex-col gap-0.5 opacity-90">
+              <div className="flex flex-col gap-0.5">
                 <div>
                   <span className="font-semibold">
                     {formatDicomDate(caseData.case_date)}
@@ -2005,7 +2024,7 @@ export function DicomViewer({
                     {formatDicomTime(caseData.case_time)}
                   </span>
                 </div>
-                <span className="text-gray-400">
+                <span>
                   Acc: {caseData.accession_number || "N/A"}
                 </span>
               </div>
@@ -2013,44 +2032,23 @@ export function DicomViewer({
           )}
 
           {/* Bottom Left: Image Info */}
-          <div className="absolute bottom-4 left-4 flex flex-col bg-black/40 rounded backdrop-blur-sm border border-white/5 overflow-hidden">
-            <div className="p-2 flex flex-col gap-0.5">
-              <span className="text-yellow-500 font-bold">
-                {sortedInstances[currentImageIndex]?.modality || "DICOM"}
+          <div className="absolute bottom-4 left-4 flex flex-col gap-0.5">
+            <span className="font-bold">
+              {sortedInstances[currentImageIndex]?.modality || "DICOM"}
+            </span>
+            <span>
+              Img: {currentImageIndex + 1} / {sortedInstances.length}
+            </span>
+            {sortedInstances[currentImageIndex]?.slice_thickness && (
+              <span>
+                Thick: {sortedInstances[currentImageIndex].slice_thickness} mm
               </span>
-              <span className="opacity-80 flex items-center gap-2">
-                Img: {currentImageIndex + 1} / {sortedInstances.length}
-                {prefetchProgress && (
-                  <span className="text-[10px] text-blue-400 font-medium animate-pulse ml-1">
-                    (
-                    {Math.round(
-                      (prefetchProgress.fetched / prefetchProgress.total) * 100,
-                    )}
-                    % Cached)
-                  </span>
-                )}
-              </span>
-              {sortedInstances[currentImageIndex]?.slice_thickness && (
-                <span className="opacity-80">
-                  Thick: {sortedInstances[currentImageIndex].slice_thickness} mm
-                </span>
-              )}
-            </div>
-            {prefetchProgress && (
-              <div className="w-full h-[2px] bg-white/5">
-                <div
-                  className="h-full bg-blue-500 transition-all duration-300"
-                  style={{
-                    width: `${(prefetchProgress.fetched / prefetchProgress.total) * 100}%`,
-                  }}
-                />
-              </div>
             )}
           </div>
 
           {/* Bottom Right: Window/Level Info */}
-          <div className="absolute bottom-16 right-4 text-right flex flex-col gap-0.5 bg-black/40 p-2 rounded">
-            <span className="opacity-80">
+          <div className="absolute bottom-4 right-4 text-right flex flex-col gap-0.5">
+            <span>
               W:{" "}
               {viewTransform.windowWidth?.toFixed(0) ??
                 sortedInstances[currentImageIndex]?.window_width ??
@@ -2060,7 +2058,7 @@ export function DicomViewer({
                 sortedInstances[currentImageIndex]?.window_center ??
                 "N/A"}
             </span>
-            <span className="opacity-80">
+            <span>
               Zoom: {(viewTransform.scale * 100).toFixed(0)}%
             </span>
           </div>

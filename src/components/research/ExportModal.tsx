@@ -9,15 +9,36 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 interface ExportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  exportType?: 'search' | 'bookmarks';
+  exportType?: 'search' | 'bookmarks' | 'audit';
   bookmarkedCases?: any[];
+
+  auditParams?: {
+    startDateIso: string;
+    endDateIso: string;
+    modalities: string[];
+  };
+
+  onDownload?: (payload: {
+    exportType: 'search' | 'bookmarks' | 'audit';
+    fileFormat: string;
+    selectedColumns: Record<string, boolean>;
+    includeBookmarkNotes: boolean;
+    bookmarkedCases?: any[];
+    auditParams?: {
+      startDateIso: string;
+      endDateIso: string;
+      modalities: string[];
+    };
+  }) => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ 
   open, 
   onOpenChange, 
   exportType = 'search',
-  bookmarkedCases = []
+  bookmarkedCases = [],
+  auditParams,
+  onDownload,
 }) => {
   const [fileFormat, setFileFormat] = useState('excel');
   const [selectedColumns, setSelectedColumns] = useState({
@@ -51,14 +72,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setSelectedColumns(prev => ({ ...prev, [column]: !(prev as any)[column] }));
   };
 
-  const exportCount = exportType === 'bookmarks' ? bookmarkedCases.length : 'all filtered';
+  const exportTitle =
+    exportType === 'bookmarks'
+      ? 'Bookmarked Cases'
+      : exportType === 'audit'
+        ? 'Audit'
+        : 'Patient Results';
+
+  const exportCount =
+    exportType === 'bookmarks'
+      ? bookmarkedCases.length
+      : exportType === 'audit'
+        ? 'audit filtered'
+        : 'all filtered';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-150 max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            Export - {exportType === 'bookmarks' ? 'Bookmarked Cases' : 'Patient Results'}
+            Export - {exportTitle}
           </DialogTitle>
         </DialogHeader>
 
@@ -330,14 +363,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               Cancel
             </Button>
             <Button onClick={() => {
-              // TODO: Implement actual export logic
-              console.log('Exporting...', { 
-                fileFormat, 
-                selectedColumns, 
+              const payload = {
                 exportType,
+                fileFormat,
+                selectedColumns: selectedColumns as unknown as Record<string, boolean>,
                 includeBookmarkNotes: exportType === 'bookmarks' ? includeBookmarkNotes : false,
-                data: exportType === 'bookmarks' ? bookmarkedCases : []
-              });
+                bookmarkedCases: exportType === 'bookmarks' ? bookmarkedCases : [],
+                auditParams: exportType === 'audit' ? auditParams : undefined,
+              };
+
+              if (onDownload) {
+                onDownload(payload);
+              } else {
+                // Backwards-compatible fallback until real export is wired everywhere.
+                console.log('Exporting...', payload);
+              }
+
               onOpenChange(false);
             }}>
               Download

@@ -51,12 +51,14 @@ interface SeriesThumbnailProps {
   series: Series;
   isSelected: boolean;
   onClick: () => void;
+  loadProgress?: { fetched: number; total: number } | null;
 }
 
 const SeriesThumbnail = ({
   series,
   isSelected,
   onClick,
+  loadProgress,
 }: SeriesThumbnailProps) => (
   <div
     onClick={onClick}
@@ -94,6 +96,18 @@ const SeriesThumbnail = ({
       </p>
       <p className="text-[10px] text-gray-400 truncate">{series.description}</p>
     </div>
+
+    {/* Download Progress Bar */}
+    {loadProgress && loadProgress.total > 0 && (
+      <div className="w-full h-1 bg-black">
+        <div
+          className="h-full bg-white transition-all duration-300"
+          style={{
+            width: `${(loadProgress.fetched / loadProgress.total) * 100}%`,
+          }}
+        />
+      </div>
+    )}
   </div>
 );
 
@@ -208,6 +222,7 @@ const ViewerSidebar = () => {
     removeTemporaryMPRSeries,
     selectedTemporarySeriesId,
     setSelectedTemporarySeriesId,
+    seriesLoadProgress,
   } = useViewerContext();
 
   // Handle selecting a regular series (deselect any temp series)
@@ -264,6 +279,11 @@ const ViewerSidebar = () => {
                     !selectedTemporarySeriesId
                   }
                   onClick={() => handleSelectSeries(series)}
+                  loadProgress={
+                    seriesLoadProgress?.seriesId === series._id
+                      ? { fetched: seriesLoadProgress.fetched, total: seriesLoadProgress.total }
+                      : null
+                  }
                 />
               ))}
           </div>

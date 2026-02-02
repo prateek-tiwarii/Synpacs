@@ -20,8 +20,13 @@ interface SearchFilters {
 const Research = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [exportType, setExportType] = useState<'search' | 'bookmarks'>('search');
+  const [exportType, setExportType] = useState<'search' | 'bookmarks' | 'audit'>('search');
   const [selectedBookmarkedCases, setSelectedBookmarkedCases] = useState<any[]>([]);
+  const [auditExportParams, setAuditExportParams] = useState<{
+    startDateIso: string;
+    endDateIso: string;
+    modalities: string[];
+  } | null>(null);
   const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({
     minAge: '',
@@ -78,15 +83,13 @@ const Research = () => {
       return;
     }
 
-    // TODO: Implement audit export logic
-    console.log('Audit Export:', {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+    setAuditExportParams({
+      startDateIso: startDate.toISOString(),
+      endDateIso: endDate.toISOString(),
       modalities: selectedModalities,
     });
-
-    toast.success('Audit export initiated');
-    // You can open a modal or trigger download here
+    setExportType('audit');
+    setIsExportModalOpen(true);
   };
 
   return (
@@ -115,6 +118,13 @@ const Research = () => {
           onOpenChange={setIsExportModalOpen}
           exportType={exportType}
           bookmarkedCases={exportType === 'bookmarks' ? selectedBookmarkedCases : undefined}
+          auditParams={exportType === 'audit' && auditExportParams ? auditExportParams : undefined}
+          onDownload={(payload) => {
+            // NOTE: Backend export endpoint is not wired yet in apiService.
+            // This keeps UI consistent while we await the export API contract.
+            console.log('Export requested:', payload);
+            toast.success('Export download initiated');
+          }}
         />
       </div>
     </div>
