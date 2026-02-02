@@ -1,59 +1,28 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Download, FileOutput, History } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Download, FileOutput, X, ImageIcon, ClipboardCheck, FolderOpen, MessageSquare, Bookmark, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { ReportVersionHistory } from './ReportVersionHistory';
 import { apiService } from '@/lib/api';
 import { DataTable, CellWithCopy } from '@/components/common/DataTable';
-import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
+import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Link } from 'react-router-dom';
-
-interface PatientResult {
-  _id: string;
-  pac_patinet_id: string;
-  name: string;
-  age: string;
-  sex: string;
-  modality: string;
-  description: string;
-  bodyPart: string;
-  case_date: string;
-  case_time: string;
-  accession_number: string;
-  hospital_name: string;
-  referring_physician: string | null;
-  instance_count: number;
-  updatedAt: string;
-  attached_report: {
-    _id: string;
-    is_draft: boolean;
-    created_at: string;
-  } | null;
-  patient: {
-    patient_id: string;
-    name: string;
-    age: string;
-    sex: string;
-  };
-}
+import type { Patient } from '@/components/patient/PacDetailsModal';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SearchFilters {
-  keywords: string;
   minAge: string;
   maxAge: string;
-  center: string;
   startDate: string;
   endDate: string;
   modality: string;
-  sex: { male: boolean; female: boolean };
+  sex: 'all' | 'M' | 'F';
+  centerId: string;
 }
 
 interface SearchResultsProps {
   filters: SearchFilters;
   onExport: () => void;
+  onClose?: () => void;
 }
 
 const STORAGE_KEY_RESEARCH = 'research_table_columns';
@@ -73,16 +42,15 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
   image_count: true,
   description: true,
   modality: true,
+  case_type: true,
   reported: true,
 };
 
-export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport }) => {
-  const [patients, setPatients] = useState<PatientResult[]>([]);
+export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport, onClose }) => {
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -107,12 +75,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     }
   }, [columnVisibility]);
 
-  // Fetch patients on mount and when filters change
-  useEffect(() => {
-    fetchPatients();
-  }, [filters]);
-
-  const fetchPatients = async () => {
+  const fetchPatients = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -124,34 +87,62 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
       if (filters.startDate) apiFilters.start_date = filters.startDate;
       if (filters.endDate) apiFilters.end_date = filters.endDate;
 
-      // Keywords (search in description)
-      if (filters.keywords) apiFilters.keywords = filters.keywords;
-
       // Age range
       if (filters.minAge) apiFilters.min_age = filters.minAge;
       if (filters.maxAge) apiFilters.max_age = filters.maxAge;
 
       // Gender
-      if (filters.sex.male && !filters.sex.female) {
-        apiFilters.gender = 'M';
-      } else if (filters.sex.female && !filters.sex.male) {
-        apiFilters.gender = 'F';
-      }
+      if (filters.sex === 'M') apiFilters.gender = 'M';
+      if (filters.sex === 'F') apiFilters.gender = 'F';
 
       // Modality
-      if (filters.modality && filters.modality !== 'all') {
+      if (filters.modality) {
         apiFilters.modality = filters.modality.toUpperCase();
-      }
-
-      // Center/Hospital
-      if (filters.center && filters.center !== 'all') {
-        apiFilters.hospital = filters.center;
       }
 
       const response = await apiService.getAllCasesWithFilters(1, 50, apiFilters) as any;
 
       if (response.success && response.data?.cases) {
-        const mappedPatients: PatientResult[] = response.data.cases.map((caseItem: any) => {
+        // Reported-only rule: include only cases with non-draft report
+        let filteredData = [...response.data.cases].filter((caseItem: any) => {
+          const report = caseItem.attached_report;
+          return Boolean(report) && !Boolean(report?.is_draft);
+        });
+
+        // Center filter (client-side) – aligns with selectable centers
+        if (filters.centerId && filters.centerId !== 'all') {
+          filteredData = filteredData.filter((caseItem: any) => caseItem.hospital_id === filters.centerId);
+        }
+
+        const calculateAge = (dob: string): string => {
+          if (!dob || dob.length !== 8) return '';
+          const year = parseInt(dob.substring(0, 4));
+          const month = parseInt(dob.substring(4, 6)) - 1;
+          const day = parseInt(dob.substring(6, 8));
+          const birthDate = new Date(year, month, day);
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          return age.toString();
+        };
+
+        // Age range filter (client-side, based on calculated age)
+        const minAge = filters.minAge ? Number(filters.minAge) : undefined;
+        const maxAge = filters.maxAge ? Number(filters.maxAge) : undefined;
+        if (minAge !== undefined || maxAge !== undefined) {
+          filteredData = filteredData.filter((caseItem: any) => {
+            const age = Number(calculateAge(caseItem.patient?.dob || ''));
+            if (Number.isNaN(age)) return false;
+            if (minAge !== undefined && age < minAge) return false;
+            if (maxAge !== undefined && age > maxAge) return false;
+            return true;
+          });
+        }
+
+        const mappedPatients: Patient[] = filteredData.map((caseItem: any) => {
           const calculateAge = (dob: string): string => {
             if (!dob || dob.length !== 8) return '';
             const year = parseInt(dob.substring(0, 4));
@@ -169,28 +160,31 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
 
           return {
             _id: caseItem._id,
-            pac_patinet_id: caseItem.patient?.patient_id || 'N/A',
             name: caseItem.patient?.name || 'N/A',
+            pac_patinet_id: caseItem.patient?.patient_id || '',
+            dob: caseItem.patient?.dob || '',
+            hospital_id: caseItem.hospital_id || '',
             age: calculateAge(caseItem.patient?.dob || ''),
             sex: caseItem.patient?.sex || '',
-            modality: caseItem.modality || '',
-            description: caseItem.description || '',
-            bodyPart: caseItem.body_part || '',
+            case_description: caseItem.description || '',
+            case: { case_uid: caseItem.case_uid || '', body_part: caseItem.body_part || '' },
+            treatment_type: caseItem.case_type || '',
             case_date: caseItem.case_date || '',
             case_time: caseItem.case_time || '',
             accession_number: caseItem.accession_number || '',
+            status: caseItem.status || '',
+            priority: caseItem.priority || '',
+            assigned_to: caseItem.assigned_to || null,
             hospital_name: caseItem.hospital_name || '',
-            referring_physician: caseItem.referring_physician,
+            referring_doctor: caseItem.referring_physician || '',
+            modality: caseItem.modality || '',
+            series_count: caseItem.series_count || 0,
             instance_count: caseItem.instance_count || 0,
+            pac_images_count: caseItem.instance_count || 0,
             updatedAt: caseItem.updatedAt || '',
-            attached_report: caseItem.attached_report,
-            patient: {
-              patient_id: caseItem.patient?.patient_id || '',
-              name: caseItem.patient?.name || '',
-              age: calculateAge(caseItem.patient?.dob || ''),
-              sex: caseItem.patient?.sex || '',
-            },
-          };
+            attached_report: caseItem.attached_report || null,
+            patient: caseItem.patient,
+          } as Patient;
         });
         setPatients(mappedPatients);
       } else {
@@ -202,87 +196,144 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const handleViewHistory = (reportId: string) => {
-    setSelectedReportId(reportId);
-    setVersionHistoryOpen(true);
-  };
+  // Fetch patients on mount and when filters change
+  useEffect(() => {
+    fetchPatients();
+  }, [fetchPatients]);
 
-  const handleCloseVersionHistory = () => {
-    setVersionHistoryOpen(false);
-    setSelectedReportId(null);
-  };
-
-  const columnHelper = createColumnHelper<PatientResult>();
+  const columnHelper = createColumnHelper<Patient>();
 
   const columns = useMemo(() => [
-    {
-      id: 'select',
-      header: ({ table }: any) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() ? 'indeterminate' : false)}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
-        />
-      ),
-      cell: ({ row }: any) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
-          onClick={(e) => e.stopPropagation()}
-        />
-      ),
+    columnHelper.display({
+      id: 'actions',
+      header: 'Action',
       enableHiding: false,
       enableSorting: false,
-    },
-    {
-      id: 'actions',
-      header: 'Actions',
-      enableHiding: false,
-      cell: (props: any) => {
-        const reportId = props.row.original.attached_report?._id;
-        return (
-          <div className="flex gap-2">
-            {reportId ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 h-7 text-xs"
-                onClick={() => handleViewHistory(reportId)}
-              >
-                <History size={14} />
-                History
-              </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground">No report</span>
-            )}
+      cell: (props: any) => (
+        <TooltipProvider>
+          <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                  onClick={() => {
+                    window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                  }}
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>View Images</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                  onClick={() => {
+                    window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                  }}
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>View Report</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => { /* document */ }}>
+                  <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Attached Documents</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="p-0.5 hover:bg-blue-50 rounded cursor-pointer" onClick={() => { /* messages */ }}>
+                  <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Messages</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => { /* download */ }}>
+                  <Download className="w-3.5 h-3.5 text-yellow-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Download</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="p-0.5 hover:bg-green-50 rounded cursor-pointer" onClick={() => { /* bookmark */ }}>
+                  <Bookmark className="w-3.5 h-3.5 text-green-500" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Save Bookmark</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
-        );
-      },
-    },
+        </TooltipProvider>
+      ),
+    }),
     columnHelper.accessor('name', {
-      header: 'Patient Name',
-      cell: (info) => {
+      header: () => (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsColumnModalOpen(true);
+            }}
+            className="p-0.5 hover:bg-gray-200 rounded"
+            title="Column Settings"
+          >
+            <Settings className="w-3 h-3 text-gray-600" />
+          </button>
+          <span>Patient Name</span>
+        </div>
+      ),
+      enableSorting: true,
+      cell: (info: any) => {
         const name = info.getValue();
         const caseId = info.row.original._id;
         return (
-          <button
-            onClick={() => {
-              window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-            }}
-            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
-          >
-            {name}
-          </button>
+          <div className="flex items-center gap-2">
+            <CellWithCopy content={name || '-'} cellId={`${info.row.id}-name`} />
+            <button
+              onClick={() => {
+                window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+              }}
+              className="text-blue-600 hover:text-blue-800 text-[10px] font-medium shrink-0"
+              title="Open Viewer"
+            >
+              [View]
+            </button>
+          </div>
         );
       },
     }),
     columnHelper.display({
       id: 'case_id',
       header: 'Case ID',
-      cell: (props) => {
+      enableSorting: false,
+      cell: (props: any) => {
         const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
         return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
       },
@@ -290,7 +341,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     columnHelper.display({
       id: 'age',
       header: 'Age',
-      cell: (props) => {
+      enableSorting: false,
+      cell: (props: any) => {
         const age = props.row.original.age || props.row.original.patient?.age || '-';
         return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
       },
@@ -298,7 +350,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     columnHelper.display({
       id: 'sex',
       header: 'Sex',
-      cell: (props) => {
+      enableSorting: false,
+      cell: (props: any) => {
         const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
         return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
       },
@@ -306,7 +359,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     columnHelper.display({
       id: 'study_date_time',
       header: 'Study Date & Time',
-      cell: (props) => {
+      enableSorting: true,
+      cell: (props: any) => {
         const dateStr = props.row.original.case_date || '';
         let formattedDate = '-';
         if (dateStr && dateStr.length === 8) {
@@ -331,7 +385,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     columnHelper.display({
       id: 'history_date_time',
       header: 'History Date & Time',
-      cell: (props) => {
+      enableSorting: true,
+      cell: (props: any) => {
         const updatedAt = props.row.original.updatedAt;
         if (!updatedAt) return <span className="text-gray-400">-</span>;
 
@@ -350,7 +405,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     columnHelper.display({
       id: 'reporting_date_time',
       header: 'Reporting Date & Time',
-      cell: (props) => {
+      enableSorting: true,
+      cell: (props: any) => {
         const attachedReport = props.row.original.attached_report;
         if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
@@ -368,49 +424,60 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     }),
     columnHelper.accessor('accession_number', {
       header: 'Accession Number',
-      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
+      enableSorting: false,
+      cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
     }),
     columnHelper.display({
       id: 'center',
       header: 'Center',
-      cell: (props) => {
-        const centerName = props.row.original.hospital_name;
-        if (!centerName) return <span className="text-gray-400">-</span>;
-        return (
-          <Badge variant="info" className="font-normal text-[10px] px-2 py-0.5 whitespace-nowrap">
-            {centerName}
-          </Badge>
-        );
+      enableSorting: false,
+      cell: (props: any) => {
+        const centerName = props.row.original.hospital_name || '-';
+        return <CellWithCopy content={centerName} cellId={`${props.row.id}-center`} />;
       },
     }),
     columnHelper.display({
       id: 'referring_doctor',
       header: 'Referring Doctor',
-      cell: (props) => {
-        const referringPhysician = props.row.original.referring_physician || '-';
-        return <CellWithCopy content={referringPhysician} cellId={`${props.row.id}-ref-doc`} />;
+      enableSorting: false,
+      cell: (props: any) => {
+        const referringDoctor = (props.row.original as any).referring_doctor || '-';
+        return <CellWithCopy content={referringDoctor} cellId={`${props.row.id}-ref-doc`} />;
       },
     }),
     columnHelper.display({
       id: 'image_count',
       header: 'Image Count',
-      cell: (props) => {
+      enableSorting: false,
+      cell: (props: any) => {
         const instanceCount = props.row.original.instance_count || 0;
         return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
       },
     }),
-    columnHelper.accessor('description', {
+    columnHelper.accessor('case_description', {
       header: 'Study Description',
-      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
+      enableSorting: false,
+      cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
     }),
     columnHelper.accessor('modality', {
       header: 'Modality',
-      cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
+      enableSorting: false,
+      cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
+    }),
+    columnHelper.display({
+      id: 'case_type',
+      header: 'Case Type',
+      enableSorting: false,
+      cell: (props: any) => {
+        const caseType = (props.row.original as any).treatment_type || '-';
+        return <CellWithCopy content={caseType} cellId={`${props.row.id}-case-type`} />;
+      },
     }),
     columnHelper.display({
       id: 'reported',
       header: 'Reported',
-      cell: (props) => {
+      enableSorting: false,
+      cell: (props: any) => {
         const attachedReport = props.row.original.attached_report;
         if (attachedReport) {
           return (
@@ -428,69 +495,43 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport 
     }),
   ], []);
 
-  if (loading) {
-    return (
-      <Card className="border-black/20 shadow-sm">
-        <CardContent className="py-8 text-center text-muted-foreground">
-          Loading patients...
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="border-black/20 shadow-sm">
-        <CardContent className="py-8 text-center text-red-500">
-          Error: {error}
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <>
-      <Card className="border-black/20 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle className="text-xl font-bold">Patient Results</CardTitle>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{patients.length} results</span>
-            <Button variant="outline" className="gap-2">
-              <Download size={16} />
-              Download Reports
+    <div className="border border-slate-200 bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-slate-700">Patient Results</span>
+          <span className="text-xs text-slate-500">{patients.length} results</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs gap-1.5">
+              <X className="w-3.5 h-3.5" />
+              Close
             </Button>
-            <Button onClick={onExport} className="gap-2">
-              <FileOutput size={16} />
-              Export
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            data={patients}
-            columns={columns}
-            isLoading={loading}
-            error={error}
-            emptyMessage="No patients found"
-            loadingMessage="Loading patients..."
-            columnVisibility={columnVisibility}
-            onColumnVisibilityChange={setColumnVisibility}
-            showColumnToggle={true}
-            enableRowSelection={true}
-            rowSelection={rowSelection}
-            onRowSelectionChange={setRowSelection}
-            showBorder={true}
-          />
-        </CardContent>
-      </Card>
+          )}
+          <Button onClick={onExport} size="sm" className="h-8 text-xs gap-1.5">
+            <FileOutput className="w-3.5 h-3.5" />
+            Export
+          </Button>
+        </div>
+      </div>
 
-      {selectedReportId && (
-        <ReportVersionHistory
-          reportId={selectedReportId}
-          open={versionHistoryOpen}
-          onClose={handleCloseVersionHistory}
+      <div className="p-3">
+        <DataTable
+          data={patients}
+          columns={columns}
+          isLoading={loading}
+          error={error}
+          emptyMessage="No cases found"
+          loadingMessage="Loading cases..."
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={setColumnVisibility}
+          showColumnToggle={true}
+          showBorder={true}
+          isColumnModalOpen={isColumnModalOpen}
+          onColumnModalOpenChange={setIsColumnModalOpen}
         />
-      )}
-    </>
+      </div>
+    </div>
   );
 };

@@ -20,19 +20,19 @@ export const CellWithCopy = ({ content, cellId }: CellWithCopyProps) => {
     };
 
     return (
-        <div className="group relative">
-            <div className="pr-6">{content}</div>
+        <div className="group relative flex items-center" title={content}>
+            <div className="pr-6 truncate max-w-[120px]">{content}</div>
             <button
                 onClick={(e) => {
                     e.stopPropagation();
                     handleCopy(content, cellId);
                 }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded"
+                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
             >
                 {copiedCell === cellId ? (
-                    <Check className="w-3.5 h-3.5 text-green-600" />
+                    <Check className="w-3 h-3 text-green-600" />
                 ) : (
-                    <Copy className="w-3.5 h-3.5 text-gray-600" />
+                    <Copy className="w-3 h-3 text-gray-600" />
                 )}
             </button>
         </div>

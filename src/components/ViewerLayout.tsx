@@ -224,6 +224,9 @@ interface ViewerContextType {
   // Overlays
   showOverlays: boolean;
   setShowOverlays: (show: boolean) => void;
+  // Series load progress
+  seriesLoadProgress: { seriesId: string; fetched: number; total: number } | null;
+  setSeriesLoadProgress: (progress: { seriesId: string; fetched: number; total: number } | null) => void;
   // Shortcuts
   shortcuts: Shortcut[];
   updateShortcut: (id: string, newKey: string) => void;
@@ -293,6 +296,11 @@ export function ViewerLayout() {
   } | null>(null);
 
   const [showOverlays, setShowOverlays] = useState(true);
+  const [seriesLoadProgress, setSeriesLoadProgress] = useState<{
+    seriesId: string;
+    fetched: number;
+    total: number;
+  } | null>(null);
 
   const DEFAULT_SHORTCUTS: Shortcut[] = [
     { id: "Window1", label: "Original Window", key: "1", category: "Display Windows" },
@@ -628,6 +636,8 @@ export function ViewerLayout() {
     clearPendingMPRGeneration,
     showOverlays,
     setShowOverlays,
+    seriesLoadProgress,
+    setSeriesLoadProgress,
     shortcuts,
     updateShortcut,
   };

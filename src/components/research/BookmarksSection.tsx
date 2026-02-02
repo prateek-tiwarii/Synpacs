@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Bookmark as BookmarkIcon, ChevronDown, ChevronUp, Download, MessageSquare, Eye, X } from "lucide-react";
+import { Bookmark as BookmarkIcon, ChevronDown, ChevronUp, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Settings, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -9,53 +9,19 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import DownloadModal from "@/components/common/DownloadModal";
 import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
+import type { Patient } from "@/components/patient/PacDetailsModal";
 
-interface Note {
-    _id: string;
-    note: string;
-    flag_type: 'urgent' | 'routine' | 'info' | 'warning' | 'error';
-    created_by?: {
-        _id: string;
-        full_name: string;
-        email: string;
-    };
-    createdAt: string;
-    updatedAt: string;
-}
-
-interface BookmarkedCase {
-    _id: string;
-    name: string;
-    pac_patient_id: string;
-    sex: string;
-    age: string;
-    description: string;
-    modality: string;
-    accession_number: string;
-    case_date: string;
-    case_time: string;
-    case_type: string;
-    updatedAt: string;
-    series_count: number;
-    instance_count: number;
-    hospital_name: string;
-    referring_physician: string;
-    notes: Note[];
-    attached_report?: {
-        created_at: string;
-        is_draft: boolean;
-    };
-}
+type BookmarkedCase = Patient;
 
 const COLUMN_VISIBILITY_KEY = 'research_bookmarks_columns';
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     select: true,
     actions: true,
+    bookmark_notes: true,
     name: true,
     case_id: true,
     age: true,
@@ -71,9 +37,6 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     modality: true,
     case_type: true,
     reported: true,
-    bookmark_notes: true,
-    series_count: false,
-    instance_count: false,
 };
 
 interface BookmarksSectionProps {
@@ -86,6 +49,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
     const [error, setError] = useState<string | null>(null);
     const [isCollapsed, setIsCollapsed] = useState(true);
     const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
 
@@ -139,26 +103,36 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                         return age.toString();
                     };
 
+                    const dob = caseItem.patient?.dob || caseItem.patient?.birth_date || caseItem.patient?.date_of_birth || '';
+
                     return {
                         _id: caseItem._id,
                         name: caseItem.patient?.name || '-',
-                        pac_patient_id: caseItem.pac_patinet_id || caseItem.patient?.patient_id || '-',
+                        pac_patinet_id: caseItem.pac_patinet_id || caseItem.patient?.patient_id || '',
+                        dob,
+                        hospital_id: caseItem.hospital_id || '',
+                        hospital_name: caseItem.hospital_name || '',
+                        age: calculateAge(dob),
                         sex: caseItem.patient?.sex || '-',
-                        age: calculateAge(caseItem.patient?.birth_date || ''),
-                        description: caseItem.description || '-',
-                        modality: caseItem.modality || '-',
-                        accession_number: caseItem.accession_number || '-',
+                        case_description: caseItem.description || '-',
+                        case: { case_uid: caseItem.case_uid || '', body_part: caseItem.body_part || '' },
+                        treatment_type: caseItem.case_type || '-',
                         case_date: caseItem.case_date || '',
                         case_time: caseItem.case_time || '',
-                        case_type: caseItem.case_type || '-',
-                        updatedAt: caseItem.updatedAt || '',
+                        referring_doctor: caseItem.referring_physician || '-',
+                        accession_number: caseItem.accession_number || '-',
+                        status: caseItem.status || '',
+                        priority: caseItem.priority || '',
+                        assigned_to: caseItem.assigned_to || null,
+                        modality: caseItem.modality || '-',
                         series_count: caseItem.series_count || 0,
                         instance_count: caseItem.instance_count || 0,
-                        hospital_name: caseItem.hospital_name || '-',
-                        referring_physician: caseItem.referring_physician || '-',
+                        pac_images_count: caseItem.instance_count || 0,
+                        updatedAt: caseItem.updatedAt || '',
+                        attached_report: caseItem.attached_report || null,
                         notes: caseItem.notes || [],
-                        attached_report: caseItem.attached_report,
-                    };
+                        patient: caseItem.patient,
+                    } as Patient;
                 });
                 setBookmarks(mappedBookmarks);
             }
@@ -219,47 +193,81 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                 />
             ),
             enableHiding: false,
+            enableSorting: false,
         },
         columnHelper.display({
             id: 'actions',
             header: 'Actions',
             enableHiding: false,
+            enableSorting: false,
             cell: (props: any) => (
                 <TooltipProvider>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
                                         window.open(`${window.location.origin}/case/${props.row.original._id}/viewer`, `viewer_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
                                 >
-                                    <Eye className="w-4 h-4 text-blue-500" />
+                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
-                            <TooltipContent>View Case</TooltipContent>
+                            <TooltipContent>View Images</TooltipContent>
                         </Tooltip>
 
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-green-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                    }}
+                                >
+                                    <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>View Report</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => { /* attached documents */ }}>
+                                    <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Attached Documents</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button className="p-0.5 hover:bg-blue-50 rounded cursor-pointer" onClick={() => { /* messages */ }}>
+                                    <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Messages</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
                                     onClick={() => handleDownloadClick(props.row.original._id, props.row.original.name)}
                                 >
-                                    <Download className="w-4 h-4 text-green-600" />
+                                    <Download className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
                             </TooltipTrigger>
-                            <TooltipContent>Download Images</TooltipContent>
+                            <TooltipContent>Download</TooltipContent>
                         </Tooltip>
 
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-red-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-red-50 rounded cursor-pointer"
                                     onClick={() => handleRemoveBookmark(props.row.original._id)}
                                 >
-                                    <X className="w-4 h-4 text-red-500" />
+                                    <X className="w-3.5 h-3.5 text-red-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>Remove Bookmark</TooltipContent>
@@ -268,9 +276,70 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                 </TooltipProvider>
             ),
         }),
+        columnHelper.display({
+            id: 'bookmark_notes',
+            header: 'Note',
+            enableSorting: false,
+            cell: (props: any) => {
+                const notes = (props.row.original as any).notes;
+                if (!notes || notes.length === 0) {
+                    return <span className="text-gray-400 text-xs">-</span>;
+                }
+
+                return (
+                    <HoverCard>
+                        <HoverCardTrigger asChild>
+                            <button className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs">
+                                <MessageSquare className="w-3 h-3" />
+                                {notes.length}
+                            </button>
+                        </HoverCardTrigger>
+                        <HoverCardContent className="w-80">
+                            <div className="space-y-2">
+                                {notes.map((note: any) => (
+                                    <div key={note._id} className="border-b last:border-0 pb-2 last:pb-0">
+                                        <p className="text-xs text-gray-700">{note.note}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
+                                                note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                                                note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-gray-100 text-gray-700'
+                                            }`}>
+                                                {note.flag_type}
+                                            </span>
+                                            {note.created_by && (
+                                                <span className="text-[10px] text-gray-500">
+                                                    by {note.created_by.full_name}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </HoverCardContent>
+                    </HoverCard>
+                );
+            },
+        }),
         columnHelper.accessor('name', {
             id: 'name',
-            header: 'Patient Name',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                    <span>Patient Name</span>
+                </div>
+            ),
+            enableSorting: true,
             cell: (info) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
@@ -289,14 +358,16 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         columnHelper.display({
             id: 'case_id',
             header: 'Case ID',
+            enableSorting: false,
             cell: (props) => {
-                const patientId = props.row.original.pac_patient_id || '-';
+                const patientId = (props.row.original as any).pac_patinet_id || (props.row.original as any).patient?.patient_id || '-';
                 return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
             },
         }),
         columnHelper.display({
             id: 'age',
             header: 'Age',
+            enableSorting: false,
             cell: (props) => {
                 const age = props.row.original.age || '-';
                 return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
@@ -305,6 +376,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         columnHelper.display({
             id: 'sex',
             header: 'Sex',
+            enableSorting: false,
             cell: (props) => {
                 const sex = props.row.original.sex || '-';
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
@@ -313,6 +385,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         columnHelper.display({
             id: 'study_date_time',
             header: 'Study Date & Time',
+            enableSorting: true,
             cell: (props) => {
                 const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
@@ -338,6 +411,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         columnHelper.display({
             id: 'history_date_time',
             header: 'History Date & Time',
+            enableSorting: true,
             cell: (props) => {
                 const updatedAt = props.row.original.updatedAt;
                 if (!updatedAt) return <span className="text-gray-400">-</span>;
@@ -357,8 +431,9 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         columnHelper.display({
             id: 'reporting_date_time',
             header: 'Reporting Date & Time',
+            enableSorting: true,
             cell: (props) => {
-                const attachedReport = props.row.original.attached_report;
+                const attachedReport = (props.row.original as any).attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
                 const date = new Date(attachedReport.created_at);
@@ -375,54 +450,61 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         }),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
         }),
         columnHelper.display({
             id: 'center',
             header: 'Center',
+            enableSorting: false,
             cell: (props) => {
-                const centerName = props.row.original.hospital_name;
-                if (!centerName || centerName === '-') return <span className="text-gray-400">-</span>;
-                return (
-                    <Badge variant="info" className="font-normal text-[10px] px-2 py-0.5 whitespace-nowrap">
-                        {centerName}
-                    </Badge>
-                );
+                const centerName = (props.row.original as any).hospital_name || '-';
+                return <CellWithCopy content={centerName} cellId={`${props.row.id}-center`} />;
             },
         }),
         columnHelper.display({
             id: 'referring_doctor',
             header: 'Referring Doctor',
+            enableSorting: false,
             cell: (props) => {
-                const referringPhysician = props.row.original.referring_physician || '-';
-                return <CellWithCopy content={referringPhysician} cellId={`${props.row.id}-ref-doc`} />;
+                const referringDoctor = (props.row.original as any).referring_doctor || '-';
+                return <CellWithCopy content={referringDoctor} cellId={`${props.row.id}-ref-doc`} />;
             },
         }),
         columnHelper.display({
             id: 'image_count',
             header: 'Image Count',
+            enableSorting: false,
             cell: (props) => {
                 const instanceCount = props.row.original.instance_count || 0;
                 return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
             },
         }),
-        columnHelper.accessor('description', {
-            header: 'Description',
-            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-description`} />,
+        columnHelper.accessor('case_description', {
+            header: 'Study Description',
+            enableSorting: false,
+            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
         columnHelper.accessor('modality', {
             header: 'Modality',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
-        columnHelper.accessor('case_type', {
+        columnHelper.display({
+            id: 'case_type',
             header: 'Case Type',
-            cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
+            enableSorting: false,
+            cell: (props: any) => {
+                const caseType = (props.row.original as any).treatment_type || '-';
+                return <CellWithCopy content={caseType} cellId={`${props.row.id}-case-type`} />;
+            },
         }),
         columnHelper.display({
             id: 'reported',
             header: 'Reported',
+            enableSorting: false,
             cell: (props) => {
-                const attachedReport = props.row.original.attached_report;
+                const attachedReport = (props.row.original as any).attached_report;
                 if (attachedReport) {
                     return (
                         <Link
@@ -435,67 +517,6 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                     );
                 }
                 return <span className="text-gray-400">-</span>;
-            },
-        }),
-        columnHelper.display({
-            id: 'series_count',
-            header: 'Series Count',
-            cell: (props) => {
-                const seriesCount = props.row.original.series_count || 0;
-                return <CellWithCopy content={String(seriesCount)} cellId={`${props.row.id}-series-count`} />;
-            },
-        }),
-        columnHelper.display({
-            id: 'instance_count',
-            header: 'Instance Count',
-            cell: (props) => {
-                const instanceCount = props.row.original.instance_count || 0;
-                return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-instance-count`} />;
-            },
-        }),
-        columnHelper.display({
-            id: 'bookmark_notes',
-            header: 'Notes',
-            cell: (props) => {
-                const notes = props.row.original.notes;
-                if (!notes || notes.length === 0) {
-                    return <span className="text-gray-400 text-xs">No notes</span>;
-                }
-                
-                return (
-                    <HoverCard>
-                        <HoverCardTrigger asChild>
-                            <button className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs">
-                                <MessageSquare className="w-3 h-3" />
-                                {notes.length} note{notes.length > 1 ? 's' : ''}
-                            </button>
-                        </HoverCardTrigger>
-                        <HoverCardContent className="w-80">
-                            <div className="space-y-2">
-                                {notes.map((note) => (
-                                    <div key={note._id} className="border-b last:border-0 pb-2 last:pb-0">
-                                        <p className="text-xs text-gray-700">{note.note}</p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                                note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
-                                                note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                                                note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
-                                                'bg-gray-100 text-gray-700'
-                                            }`}>
-                                                {note.flag_type}
-                                            </span>
-                                            {note.created_by && (
-                                                <span className="text-[10px] text-gray-500">
-                                                    by {note.created_by.full_name}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </HoverCardContent>
-                    </HoverCard>
-                );
             },
         }),
     ], []);
@@ -565,6 +586,8 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                                 showColumnToggle={true}
                                 columnVisibility={columnVisibility}
                                 onColumnVisibilityChange={setColumnVisibility}
+                                isColumnModalOpen={isColumnModalOpen}
+                                onColumnModalOpenChange={setIsColumnModalOpen}
                             />
                         )}
                     </CardContent>

@@ -8,8 +8,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-import { Calendar, Filter, RotateCcw, Search, SlidersHorizontal, User } from "lucide-react";
+import { Calendar, Filter, RotateCcw, Search, SlidersHorizontal, User, ChevronDown } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
 
 export interface FilterState {
@@ -24,6 +25,13 @@ export interface FilterState {
         F: boolean;
     };
     hospital: string;
+    centers?: string[]; // Multi-select centers
+    studyStatus?: {
+        reported: boolean;
+        drafted: boolean;
+        unreported: boolean;
+        reviewed: boolean;
+    };
     reportStatus: {
         reported: boolean;
         drafted: boolean;
@@ -55,6 +63,9 @@ interface FilterPanelProps {
     activePeriod?: string;
     setActivePeriod?: (period: string) => void;
     initialFilters?: Partial<FilterState>;
+    availableCenters?: { id: string; name: string }[];
+    showCenters?: boolean;
+    showStudyStatus?: boolean;
 }
 
 // Format date as YYYY-MM-DD for input[type="date"]
@@ -111,6 +122,9 @@ const FilterPanel = ({
     activePeriod = '1M',
     setActivePeriod,
     initialFilters,
+    availableCenters = [],
+    showCenters = false,
+    showStudyStatus = false,
 }: FilterPanelProps) => {
     const defaultDates = getDefaultDateRange();
 
@@ -123,12 +137,14 @@ const FilterPanel = ({
         status: 'all',
         gender: { M: false, F: false },
         hospital: '',
+        centers: [],
+        studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
         reportStatus: { reported: false, drafted: false, unreported: false },
         modalities: {
-            ALL: false, DT: false, SC: false, AN: false,
-            US: false, ECHO: false, CR: false, XA: false,
-            MR: false, CTMR: false, PX: false, DX: false,
-            MR2: false, NM: false, RF: false, CT: false,
+            ALL: true, DT: true, SC: true, AN: true,
+            US: true, ECHO: true, CR: true, XA: true,
+            MR: true, CTMR: true, PX: true, DX: true,
+            MR2: true, NM: true, RF: true, CT: true,
         },
         ...initialFilters,
     });
@@ -160,9 +176,13 @@ const FilterPanel = ({
 
         const hasReportStatusFilter = filters.reportStatus.reported || filters.reportStatus.drafted || filters.reportStatus.unreported;
 
+        const hasStudyStatusFilter = filters.studyStatus?.reported || filters.studyStatus?.drafted || filters.studyStatus?.unreported || filters.studyStatus?.reviewed;
+
+        const hasCentersFilter = filters.centers && filters.centers.length > 0;
+
         const hasModalityFilter = Object.values(filters.modalities).some(v => v);
 
-        return hasTextFilters || hasGenderFilter || hasReportStatusFilter || hasModalityFilter;
+        return hasTextFilters || hasGenderFilter || hasReportStatusFilter || hasStudyStatusFilter || hasCentersFilter || hasModalityFilter;
     }, [filters]);
 
     const handleResetFilters = () => {
@@ -175,12 +195,14 @@ const FilterPanel = ({
             status: 'all',
             gender: { M: false, F: false },
             hospital: '',
+            centers: [],
+            studyStatus: { reported: false, drafted: false, unreported: false, reviewed: false },
             reportStatus: { reported: false, drafted: false, unreported: false },
             modalities: {
-                ALL: false, DT: false, SC: false, AN: false,
-                US: false, ECHO: false, CR: false, XA: false,
-                MR: false, CTMR: false, PX: false, DX: false,
-                MR2: false, NM: false, RF: false, CT: false,
+                ALL: true, DT: true, SC: true, AN: true,
+                US: true, ECHO: true, CR: true, XA: true,
+                MR: true, CTMR: true, PX: true, DX: true,
+                MR2: true, NM: true, RF: true, CT: true,
             },
         };
         setFilters(resetFilters);
@@ -266,7 +288,110 @@ const FilterPanel = ({
                         </div>
                     </div>
 
-                    {/* Row 2 */}
+                    {/* Row 2 - Center and Study Status (conditional) */}
+                    {(showCenters || showStudyStatus) && (
+                        <div className="grid grid-cols-4 gap-3">
+                            {showCenters && (
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                        Center
+                                    </label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className="w-full justify-between h-8 text-xs font-normal bg-white border-slate-200 hover:bg-slate-50"
+                                            >
+                                                <span className="truncate">
+                                                    {filters.centers && filters.centers.length > 0
+                                                        ? `${filters.centers.length} selected`
+                                                        : 'Select centers'}
+                                                </span>
+                                                <ChevronDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[250px] p-0" align="start">
+                                            <div className="max-h-[200px] overflow-y-auto p-2">
+                                                {availableCenters.map(center => (
+                                                    <label key={center.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer">
+                                                        <Checkbox
+                                                            checked={filters.centers?.includes(center.id)}
+                                                            onCheckedChange={(checked) => {
+                                                                const currentCenters = filters.centers || [];
+                                                                if (checked) {
+                                                                    setFilters({ ...filters, centers: [...currentCenters, center.id] });
+                                                                } else {
+                                                                    setFilters({ ...filters, centers: currentCenters.filter(c => c !== center.id) });
+                                                                }
+                                                            }}
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span className="text-xs text-slate-700">{center.name}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            )}
+                            {showStudyStatus && (
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                                        Study Status
+                                    </label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className="w-full justify-between h-8 text-xs font-normal bg-white border-slate-200 hover:bg-slate-50"
+                                            >
+                                                <span className="truncate">
+                                                    {filters.studyStatus && Object.values(filters.studyStatus).some(v => v)
+                                                        ? `${Object.values(filters.studyStatus).filter(v => v).length} selected`
+                                                        : 'Select status'}
+                                                </span>
+                                                <ChevronDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[200px] p-0" align="start">
+                                            <div className="p-2 space-y-1">
+                                                {[
+                                                    { key: 'reported', label: 'Reported' },
+                                                    { key: 'drafted', label: 'Drafted' },
+                                                    { key: 'unreported', label: 'Unreported' },
+                                                    { key: 'reviewed', label: 'Reviewed' }
+                                                ].map(({ key, label }) => (
+                                                    <label key={key} className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer">
+                                                        <Checkbox
+                                                            checked={!!filters.studyStatus?.[key as keyof typeof filters.studyStatus]}
+                                                            onCheckedChange={(checked) => {
+                                                                setFilters({
+                                                                    ...filters,
+                                                                    studyStatus: {
+                                                                        ...(filters.studyStatus ?? {
+                                                                            reported: false,
+                                                                            drafted: false,
+                                                                            unreported: false,
+                                                                            reviewed: false,
+                                                                        }),
+                                                                        [key]: checked as boolean
+                                                                    }
+                                                                });
+                                                            }}
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span className="text-xs text-slate-700">{label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Row 3 - Date Range */}
                     <div className="grid grid-cols-3 gap-3">
                         <div className="space-y-1">
                             <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">

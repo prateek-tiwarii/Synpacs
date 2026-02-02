@@ -1,4 +1,4 @@
-import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X } from "lucide-react";
+import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X, Settings } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
@@ -43,14 +43,13 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
 
-type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'Signed Off' | 'All Cases' | 'Review';
+type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'All Cases' | 'Review';
 
 // Map tab names to backend reporitng_status values
 const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'Unreported': 'unreported',
     'Drafted': 'drafted',
     'Reported': 'reported',
-    'Signed Off': 'signed_off',
     'All Cases': 'all',
     'Review': 'review',
 };
@@ -80,6 +79,7 @@ const AssignedPatientsTable = ({
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
     const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<Patient | null>(null);
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
 
     // Initialize column visibility from localStorage or use default
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -106,6 +106,9 @@ const AssignedPatientsTable = ({
     }, [columnVisibility]);
 
     const fetchAssignedPatients = useCallback(async () => {
+        console.log('=== fetchAssignedPatients called ===');
+        console.log('Active Tab:', activeTab);
+        console.log('Filters:', filters);
         try {
             setIsLoading(true);
             setError(null);
@@ -113,6 +116,7 @@ const AssignedPatientsTable = ({
             // Build API filters from FilterState - always include all properties
             // Map activeTab to status
             const reporting_status = TAB_TO_REPORTING_STATUS_MAP[activeTab] || 'all';
+            console.log('Reporting Status:', reporting_status);
 
             const apiFilters: any = {
                 start_date: filters?.startDate || '',
@@ -137,16 +141,33 @@ const AssignedPatientsTable = ({
 
                 // Handle modality
                 if (filters.modalities) {
-                    const selectedModality = Object.entries(filters.modalities).find(
-                        ([key, isSelected]) => isSelected && key !== 'ALL'
-                    );
-                    if (selectedModality) {
-                        apiFilters.modality = selectedModality[0];
+                    console.log('Filters.modalities:', filters.modalities);
+                    const selectedModalities = Object.entries(filters.modalities)
+                        .filter(([key, isSelected]) => isSelected && key !== 'ALL')
+                        .map(([key]) => key);
+                    console.log('Selected Modalities:', selectedModalities);
+                    
+                    // Check if all modalities are selected
+                    const allModalityKeys = Object.keys(filters.modalities).filter(k => k !== 'ALL');
+                    const allModalitiesSelected = allModalityKeys.every(key => filters.modalities[key as keyof typeof filters.modalities]);
+                    console.log('All Modalities Selected:', allModalitiesSelected);
+                    
+                    // Only send modality filter if not all are selected
+                    if (selectedModalities.length > 0 && !allModalitiesSelected) {
+                        apiFilters.modality = selectedModalities[0];
+                        console.log('Setting modality filter to:', apiFilters.modality);
+                    } else {
+                        console.log('Not setting modality filter (all selected or none)');
                     }
                 }
             }
 
+            console.log('API Filters being sent:', apiFilters);
             const response = await apiService.getAssignedCases(apiFilters) as any;
+            console.log('API Response:', response);
+            console.log('Response success:', response.success);
+            console.log('Response data length:', response.data?.length);
+            
             if (response.success && response.data) {
                 // Map API response to match Patient interface
                 const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
@@ -212,13 +233,19 @@ const AssignedPatientsTable = ({
                         patient_history: caseItem.patient_history || [],
                     } as Patient;
                 });
+                console.log('Mapped Patients:', mappedPatients);
+                console.log('Mapped Patients Count:', mappedPatients.length);
                 setPatients(mappedPatients);
+            } else {
+                console.log('Response not successful or no data');
+                console.log('Response message:', response.message);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch assigned patients');
             console.error('Error fetching assigned patients:', err);
         } finally {
             setIsLoading(false);
+            console.log('=== fetchAssignedPatients completed ===');
         }
     }, [filters, activeTab]);
 
@@ -290,24 +317,26 @@ const AssignedPatientsTable = ({
                 />
             ),
             enableHiding: false,
+            enableSorting: false,
         }),
         columnHelper.display({
             id: 'actions',
             header: 'Action',
             enableHiding: false, // Always visible, cannot be hidden
+            enableSorting: false,
             cell: (props) => (
                 <TooltipProvider>
-                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
                                         setSelectedPatientForHistory(props.row.original);
                                         setHistoryModalOpen(true);
                                     }}
                                 >
-                                    <ClipboardCheck className="w-4 h-4 text-blue-500" />
+                                    <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -317,8 +346,8 @@ const AssignedPatientsTable = ({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <button className="p-1 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => handleDocumentClick(props.row.original)}>
-                                    <FolderOpen className="w-4 h-4 text-yellow-500" />
+                                <button className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer" onClick={() => handleDocumentClick(props.row.original)}>
+                                    <FolderOpen className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -330,12 +359,12 @@ const AssignedPatientsTable = ({
                         <HoverCard openDelay={200} closeDelay={100}>
                             <HoverCardTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer relative"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer relative"
                                     onClick={() => handleMessageClick(props.row.original)}
                                 >
-                                    <MessageSquare className="w-4 h-4 text-blue-500" />
+                                    <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
                                     {props.row.original.notes && props.row.original.notes.length >= 1 && (
-                                        <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-white" />
+                                        <span className="absolute bottom-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white" />
                                     )}
                                 </button>
                             </HoverCardTrigger>
@@ -390,9 +419,9 @@ const AssignedPatientsTable = ({
                             <TooltipTrigger asChild>
                                 <button
                                     onClick={() => handleZipDownload(props.row.original._id, props.row.original.patient?.name)}
-                                    className="p-1 hover:bg-yellow-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
                                 >
-                                    <Download className="w-4 h-4 text-yellow-500" />
+                                    <Download className="w-3.5 h-3.5 text-yellow-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -408,9 +437,9 @@ const AssignedPatientsTable = ({
                                         // Open viewer only in a new window (not tab)
                                         window.open(`/case/${id}/viewer`, `viewer_${id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                                     }}
-                                    className="p-1 hover:bg-blue-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                 >
-                                    <ImageIcon className="w-4 h-4 text-blue-500" />
+                                    <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -421,16 +450,16 @@ const AssignedPatientsTable = ({
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
-                                    className="p-1 hover:bg-yellow-50 rounded cursor-pointer"
+                                    className="p-0.5 hover:bg-yellow-50 rounded cursor-pointer"
                                     onClick={() => props.row.original.isBookmarked
                                         ? handleDeleteBookmark(props.row.original)
                                         : handleSaveBookmark(props.row.original)
                                     }
                                 >
                                     {props.row.original.isBookmarked ? (
-                                        <Bookmark className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                                        <Bookmark className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
                                     ) : (
-                                        <Bookmark className="w-4 h-4 text-yellow-500" />
+                                        <Bookmark className="w-3.5 h-3.5 text-yellow-500" />
                                     )}
                                 </button>
                             </TooltipTrigger>
@@ -443,26 +472,46 @@ const AssignedPatientsTable = ({
             ),
         }),
         columnHelper.accessor('name', {
-            header: 'Patient Name',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                    <span>Patient Name</span>
+                </div>
+            ),
+            enableSorting: true,
             cell: (info) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
                 return (
-                    <button
-                        onClick={() => {
-                            // Open only viewer in new window
-                            window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
-                        }}
-                        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium text-left"
-                    >
-                        {name}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <CellWithCopy content={name || '-'} cellId={`${info.row.id}-name`} />
+                        <button
+                            onClick={() => {
+                                // Open only viewer in new window
+                                window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-[10px] font-medium shrink-0"
+                            title="Open Viewer"
+                        >
+                            [View]
+                        </button>
+                    </div>
                 );
             },
         }),
         columnHelper.display({
             id: 'case_id',
             header: 'Case ID',
+            enableSorting: false,
             cell: (props) => {
                 const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
                 return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
@@ -471,6 +520,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'age',
             header: 'Age',
+            enableSorting: false,
             cell: (props) => {
                 const age = props.row.original.age || props.row.original.patient?.age || '-';
                 return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
@@ -479,6 +529,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'sex',
             header: 'Sex',
+            enableSorting: false,
             cell: (props) => {
                 const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
@@ -487,6 +538,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'study_date_time',
             header: 'Study Date & Time',
+            enableSorting: true,
             cell: (props) => {
                 // Format date from YYYYMMDD to readable format
                 const dateStr = props.row.original.case_date || '';
@@ -514,6 +566,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'history_date_time',
             header: 'History Date & Time',
+            enableSorting: true,
             cell: (props) => {
                 // Use updatedAt as history date/time
                 const updatedAt = props.row.original.updatedAt;
@@ -534,11 +587,13 @@ const AssignedPatientsTable = ({
 
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
         }),
         columnHelper.display({
             id: 'center',
             header: 'Center',
+            enableSorting: false,
             cell: (props) => {
                 const centerName = props.row.original.hospital_name;
                 if (!centerName) return <span className="text-gray-400">-</span>;
@@ -552,6 +607,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'referring_doctor',
             header: 'Referring Doctor',
+            enableSorting: false,
             cell: (props) => {
                 const referringPhysician = props.row.original.referring_physician || '-';
                 return <CellWithCopy content={referringPhysician} cellId={`${props.row.id}-ref-doc`} />;
@@ -560,6 +616,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'image_count',
             header: 'Image Count',
+            enableSorting: false,
             cell: (props) => {
                 const instanceCount = props.row.original.instance_count || 0;
                 return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
@@ -567,19 +624,23 @@ const AssignedPatientsTable = ({
         }),
         columnHelper.accessor('description', {
             header: 'Description',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
         columnHelper.accessor('modality', {
             header: 'Modality',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
         columnHelper.accessor('case_type', {
             header: 'Case Type',
+            enableSorting: false,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
         }),
         columnHelper.display({
             id: 'reporting_date_time',
             header: 'Reporting Date & Time',
+            enableSorting: true,
             cell: (props) => {
                 const attachedReport = (props.row.original as any).attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
@@ -599,6 +660,7 @@ const AssignedPatientsTable = ({
         columnHelper.display({
             id: 'reported',
             header: 'Reported',
+            enableSorting: false,
             cell: (props) => {
                 const reportingStatus = (props.row.original as any).reporting_status;
 
@@ -692,6 +754,13 @@ const AssignedPatientsTable = ({
         setRowSelection({});
     };
 
+    console.log('=== AssignedPatientsTable Render ===');
+    console.log('Patients state:', patients);
+    console.log('Patients count:', patients.length);
+    console.log('isLoading:', isLoading);
+    console.log('error:', error);
+    console.log('activeTab:', activeTab);
+
     return (
         <>
             {selectedPatients.length > 0 && (
@@ -746,6 +815,8 @@ const AssignedPatientsTable = ({
                 enableRowSelection={true}
                 rowSelection={rowSelection}
                 onRowSelectionChange={setRowSelection}
+                isColumnModalOpen={isColumnModalOpen}
+                onColumnModalOpenChange={setIsColumnModalOpen}
             />
             <BookmarkDialog
                 open={bookmarkDialogOpen}
