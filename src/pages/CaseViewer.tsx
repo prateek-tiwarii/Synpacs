@@ -104,6 +104,7 @@ const CaseViewer = () => {
 
   const fetchInstances = useCallback(async () => {
     if (!selectedSeries?._id) {
+      console.log("No series selected, skipping instance fetch");
       setInstances([]);
       return;
     }
@@ -112,6 +113,7 @@ const CaseViewer = () => {
     setError(null);
 
     try {
+      console.log(`Fetching instances for series: ${selectedSeries._id}`);
       const response = await fetch(
         `${API_BASE_URL}/api/v1/series/${selectedSeries._id}/instances`,
         {
@@ -123,16 +125,27 @@ const CaseViewer = () => {
         },
       );
 
+      console.log(`Instance fetch response status: ${response.status}`);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Instance fetch error response: ${errorText}`);
         throw new Error(`Failed to fetch instances: ${response.statusText}`);
       }
 
       const data: InstancesResponse = await response.json();
+      console.log("Instance fetch successful:", { seriesId: data.seriesId, count: data.count, instancesLength: data.instances?.length });
 
       if (Array.isArray(data.instances)) {
+        console.log(`Setting ${data.instances.length} instances`);
         setInstances(data.instances);
+      } else if (data.instances) {
+        // Handle case where instances might be in a different structure
+        console.warn("Instances not in array format, attempting conversion:", data);
+        const instancesArray = Array.isArray(data.instances) ? data.instances : [];
+        setInstances(instancesArray);
       } else {
-        console.warn("Unexpected response format:", data);
+        console.warn("No instances found in response:", data);
         setInstances([]);
       }
     } catch (err) {
@@ -478,9 +491,35 @@ const CaseViewer = () => {
   if (!selectedSeries) {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
-        <p className="text-gray-400">
-          Select a series from the sidebar to view images
-        </p>
+        <div className="text-center">
+          <p className="text-gray-400">
+            Select a series from the sidebar to view images
+          </p>
+          {caseData && (!caseData.series || caseData.series.length === 0) && (
+            <p className="text-red-400 text-sm mt-4">
+              No series found in case. The case data may not be properly loaded.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Check if instances are empty
+  if (instances.length === 0 && !isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-black">
+        <div className="text-center">
+          <p className="text-red-400 mb-2">No images found for this series</p>
+          <p className="text-gray-500 text-sm">Series: {selectedSeries.description}</p>
+          <p className="text-gray-500 text-sm mt-2">Modality: {selectedSeries.modality} ({selectedSeries.image_count} expected)</p>
+          <button
+            onClick={fetchInstances}
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            Retry Loading Images
+          </button>
+        </div>
       </div>
     );
   }

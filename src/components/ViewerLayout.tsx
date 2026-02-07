@@ -599,22 +599,33 @@ export function ViewerLayout() {
       try {
         setLoading(true);
         setError(null);
+        console.log(`Fetching case data for ID: ${id}`);
         const response = (await apiService.getCaseById(id)) as {
           success: boolean;
           data: CaseData;
         };
+        console.log("Case data response:", response);
+
         if (response.success && response.data) {
+          console.log(`Case loaded. Series count: ${response.data.series?.length || 0}, Instance count: ${response.data.instance_count}`);
           setCaseData(response.data);
           // Select series 1 by default, or the first series if series 1 doesn't exist
           if (response.data.series && response.data.series.length > 0) {
+            console.log("Available series:", response.data.series.map(s => ({ id: s._id, num: s.series_number, desc: s.description, modality: s.modality })));
             const seriesOne = response.data.series.find(
               (s) => s.series_number === 1,
             );
             const defaultSeries = seriesOne || response.data.series[0];
+            console.log("Selecting default series:", defaultSeries);
             setSelectedSeries(defaultSeries);
+          } else {
+            console.warn("No series found in case data");
           }
+        } else {
+          console.warn("Case data response invalid:", response);
         }
       } catch (err) {
+        console.error("Error fetching case data:", err);
         setError(
           err instanceof Error ? err.message : "Failed to fetch case data",
         );
