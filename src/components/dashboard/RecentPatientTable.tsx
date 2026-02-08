@@ -23,7 +23,7 @@ interface AssignedDoctor {
 interface CaseInfo {
   case_uid: string;
   body_part: string;
-}
+ }
 
 interface AttachedReport {
   _id: string;
@@ -136,6 +136,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
+
 
   // Fetch available centers
   useEffect(() => {
@@ -445,6 +446,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
     setFilters(defaultFilters);
   };
 
+
   const columns = useMemo<ColumnDef<Patient>[]>(() => [
     {
       id: "select",
@@ -612,11 +614,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
       },
     },
   ], []);
-
-
-
-
-
+  
   return (
     <Card className="overflow-hidden">
       <div className="flex justify-between items-center p-4">

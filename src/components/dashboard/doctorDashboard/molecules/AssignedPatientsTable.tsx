@@ -1,7 +1,7 @@
 import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X, Settings } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
+import type { VisibilityState, RowSelectionState, ColumnSizingState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 };
 
 const STORAGE_KEY_ASSIGNED_PATIENTS = 'assigned_patients_table_columns';
+const STORAGE_KEY_COLUMN_SIZING = 'assigned_patients_table_column_sizing';
 
 type TabType = 'Unreported' | 'Drafted' | 'Reported' | 'All Cases';
 
@@ -103,6 +104,26 @@ const AssignedPatientsTable = ({
             console.error('Failed to save column visibility to localStorage:', error);
         }
     }, [columnVisibility]);
+
+    // Initialize column sizing from localStorage or use empty (default sizes)
+    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_COLUMN_SIZING);
+            if (stored) return JSON.parse(stored);
+        } catch (error) {
+            console.error('Failed to load column sizing from localStorage:', error);
+        }
+        return {};
+    });
+
+    // Save column sizing to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY_COLUMN_SIZING, JSON.stringify(columnSizing));
+        } catch (error) {
+            console.error('Failed to save column sizing to localStorage:', error);
+        }
+    }, [columnSizing]);
 
     const fetchAssignedPatients = useCallback(async () => {
         console.log('=== fetchAssignedPatients called ===');
@@ -317,6 +338,10 @@ const AssignedPatientsTable = ({
             ),
             enableHiding: false,
             enableSorting: false,
+            enableResizing: false,
+            size: 36,
+            minSize: 36,
+            maxSize: 36,
         }),
         columnHelper.display({
             id: 'actions',
@@ -337,6 +362,8 @@ const AssignedPatientsTable = ({
             ),
             enableHiding: false, // Always visible, cannot be hidden
             enableSorting: false,
+            size: 125,
+            minSize: 80,
             cell: (props) => (
                 <TooltipProvider>
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
@@ -487,6 +514,8 @@ const AssignedPatientsTable = ({
         columnHelper.accessor('name', {
             header: 'Patient Name',
             enableSorting: true,
+            size: 150,
+            minSize: 30,
             cell: (info) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
@@ -498,10 +527,10 @@ const AssignedPatientsTable = ({
                                 // Open only viewer in new window
                                 window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                             }}
-                            className="text-blue-600 hover:text-blue-800 text-[10px] font-medium shrink-0"
+                            className="text-red-500 hover:text-red-700 shrink-0"
                             title="Open Viewer"
                         >
-                            [View]
+                            <Eye className="w-4 h-4" />
                         </button>
                     </div>
                 );
@@ -511,6 +540,8 @@ const AssignedPatientsTable = ({
             id: 'case_id',
             header: 'Case ID',
             enableSorting: false,
+            size: 85,
+            minSize: 30,
             cell: (props) => {
                 const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
                 return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
@@ -520,6 +551,8 @@ const AssignedPatientsTable = ({
             id: 'age',
             header: 'Age',
             enableSorting: false,
+            size: 40,
+            minSize: 20,
             cell: (props) => {
                 const age = props.row.original.age || props.row.original.patient?.age || '-';
                 return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
@@ -529,6 +562,8 @@ const AssignedPatientsTable = ({
             id: 'sex',
             header: 'Sex',
             enableSorting: false,
+            size: 40,
+            minSize: 20,
             cell: (props) => {
                 const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
@@ -538,6 +573,8 @@ const AssignedPatientsTable = ({
             id: 'study_date_time',
             header: 'Study Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props) => {
                 // Format date from YYYYMMDD to readable format
                 const dateStr = props.row.original.case_date || '';
@@ -566,6 +603,8 @@ const AssignedPatientsTable = ({
             id: 'history_date_time',
             header: 'History Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props) => {
                 // Use updatedAt as history date/time
                 const updatedAt = props.row.original.updatedAt;
@@ -587,12 +626,16 @@ const AssignedPatientsTable = ({
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             enableSorting: false,
+            size: 105,
+            minSize: 30,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
         }),
         columnHelper.display({
             id: 'center',
             header: 'Center',
             enableSorting: false,
+            size: 90,
+            minSize: 30,
             cell: (props) => {
                 const centerName = props.row.original.hospital_name;
                 if (!centerName) return <span className="text-gray-400">-</span>;
@@ -607,6 +650,8 @@ const AssignedPatientsTable = ({
             id: 'referring_doctor',
             header: 'Referring Doctor',
             enableSorting: false,
+            size: 105,
+            minSize: 30,
             cell: (props) => {
                 const referringPhysician = props.row.original.referring_physician || '-';
                 return <CellWithCopy content={referringPhysician} cellId={`${props.row.id}-ref-doc`} />;
@@ -616,6 +661,8 @@ const AssignedPatientsTable = ({
             id: 'image_count',
             header: 'Image Count',
             enableSorting: false,
+            size: 60,
+            minSize: 20,
             cell: (props) => {
                 const instanceCount = props.row.original.instance_count || 0;
                 return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
@@ -624,22 +671,30 @@ const AssignedPatientsTable = ({
         columnHelper.accessor('description', {
             header: 'Description',
             enableSorting: false,
+            size: 130,
+            minSize: 30,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
         columnHelper.accessor('modality', {
             header: 'Modality',
             enableSorting: false,
+            size: 55,
+            minSize: 20,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
         columnHelper.accessor('case_type', {
             header: 'Case Type',
             enableSorting: false,
+            size: 70,
+            minSize: 20,
             cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-case-type`} />,
         }),
         columnHelper.display({
             id: 'reporting_date_time',
             header: 'Reporting Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props) => {
                 const attachedReport = (props.row.original as any).attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
@@ -660,6 +715,8 @@ const AssignedPatientsTable = ({
             id: 'reported',
             header: 'Reported',
             enableSorting: false,
+            size: 75,
+            minSize: 30,
             cell: (props) => {
                 const reportingStatus = (props.row.original as any).reporting_status;
 
@@ -816,6 +873,9 @@ const AssignedPatientsTable = ({
                 onRowSelectionChange={setRowSelection}
                 isColumnModalOpen={isColumnModalOpen}
                 onColumnModalOpenChange={setIsColumnModalOpen}
+                enableColumnResizing={true}
+                columnSizing={columnSizing}
+                onColumnSizingChange={setColumnSizing}
             />
             <BookmarkDialog
                 open={bookmarkDialogOpen}

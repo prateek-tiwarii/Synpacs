@@ -567,6 +567,12 @@ class ApiService {
 
     return response.json()
   }
+
+  async deleteCase(caseId: string) {
+    return this.request(`/api/v1/cases/${caseId}`, {
+      method: 'DELETE',
+    })
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL)

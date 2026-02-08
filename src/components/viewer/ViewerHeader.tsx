@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import toast from "react-hot-toast";
 import {
   ZoomIn,
   Move,
@@ -34,6 +35,7 @@ import {
   Box,
   Settings,
   ChevronDown,
+  ScanLine,
 } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -178,6 +180,8 @@ const ViewerHeader = () => {
     shortcuts,
     stackSpeed,
     setStackSpeed,
+    showScoutLine,
+    setShowScoutLine,
   } = useViewerContext();
 
   const [activeTab, setActiveTab] = useState<
@@ -546,6 +550,18 @@ const ViewerHeader = () => {
         description: "Toggle patient info and image metadata overlays",
         isToggle: true,
       },
+      {
+        id: "ScoutLine",
+        label: "Scout",
+        icon: <ScanLine size={18} />,
+        category: "Tools",
+        type: "action",
+        active: showScoutLine,
+        onClick: () => setShowScoutLine(!showScoutLine),
+        description: "Toggle scout line between panes (visible in multi-pane layouts)",
+        isToggle: true,
+        disabled: gridLayout === "1x1",
+      },
     ],
     [
       activeTool,
@@ -559,6 +575,9 @@ const ViewerHeader = () => {
       setViewTransform,
       showOverlays,
       setShowOverlays,
+      showScoutLine,
+      setShowScoutLine,
+      gridLayout,
     ],
   );
 
@@ -800,7 +819,13 @@ const ViewerHeader = () => {
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator className="bg-gray-800" />
                             <DropdownMenuItem
-                              onClick={() => setSelectedTemporarySeriesId(null)}
+                              onClick={() => {
+                                if (!selectedTemporarySeriesId) {
+                                  toast("You are already in Standard orientation");
+                                  return;
+                                }
+                                setSelectedTemporarySeriesId(null);
+                              }}
                               className="focus:bg-gray-800 focus:text-white cursor-pointer px-3 py-2"
                             >
                               <div className="flex items-center gap-3 w-full">
@@ -831,6 +856,10 @@ const ViewerHeader = () => {
                                 <DropdownMenuItem
                                   key={mode.id}
                                   onClick={() => {
+                                    if (isSelected) {
+                                      toast(`You are already in ${mode.label} orientation`);
+                                      return;
+                                    }
                                     if (existingTempSeries) {
                                       setSelectedTemporarySeriesId(
                                         existingTempSeries.id,
@@ -1102,7 +1131,13 @@ const ViewerHeader = () => {
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator className="bg-gray-800" />
                             <DropdownMenuItem
-                              onClick={() => setSelectedTemporarySeriesId(null)}
+                              onClick={() => {
+                                if (!selectedTemporarySeriesId) {
+                                  toast("You are already in Standard orientation");
+                                  return;
+                                }
+                                setSelectedTemporarySeriesId(null);
+                              }}
                               className="focus:bg-gray-800 focus:text-white cursor-pointer px-3 py-2"
                             >
                               <div className="flex items-center gap-3 w-full">
@@ -1133,6 +1168,10 @@ const ViewerHeader = () => {
                                 <DropdownMenuItem
                                   key={mode.id}
                                   onClick={() => {
+                                    if (isSelected) {
+                                      toast(`You are already in ${mode.label} orientation`);
+                                      return;
+                                    }
                                     if (existingTempSeries) {
                                       setSelectedTemporarySeriesId(
                                         existingTempSeries.id,

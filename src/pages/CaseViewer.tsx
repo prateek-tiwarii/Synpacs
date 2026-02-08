@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   useViewerContext,
   type TemporaryMPRSeries,
@@ -7,10 +7,18 @@ import {
   type MPRMode,
 } from "@/components/ViewerLayout";
 import { getCookie } from "@/lib/cookies";
-import DicomViewer from "@/components/viewer/DicomViewer";
+import DicomViewer, { type ScoutLine } from "@/components/viewer/DicomViewer";
 import SRViewer from "@/components/viewer/SRViewer";
 import TemporaryMPRSeriesViewer from "@/components/viewer/TemporaryMPRSeriesViewer";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, Check } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   type Instance as MPRInstance,
   type VolumeData,
@@ -21,7 +29,10 @@ import {
   extractSlice,
   getMaxIndex,
   applyWindowLevel,
+  calculateSliceNormal,
+  getSliceGeometry,
 } from "@/lib/mpr";
+import toast from "react-hot-toast";
 import { imageCache } from "@/lib/imageCache";
 
 // Instance interface matching the ACTUAL API response
@@ -50,11 +61,256 @@ interface InstancesResponse {
   instances: Instance[];
 }
 
+// Self-contained pane viewer for multi-pane grid layout
+type PlaneOrientation = "Axial" | "Coronal" | "Sagittal";
+
+interface PaneViewerProps {
+  paneIndex: number;
+  seriesId: string | null;
+  isActive: boolean;
+  onActivate: () => void;
+  onImageIndexChange: (paneIndex: number, index: number, total: number, plane: PlaneOrientation | null, sourceSeriesId: string | null) => void;
+  scoutLines: ScoutLine[];
+}
+
+const PaneViewer = ({
+  paneIndex,
+  seriesId,
+  isActive,
+  onActivate,
+  onImageIndexChange,
+  scoutLines,
+}: PaneViewerProps) => {
+  const { caseData, setPaneStates, temporaryMPRSeries } = useViewerContext();
+  const [instances, setInstances] = useState<Instance[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const API_BASE_URL =
+    import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
+  const series = caseData?.series?.find((s) => s._id === seriesId);
+  const allSeries = caseData?.series || [];
+  const selectedTempMPR = temporaryMPRSeries.find((ts) => ts.id === seriesId);
+
+  // Select a series for this pane
+  const handleSelectSeries = useCallback(
+    (newSeriesId: string) => {
+      setPaneStates((prev) => {
+        const newStates = [...prev];
+        if (newStates[paneIndex]) {
+          newStates[paneIndex] = {
+            ...newStates[paneIndex],
+            seriesId: newSeriesId,
+            currentImageIndex: 0,
+          };
+        }
+        return newStates;
+      });
+    },
+    [paneIndex, setPaneStates],
+  );
+
+  useEffect(() => {
+    if (!seriesId || selectedTempMPR) {
+      setInstances([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoading(true);
+    fetch(`${API_BASE_URL}/api/v1/series/${seriesId}/instances`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getCookie("jwt")}`,
+      },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch instances");
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          const inst = Array.isArray(data.instances) ? data.instances : [];
+          setInstances(inst);
+        }
+      })
+      .catch((err) => console.error(`Pane ${paneIndex} fetch error:`, err))
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seriesId, API_BASE_URL, paneIndex]);
+
+  // Detect orientation of regular series from DICOM metadata
+  const detectedPlane: PlaneOrientation | null = useMemo(() => {
+    if (instances.length === 0) return null;
+    const iop = instances[0]?.image_orientation_patient;
+    if (!iop || iop.length !== 6) return null;
+    const normal = calculateSliceNormal(iop);
+    const absX = Math.abs(normal[0]);
+    const absY = Math.abs(normal[1]);
+    const absZ = Math.abs(normal[2]);
+    if (absZ > absX && absZ > absY) return "Axial";
+    if (absY > absX && absY > absZ) return "Coronal";
+    if (absX > absY && absX > absZ) return "Sagittal";
+    return null;
+  }, [instances]);
+
+  // Derive plane and source for MPR temp series
+  const mprPlane: PlaneOrientation | null = useMemo(() => {
+    if (!selectedTempMPR) return null;
+    const mode = selectedTempMPR.mprMode;
+    if (mode === "Axial" || mode === "Coronal" || mode === "Sagittal") return mode;
+    return null;
+  }, [selectedTempMPR]);
+
+  const activePlane = selectedTempMPR ? mprPlane : detectedPlane;
+  const activeSourceSeriesId = selectedTempMPR ? selectedTempMPR.sourceSeriesId : seriesId;
+
+  // Report initial image info when instances load
+  useEffect(() => {
+    if (instances.length > 0) {
+      onImageIndexChange(paneIndex, 0, instances.length, activePlane, activeSourceSeriesId);
+    }
+  }, [instances.length, paneIndex, activePlane, activeSourceSeriesId, onImageIndexChange]);
+
+  // Report MPR series info when MPR is selected
+  useEffect(() => {
+    if (selectedTempMPR) {
+      onImageIndexChange(paneIndex, 0, selectedTempMPR.sliceCount, mprPlane, selectedTempMPR.sourceSeriesId);
+    }
+  }, [selectedTempMPR, paneIndex, mprPlane, onImageIndexChange]);
+
+  const handleImageIndexChange = useCallback(
+    (index: number) => {
+      onImageIndexChange(paneIndex, index, instances.length, activePlane, activeSourceSeriesId);
+    },
+    [paneIndex, instances.length, activePlane, activeSourceSeriesId, onImageIndexChange],
+  );
+
+  const handleMPRImageIndexChange = useCallback(
+    (index: number) => {
+      onImageIndexChange(paneIndex, index, selectedTempMPR?.sliceCount ?? 0, mprPlane, selectedTempMPR?.sourceSeriesId ?? null);
+    },
+    [paneIndex, selectedTempMPR?.sliceCount, selectedTempMPR?.sourceSeriesId, mprPlane, onImageIndexChange],
+  );
+
+  return (
+    <div
+      className={`relative flex flex-col overflow-hidden ${
+        isActive
+          ? "ring-2 ring-blue-500 ring-inset"
+          : "ring-1 ring-gray-700 ring-inset"
+      }`}
+      onClick={onActivate}
+    >
+      {/* Pane header with series selector dropdown */}
+      <div className="flex items-center justify-between px-1.5 py-0.5 bg-gray-900/90 text-[10px] border-b border-gray-800 flex-shrink-0 z-10">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-1 text-gray-300 hover:text-white transition-colors min-w-0 max-w-full">
+              <span className="truncate">
+                {series
+                  ? `S${series.series_number}: ${series.description || "No description"}`
+                  : "Select series"}
+              </span>
+              <ChevronDown className="w-3 h-3 flex-shrink-0 opacity-60" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-[280px]">
+            <DropdownMenuLabel className="text-xs text-gray-400">
+              Series
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {allSeries.map((s) => (
+              <DropdownMenuItem
+                key={s._id}
+                onClick={() => handleSelectSeries(s._id)}
+                className="flex items-center gap-2 text-xs cursor-pointer"
+              >
+                {seriesId === s._id && (
+                  <Check className="w-3 h-3 text-blue-400 flex-shrink-0" />
+                )}
+                <span className={seriesId === s._id ? "" : "pl-5"}>
+                  S{s.series_number}: {s.description || s.modality}
+                </span>
+                <span className="ml-auto text-gray-500 flex-shrink-0">
+                  {s.image_count} img
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {temporaryMPRSeries.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs text-gray-400">
+                  MPR
+                </DropdownMenuLabel>
+                {temporaryMPRSeries.map((ts) => (
+                  <DropdownMenuItem
+                    key={ts.id}
+                    onClick={() => handleSelectSeries(ts.id)}
+                    className="flex items-center gap-2 text-xs cursor-pointer"
+                  >
+                    {seriesId === ts.id && (
+                      <Check className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                    )}
+                    <span className={seriesId === ts.id ? "" : "pl-5"}>
+                      {ts.description}
+                    </span>
+                    <span className="ml-auto text-gray-500 flex-shrink-0">
+                      {ts.sliceCount} slc
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {series && (
+          <span className="text-gray-500 ml-1 flex-shrink-0">
+            {instances.length} img
+          </span>
+        )}
+      </div>
+
+      {selectedTempMPR ? (
+        <TemporaryMPRSeriesViewer
+          series={selectedTempMPR}
+          className="flex-1"
+          scoutLines={scoutLines}
+          onImageIndexChange={handleMPRImageIndexChange}
+        />
+      ) : instances.length > 0 ? (
+        <DicomViewer
+          instances={instances}
+          paneIndex={paneIndex}
+          scoutLines={scoutLines}
+          onImageIndexChange={handleImageIndexChange}
+          className="flex-1"
+        />
+      ) : isLoading ? (
+        <div className="flex-1 flex items-center justify-center bg-black">
+          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+        </div>
+      ) : !seriesId ? (
+        <div className="flex-1 flex items-center justify-center bg-black">
+          <span className="text-gray-600 text-xs">Select a series from dropdown above</span>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-black">
+          <span className="text-gray-600 text-xs">No images</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CaseViewer = () => {
   useParams(); // Keep hook call for routing context
   const {
     caseData,
     selectedSeries,
+    setSelectedSeries,
     selectedTemporarySeriesId,
     temporaryMPRSeries,
     pendingMPRGeneration,
@@ -62,10 +318,90 @@ const CaseViewer = () => {
     addTemporaryMPRSeries,
     viewTransform,
     setCrosshairIndices,
+    gridLayout,
+    paneStates,
+    activePaneIndex,
+    setActivePaneIndex,
+    showScoutLine,
   } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Track series IDs known to have no instances so we can skip them
+  const emptySeriesIds = useRef<Set<string>>(new Set());
+
+  // Multi-pane scout line tracking: per-pane image index, total, plane, and source
+  const [paneImageInfo, setPaneImageInfo] = useState<
+    Record<number, { index: number; total: number; plane: PlaneOrientation | null; sourceSeriesId: string | null }>
+  >({});
+
+  const handlePaneImageIndexChange = useCallback(
+    (paneIdx: number, index: number, total: number, plane: PlaneOrientation | null, sourceSeriesId: string | null) => {
+      setPaneImageInfo((prev) => {
+        const cur = prev[paneIdx];
+        if (cur?.index === index && cur?.total === total && cur?.plane === plane && cur?.sourceSeriesId === sourceSeriesId)
+          return prev;
+        return { ...prev, [paneIdx]: { index, total, plane, sourceSeriesId } };
+      });
+    },
+    [],
+  );
+
+  // Cross-plane scout line mapping table
+  const CROSS_PLANE_MAP: Record<string, { orientation: "horizontal" | "vertical"; invertRatio: boolean }> = {
+    "Axial->Coronal":    { orientation: "horizontal", invertRatio: true },
+    "Axial->Sagittal":   { orientation: "horizontal", invertRatio: true },
+    "Coronal->Axial":    { orientation: "horizontal", invertRatio: false },
+    "Coronal->Sagittal": { orientation: "vertical",   invertRatio: false },
+    "Sagittal->Axial":   { orientation: "vertical",   invertRatio: false },
+    "Sagittal->Coronal": { orientation: "vertical",   invertRatio: false },
+  };
+
+  const getScoutLinesForPane = useCallback(
+    (currentPaneIdx: number): ScoutLine[] => {
+      if (!showScoutLine || gridLayout === "1x1") return [];
+      const colors = ["#00ff00", "#ffff00", "#00ffff", "#ff00ff"];
+      const lines: ScoutLine[] = [];
+      const currentInfo = paneImageInfo[currentPaneIdx];
+
+      Object.entries(paneImageInfo).forEach(([paneIdxStr, info]) => {
+        const paneIdx = parseInt(paneIdxStr);
+        if (paneIdx === currentPaneIdx) return;
+        if (info.total <= 1) return;
+
+        const ratio = info.index / (info.total - 1);
+        const color = colors[paneIdx % colors.length];
+        const label = `P${paneIdx + 1}`;
+
+        // Check if this is a cross-plane pair (same source series, different planes)
+        if (
+          info.plane && currentInfo?.plane &&
+          info.plane !== currentInfo.plane &&
+          info.sourceSeriesId && currentInfo.sourceSeriesId &&
+          info.sourceSeriesId === currentInfo.sourceSeriesId
+        ) {
+          const key = `${info.plane}->${currentInfo.plane}`;
+          const mapping = CROSS_PLANE_MAP[key];
+          if (mapping) {
+            lines.push({
+              ratio: mapping.invertRatio ? 1 - ratio : ratio,
+              color,
+              label,
+              orientation: mapping.orientation,
+            });
+            return;
+          }
+        }
+
+        // Fallback: same-orientation or unknown — horizontal line (existing behavior)
+        lines.push({ ratio, color, label });
+      });
+
+      return lines;
+    },
+    [showScoutLine, gridLayout, paneImageInfo],
+  );
 
   // MPR generation state
   const [isGeneratingMPR, setIsGeneratingMPR] = useState(false);
@@ -163,6 +499,28 @@ const CaseViewer = () => {
     fetchInstances();
   }, [fetchInstances]);
 
+  // Auto-skip series that return no instances — select the next available series
+  useEffect(() => {
+    if (isLoading || !selectedSeries || instances.length > 0 || !caseData?.series) return;
+
+    // Mark this series as empty
+    emptySeriesIds.current.add(selectedSeries._id);
+
+    // Find the next series that isn't known to be empty
+    const sortedSeries = [...caseData.series]
+      .filter((s) => s.image_count > 0 && !emptySeriesIds.current.has(s._id))
+      .sort((a, b) => a.series_number - b.series_number);
+
+    if (sortedSeries.length > 0) {
+      // Pick the next series after the current one, or the first available
+      const currentIdx = sortedSeries.findIndex(
+        (s) => s.series_number > selectedSeries.series_number,
+      );
+      const nextSeries = currentIdx >= 0 ? sortedSeries[currentIdx] : sortedSeries[0];
+      setSelectedSeries(nextSeries);
+    }
+  }, [isLoading, instances.length, selectedSeries, caseData?.series, setSelectedSeries]);
+
   // Handle pending MPR generation
   useEffect(() => {
     if (!pendingMPRGeneration || !selectedSeries || instances.length === 0) {
@@ -173,6 +531,30 @@ const CaseViewer = () => {
     if (pendingMPRGeneration.seriesId !== selectedSeries._id) {
       clearPendingMPRGeneration();
       return;
+    }
+
+    // Detect current series orientation and block redundant MPR generation
+    const requestedMode = pendingMPRGeneration.mode;
+    if (
+      (requestedMode === "Axial" || requestedMode === "Coronal" || requestedMode === "Sagittal") &&
+      instances.length > 0 &&
+      instances[0].image_orientation_patient?.length === 6
+    ) {
+      const normal = calculateSliceNormal(instances[0].image_orientation_patient);
+      const absX = Math.abs(normal[0]);
+      const absY = Math.abs(normal[1]);
+      const absZ = Math.abs(normal[2]);
+
+      let detectedOrientation: string | null = null;
+      if (absZ > absX && absZ > absY) detectedOrientation = "Axial";
+      else if (absY > absX && absY > absZ) detectedOrientation = "Coronal";
+      else if (absX > absY && absX > absZ) detectedOrientation = "Sagittal";
+
+      if (detectedOrientation === requestedMode) {
+        toast(`You are already in ${requestedMode} orientation`);
+        clearPendingMPRGeneration();
+        return;
+      }
     }
 
     const generateMPR = async () => {
@@ -279,6 +661,7 @@ const CaseViewer = () => {
             }
 
             // Create temporary series for this plane
+            const geometry = getSliceGeometry(volume, plane);
             const tempSeries: TemporaryMPRSeries = {
               id: `mpr-${selectedSeries._id}-${plane}-${Date.now()}`,
               sourceSeriesId: selectedSeries._id,
@@ -289,6 +672,7 @@ const CaseViewer = () => {
               createdAt: Date.now(),
               windowCenter,
               windowWidth,
+              physicalAspectRatio: geometry.aspectRatio,
             };
 
             addTemporaryMPRSeries(tempSeries);
@@ -336,6 +720,7 @@ const CaseViewer = () => {
             }
           }
 
+          const geo3d = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
             id: `mpr-${selectedSeries._id}-3D-MPR-${Date.now()}`,
             sourceSeriesId: selectedSeries._id,
@@ -346,6 +731,7 @@ const CaseViewer = () => {
             createdAt: Date.now(),
             windowCenter,
             windowWidth,
+            physicalAspectRatio: geo3d.aspectRatio,
           };
 
           addTemporaryMPRSeries(tempSeries);
@@ -393,6 +779,7 @@ const CaseViewer = () => {
           }
 
           // Create the temporary series
+          const geoSingle = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
             id: `mpr-${selectedSeries._id}-${plane}-${Date.now()}`,
             sourceSeriesId: selectedSeries._id,
@@ -403,6 +790,7 @@ const CaseViewer = () => {
             createdAt: Date.now(),
             windowCenter,
             windowWidth,
+            physicalAspectRatio: geoSingle.aspectRatio,
           };
 
           // Add and auto-select (addTemporaryMPRSeries handles auto-selection)
@@ -505,25 +893,51 @@ const CaseViewer = () => {
     );
   }
 
-  // Check if instances are empty
+  // If instances are empty, the auto-skip effect will handle selecting the next series.
+  // Show a loading state while it transitions, or a message if all series are empty.
   if (instances.length === 0 && !isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
-        <div className="text-center">
-          <p className="text-red-400 mb-2">No images found for this series</p>
-          <p className="text-gray-500 text-sm">Series: {selectedSeries.description}</p>
-          <p className="text-gray-500 text-sm mt-2">Modality: {selectedSeries.modality} ({selectedSeries.image_count} expected)</p>
-          <button
-            onClick={fetchInstances}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
-          >
-            Retry Loading Images
-          </button>
+        <span className="text-gray-500 text-sm">Loading next series...</span>
+      </div>
+    );
+  }
+
+  // Multi-pane grid layout
+  if (gridLayout !== "1x1") {
+    const layoutConfig: Record<string, { rows: number; cols: number }> = {
+      "1x2": { rows: 1, cols: 2 },
+      "2x2": { rows: 2, cols: 2 },
+    };
+    const config = layoutConfig[gridLayout] || { rows: 1, cols: 1 };
+    const paneCount = config.rows * config.cols;
+
+    return (
+      <div className="flex-1 flex flex-col bg-black h-full">
+        <div
+          className="flex-1 grid gap-0.5"
+          style={{
+            gridTemplateColumns: `repeat(${config.cols}, 1fr)`,
+            gridTemplateRows: `repeat(${config.rows}, 1fr)`,
+          }}
+        >
+          {Array.from({ length: paneCount }).map((_, idx) => (
+            <PaneViewer
+              key={idx}
+              paneIndex={idx}
+              seriesId={paneStates[idx]?.seriesId || null}
+              isActive={activePaneIndex === idx}
+              onActivate={() => setActivePaneIndex(idx)}
+              onImageIndexChange={handlePaneImageIndexChange}
+              scoutLines={getScoutLinesForPane(idx)}
+            />
+          ))}
         </div>
       </div>
     );
   }
 
+  // Single-pane (1x1) layout
   return (
     <div className="flex-1 flex flex-col bg-black h-full">
       {/* Series info header */}

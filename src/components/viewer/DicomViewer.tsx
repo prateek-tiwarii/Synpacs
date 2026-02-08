@@ -1,13 +1,36 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import dicomParser from "dicom-parser";
 import { decode as decodeJ2K } from "@abasb75/openjpeg";
-import { Maximize, Minimize, Trash2, Plus, Minus } from "lucide-react";
+import {
+  Maximize,
+  Minimize,
+  Trash2,
+  Plus,
+  Minus,
+  Layers,
+  ZoomIn,
+  Contrast,
+  Move,
+  Crosshair,
+  RotateCw,
+  Ruler,
+  Circle,
+  Undo2,
+  ScrollText,
+} from "lucide-react";
 import {
   useViewerContext,
   type Annotation,
   type HUStats,
 } from "../ViewerLayout";
 import { imageCache } from "@/lib/imageCache";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 
 // Instance metadata interface matching the ACTUAL API response
 interface Instance {
@@ -29,10 +52,19 @@ interface Instance {
   modality: string;
 }
 
+export interface ScoutLine {
+  ratio: number; // 0-1 position along relevant axis
+  color: string;
+  label?: string;
+  orientation?: "horizontal" | "vertical"; // default horizontal
+}
+
 interface DicomViewerProps {
   instances: Instance[];
   className?: string;
   paneIndex?: number;
+  scoutLines?: ScoutLine[];
+  onImageIndexChange?: (index: number) => void;
 }
 
 // Helper to format DICOM DA (YYYYMMDD) to readable date
@@ -161,6 +193,9 @@ const distanceToLineSegment = (
 export function DicomViewer({
   instances,
   className = "",
+  paneIndex,
+  scoutLines,
+  onImageIndexChange,
 }: DicomViewerProps) {
   const {
     caseData,
@@ -181,6 +216,9 @@ export function DicomViewer({
     selectedSeries,
     setSeriesLoadProgress,
     stackSpeed,
+    setActiveTool,
+    undo,
+    canUndo,
   } = useViewerContext();
 
   const API_BASE_URL =
@@ -207,10 +245,17 @@ export function DicomViewer({
   } | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync local index with global context for header display
+  // Sync local index with global context for header display (single-pane only)
   useEffect(() => {
-    setGlobalImageIndex(currentImageIndex);
-  }, [currentImageIndex, setGlobalImageIndex]);
+    if (paneIndex === undefined) {
+      setGlobalImageIndex(currentImageIndex);
+    }
+  }, [currentImageIndex, setGlobalImageIndex, paneIndex]);
+
+  // Notify parent of image index changes (for scout line tracking)
+  useEffect(() => {
+    onImageIndexChange?.(currentImageIndex);
+  }, [currentImageIndex, onImageIndexChange]);
 
   // Focus text input when it becomes visible
   useEffect(() => {
@@ -257,6 +302,21 @@ export function DicomViewer({
   const prefetchStarted = useRef(false);
   const activeRequests = useRef(0);
   const MAX_CONCURRENT_REQUESTS = 5;
+
+  // Cache for decoded pixel data to avoid re-parsing DICOM on every scroll
+  const decodedPixelCache = useRef<Map<string, {
+    pixelData: Int16Array | Uint16Array;
+    rows: number;
+    columns: number;
+    slope: number;
+    intercept: number;
+    defaultWinCenter: number;
+    defaultWinWidth: number;
+  }>>(new Map());
+
+  // Wheel scroll throttling refs
+  const wheelAccumulator = useRef(0);
+  const wheelRAF = useRef<number | null>(null);
 
   // Memoize sorted instances
   const sortedInstances = useMemo(
@@ -1029,8 +1089,47 @@ export function DicomViewer({
     ctx.filter = "none";
 
     renderAnnotations(ctx);
+
+    // Draw scout lines
+    if (scoutLines && scoutLines.length > 0 && currentBitmap.current) {
+      const img = currentBitmap.current;
+      scoutLines.forEach((sl) => {
+        const isVertical = sl.orientation === "vertical";
+        ctx.save();
+        ctx.strokeStyle = sl.color;
+        ctx.lineWidth = 1.5 / viewTransform.scale;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+
+        if (isVertical) {
+          const x = -img.width / 2 + sl.ratio * img.width;
+          ctx.moveTo(x, -img.height / 2);
+          ctx.lineTo(x, img.height / 2);
+          ctx.stroke();
+          if (sl.label) {
+            ctx.fillStyle = sl.color;
+            ctx.font = `${12 / viewTransform.scale}px sans-serif`;
+            ctx.globalAlpha = 0.9;
+            ctx.fillText(sl.label, x + 4 / viewTransform.scale, -img.height / 2 + 14 / viewTransform.scale);
+          }
+        } else {
+          const y = -img.height / 2 + sl.ratio * img.height;
+          ctx.moveTo(-img.width / 2, y);
+          ctx.lineTo(img.width / 2, y);
+          ctx.stroke();
+          if (sl.label) {
+            ctx.fillStyle = sl.color;
+            ctx.font = `${12 / viewTransform.scale}px sans-serif`;
+            ctx.globalAlpha = 0.9;
+            ctx.fillText(sl.label, -img.width / 2 + 4 / viewTransform.scale, y - 4 / viewTransform.scale);
+          }
+        }
+        ctx.restore();
+      });
+    }
+
     ctx.restore();
-  }, [viewTransform, renderAnnotations]);
+  }, [viewTransform, renderAnnotations, scoutLines]);
 
   // Redraw when transform changes or on resize
   useEffect(() => {
@@ -1042,11 +1141,14 @@ export function DicomViewer({
     return () => window.removeEventListener("resize", renderCanvas);
   }, [renderCanvas]);
 
-  // Cleanup rotation animation frame on unmount
+  // Cleanup animation frames on unmount
   useEffect(() => {
     return () => {
       if (rotationAnimationFrame.current !== null) {
         cancelAnimationFrame(rotationAnimationFrame.current);
+      }
+      if (wheelRAF.current !== null) {
+        cancelAnimationFrame(wheelRAF.current);
       }
     };
   }, []);
@@ -1177,9 +1279,40 @@ export function DicomViewer({
     const loadImage = async () => {
       try {
         setError(null);
+        const instanceUid = currentInstance.instance_uid;
+
+        // Fast path: use decoded pixel cache (skips DICOM parse + J2K decode)
+        const cachedDecode = decodedPixelCache.current.get(instanceUid);
+        if (cachedDecode) {
+          rawPixelDataRef.current = cachedDecode.pixelData;
+          dicomMetaRef.current = {
+            rows: cachedDecode.rows,
+            columns: cachedDecode.columns,
+            slope: cachedDecode.slope,
+            intercept: cachedDecode.intercept,
+            defaultWinCenter: cachedDecode.defaultWinCenter,
+            defaultWinWidth: cachedDecode.defaultWinWidth,
+          };
+          const { columns, rows, slope, intercept, pixelData } = cachedDecode;
+          const effWW = viewTransform.windowWidth ?? cachedDecode.defaultWinWidth;
+          const effWC = viewTransform.windowCenter ?? cachedDecode.defaultWinCenter;
+          const rgbaData = new Uint8ClampedArray(columns * rows * 4);
+          const minVal = effWC - effWW / 2;
+          for (let i = 0; i < pixelData.length; i++) {
+            const val = pixelData[i] * slope + intercept;
+            let d = ((val - minVal) / effWW) * 255;
+            d = d < 0 ? 0 : d > 255 ? 255 : d;
+            const idx = i * 4;
+            rgbaData[idx] = rgbaData[idx + 1] = rgbaData[idx + 2] = d;
+            rgbaData[idx + 3] = 255;
+          }
+          currentBitmap.current = await createImageBitmap(new ImageData(rgbaData, columns, rows));
+          if (mounted) renderCanvas();
+          return;
+        }
 
         // Use global cache - no auth token needed for plain fetch
-        const cached = imageCache.get(currentInstance.instance_uid);
+        const cached = imageCache.get(instanceUid);
         let arrayBuffer: ArrayBuffer;
 
         if (cached) {
@@ -1200,26 +1333,37 @@ export function DicomViewer({
 
         const byteArray = new Uint8Array(arrayBuffer);
         const dataSet = dicomParser.parseDicom(byteArray);
+        // Helper: returns value if it's a valid finite number, otherwise undefined
+        const validNum = (v: number | undefined | null): number | undefined =>
+          v !== undefined && v !== null && Number.isFinite(v) ? v : undefined;
+
         const rows = dataSet.uint16("x00280010") || currentInstance.rows;
         const columns = dataSet.uint16("x00280011") || currentInstance.columns;
+
+        // For window center/width: prefer DICOM file, then backend metadata
         const winCenter =
-          dataSet.floatString("x00281050") ||
-          currentInstance.window_center ||
+          validNum(dataSet.floatString("x00281050")) ??
+          validNum(currentInstance.window_center) ??
           40;
         const winWidth =
-          dataSet.floatString("x00281051") ||
-          currentInstance.window_width ||
+          validNum(dataSet.floatString("x00281051")) ??
+          validNum(currentInstance.window_width) ??
           400;
+
+        // For rescale slope/intercept: prefer backend metadata (pydicom parses
+        // sequences & shared functional groups correctly), then DICOM parser fallback
         const slope =
-          dataSet.floatString("x00281053") ||
-          currentInstance.rescale_slope ||
+          validNum(currentInstance.rescale_slope) ??
+          validNum(dataSet.floatString("x00281053")) ??
           1;
         const intercept =
-          dataSet.floatString("x00281052") ||
-          currentInstance.rescale_intercept ||
+          validNum(currentInstance.rescale_intercept) ??
+          validNum(dataSet.floatString("x00281052")) ??
           0;
+
         const pixelRepresentation = dataSet.uint16("x00280103") ?? 0;
         const transferSyntax = dataSet.string("x00020010");
+
         const pixelDataElement = dataSet.elements.x7fe00010;
 
         if (!pixelDataElement) throw new Error("Pixel Data not found");
@@ -1250,12 +1394,30 @@ export function DicomViewer({
           const decoded = await decodeJ2K(rawPixelData.slice(j2kStart).buffer);
           let rawDecodedBytes = new Uint8Array(decoded.decodedBuffer);
 
-          let temp = new Uint16Array(
+          // Smart byte-swap detection: compare both byte orders against the
+          // DICOM window center to determine which produces valid HU values.
+          // The old heuristic (max < 256) fails when wrong-order values are also > 256.
+          const pixelCount = Math.min(rawDecodedBytes.byteLength / 2, rows * columns);
+          const tempView = new Uint16Array(
             rawDecodedBytes.buffer,
             rawDecodedBytes.byteOffset,
-            100,
+            pixelCount,
           );
-          if (Math.max(...Array.from(temp)) < 256) {
+          // Sample non-zero pixels from the middle third of the image
+          const sStart = Math.floor(pixelCount / 3);
+          const sEnd = Math.floor((pixelCount * 2) / 3);
+          const sStep = Math.max(1, Math.floor((sEnd - sStart) / 200));
+          let normalDist = 0, swappedDist = 0, sCount = 0;
+          for (let i = sStart; i < sEnd && sCount < 200; i += sStep) {
+            const v = tempView[i];
+            if (v === 0) continue;
+            const sv = ((v & 0xff) << 8) | ((v >> 8) & 0xff);
+            normalDist += Math.abs(v * slope + intercept - winCenter);
+            swappedDist += Math.abs(sv * slope + intercept - winCenter);
+            sCount++;
+          }
+          const needsSwap = sCount > 0 && swappedDist < normalDist;
+          if (needsSwap) {
             const swapped = new Uint8Array(rawDecodedBytes.length);
             for (let i = 0; i < rawDecodedBytes.length; i += 2) {
               swapped[i] = rawDecodedBytes[i + 1];
@@ -1288,6 +1450,19 @@ export function DicomViewer({
         }
 
         if (!mounted) return;
+
+        // Cache decoded pixel data for fast scrolling (skip DICOM parse on revisit)
+        decodedPixelCache.current.set(instanceUid, {
+          pixelData, rows, columns, slope, intercept,
+          defaultWinCenter: winCenter, defaultWinWidth: winWidth,
+        });
+        if (decodedPixelCache.current.size > 200) {
+          const iter = decodedPixelCache.current.keys();
+          for (let i = 0; i < 50; i++) {
+            const key = iter.next().value;
+            if (key) decodedPixelCache.current.delete(key);
+          }
+        }
 
         rawPixelDataRef.current = pixelData;
         dicomMetaRef.current = {
@@ -1400,6 +1575,7 @@ export function DicomViewer({
   // Interaction Handlers
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
       const pos = screenToImage(e.clientX, e.clientY);
       lastMousePos.current = { x: e.clientX, y: e.clientY };
       accumulatedStackDelta.current = 0;
@@ -1605,15 +1781,15 @@ export function DicomViewer({
           scale: Math.max(0.1, prev.scale - deltaY * 0.01),
         }));
       } else if (activeTool === "Stack") {
-        // Sensitivity based on stackSpeed (lower threshold = more responsive)
-        const threshold = Math.max(1, 11 - stackSpeed); // stackSpeed 1 -> threshold 10, stackSpeed 10 -> threshold 1
+        // Smooth 1-image-at-a-time stepping; stackSpeed controls drag sensitivity
         accumulatedStackDelta.current += deltaY;
-        if (Math.abs(accumulatedStackDelta.current) >= threshold) {
-          const step = Math.sign(accumulatedStackDelta.current) * stackSpeed;
+        const threshold = Math.max(2, 12 - stackSpeed);
+        const steps = Math.trunc(accumulatedStackDelta.current / threshold);
+        if (steps !== 0) {
+          accumulatedStackDelta.current -= steps * threshold;
           setCurrentImageIndex((prev) =>
-            Math.max(0, Math.min(prev + step, sortedInstances.length - 1)),
+            Math.max(0, Math.min(prev + steps, sortedInstances.length - 1)),
           );
-          accumulatedStackDelta.current = 0;
         }
       } else if (activeTool === "Contrast") {
         if (dicomMetaRef.current) {
@@ -1836,12 +2012,29 @@ export function DicomViewer({
     (event: WheelEvent) => {
       event.preventDefault();
       if (sortedInstances.length <= 1) return;
-      const direction = Math.sign(event.deltaY);
-      // Use stackSpeed to control scroll intensity (1-10 maps to 1-10 images per scroll)
-      const step = direction * stackSpeed;
-      setCurrentImageIndex((prev) =>
-        Math.max(0, Math.min(prev + step, sortedInstances.length - 1)),
-      );
+
+      // Accumulate scroll delta for smooth progression
+      wheelAccumulator.current += event.deltaY;
+
+      // Batch updates with requestAnimationFrame for smooth rendering
+      if (wheelRAF.current === null) {
+        wheelRAF.current = requestAnimationFrame(() => {
+          wheelRAF.current = null;
+          const delta = wheelAccumulator.current;
+          // pixels of scroll per 1 image step (stackSpeed 4 => 25px per image)
+          const threshold = 100 / stackSpeed;
+          const steps = Math.trunc(delta / threshold);
+
+          if (steps !== 0) {
+            // Keep sub-threshold remainder for next frame (trackpad smoothness)
+            wheelAccumulator.current = delta - steps * threshold;
+            setCurrentImageIndex((prev) =>
+              Math.max(0, Math.min(prev + steps, sortedInstances.length - 1)),
+            );
+          }
+          // If steps === 0, keep accumulating
+        });
+      }
     },
     [sortedInstances.length, stackSpeed],
   );
@@ -1947,14 +2140,17 @@ export function DicomViewer({
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative bg-black flex items-center justify-center overflow-hidden cursor-crosshair ${className}`}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    >
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={containerRef}
+          className={`relative bg-black flex items-center justify-center overflow-hidden cursor-crosshair ${className}`}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onDoubleClick={toggleFullscreen}
+        >
       <canvas ref={canvasRef} className="w-full h-full" />
 
       {error && (
@@ -1980,7 +2176,7 @@ export function DicomViewer({
           e.stopPropagation();
           toggleFullscreen();
         }}
-        className="absolute bottom-4 right-4 p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors border border-gray-600 shadow-lg"
+        className="absolute bottom-20 right-4 p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors border border-gray-600 shadow-lg"
         title={isFullscreen ? "Exit Full Screen" : "Full Screen"}
       >
         {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
@@ -2159,7 +2355,96 @@ export function DicomViewer({
           </div>
         </div>
       )}
-    </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48 bg-gray-900 border-gray-700 text-gray-200">
+        <ContextMenuItem
+          onClick={() => setActiveTool("Stack")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Layers size={16} />
+          <span className="flex-1">Stack</span>
+          {activeTool === "Stack" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("Zoom")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <ZoomIn size={16} />
+          <span className="flex-1">Zoom</span>
+          {activeTool === "Zoom" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("Contrast")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Contrast size={16} />
+          <span className="flex-1">Level</span>
+          {activeTool === "Contrast" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("Pan")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Move size={16} />
+          <span className="flex-1">Pan</span>
+          {activeTool === "Pan" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("HU")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Crosshair size={16} />
+          <span className="flex-1">Probe</span>
+          {activeTool === "HU" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("FreeRotate")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <RotateCw size={16} />
+          <span className="flex-1">Rotate</span>
+          {activeTool === "FreeRotate" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuSeparator className="bg-gray-700" />
+        <ContextMenuItem
+          onClick={() => setActiveTool("Length")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Ruler size={16} />
+          <span className="flex-1">Length</span>
+          {activeTool === "Length" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("Ellipse")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Circle size={16} />
+          <span className="flex-1">Elliptical (HU)</span>
+          {activeTool === "Ellipse" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuSeparator className="bg-gray-700" />
+        <ContextMenuItem
+          onClick={undo}
+          disabled={!canUndo}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Undo2 size={16} />
+          <span>History</span>
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            if (caseData?._id) {
+              window.open(`/case/${caseData._id}/report`, "_blank", "width=1200,height=800");
+            }
+          }}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <ScrollText size={16} />
+          <span>Report</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

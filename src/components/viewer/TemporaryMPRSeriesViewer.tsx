@@ -8,10 +8,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useViewerContext, type TemporaryMPRSeries } from "../ViewerLayout";
 import { Maximize, Minimize } from "lucide-react";
+import type { ScoutLine } from "./DicomViewer";
 
 interface TemporaryMPRSeriesViewerProps {
   series: TemporaryMPRSeries;
   className?: string;
+  scoutLines?: ScoutLine[];
+  onImageIndexChange?: (index: number) => void;
 }
 
 // Helper to format DICOM date (YYYYMMDD) to readable format
@@ -26,6 +29,8 @@ const formatDicomDate = (dateStr: string) => {
 export function TemporaryMPRSeriesViewer({
   series,
   className = "",
+  scoutLines,
+  onImageIndexChange,
 }: TemporaryMPRSeriesViewerProps) {
   const {
     viewTransform,
@@ -35,6 +40,7 @@ export function TemporaryMPRSeriesViewer({
     setCurrentImageIndex,
   } = useViewerContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scoutCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const isDragging = useRef(false);
@@ -44,6 +50,11 @@ export function TemporaryMPRSeriesViewer({
   useEffect(() => {
     setCurrentImageIndex(currentIndex);
   }, [currentIndex, setCurrentImageIndex]);
+
+  // Report index changes to parent
+  useEffect(() => {
+    onImageIndexChange?.(currentIndex);
+  }, [currentIndex, onImageIndexChange]);
 
   // Render current slice
   useEffect(() => {
@@ -65,18 +76,87 @@ export function TemporaryMPRSeriesViewer({
     ctx.putImageData(slice.imageData, 0, 0);
 
     // Apply view transforms (pan, zoom, etc.) via CSS
+    // Use physical aspect ratio (accounts for pixel spacing vs slice spacing)
+    // to avoid squashed Coronal/Sagittal views
     const containerRect = container.getBoundingClientRect();
     const containerAspect = containerRect.width / containerRect.height;
-    const imageAspect = slice.width / slice.height;
+    const physicalAspect = series.physicalAspectRatio ?? (slice.width / slice.height);
 
-    if (imageAspect > containerAspect) {
-      canvas.style.width = "100%";
-      canvas.style.height = "auto";
+    if (physicalAspect > containerAspect) {
+      // Image is wider than container — fit to width
+      const displayWidth = containerRect.width;
+      const displayHeight = displayWidth / physicalAspect;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
     } else {
-      canvas.style.width = "auto";
-      canvas.style.height = "100%";
+      // Image is taller than container — fit to height
+      const displayHeight = containerRect.height;
+      const displayWidth = displayHeight * physicalAspect;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
     }
   }, [series, currentIndex]);
+
+  // Render scout lines on overlay canvas (CSS-display-sized to avoid scaling issues)
+  useEffect(() => {
+    const scoutCanvas = scoutCanvasRef.current;
+    const mainCanvas = canvasRef.current;
+    if (!scoutCanvas || !mainCanvas) return;
+
+    if (!scoutLines || scoutLines.length === 0) {
+      const ctx = scoutCanvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, scoutCanvas.width, scoutCanvas.height);
+      scoutCanvas.style.width = "0px";
+      scoutCanvas.style.height = "0px";
+      return;
+    }
+
+    // Match overlay to the CSS display size of the main canvas
+    const displayWidth = parseFloat(mainCanvas.style.width) || mainCanvas.width;
+    const displayHeight = parseFloat(mainCanvas.style.height) || mainCanvas.height;
+    scoutCanvas.width = Math.round(displayWidth);
+    scoutCanvas.height = Math.round(displayHeight);
+    scoutCanvas.style.width = `${displayWidth}px`;
+    scoutCanvas.style.height = `${displayHeight}px`;
+
+    const ctx = scoutCanvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, scoutCanvas.width, scoutCanvas.height);
+
+    scoutLines.forEach((sl) => {
+      const isVertical = sl.orientation === "vertical";
+      ctx.save();
+      ctx.strokeStyle = sl.color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+
+      if (isVertical) {
+        const x = sl.ratio * displayWidth;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, displayHeight);
+      } else {
+        const y = sl.ratio * displayHeight;
+        ctx.moveTo(0, y);
+        ctx.lineTo(displayWidth, y);
+      }
+      ctx.stroke();
+
+      if (sl.label) {
+        ctx.fillStyle = sl.color;
+        ctx.font = "11px sans-serif";
+        ctx.globalAlpha = 0.9;
+        if (isVertical) {
+          const x = sl.ratio * displayWidth;
+          ctx.fillText(sl.label, x + 4, 14);
+        } else {
+          const y = sl.ratio * displayHeight;
+          ctx.fillText(sl.label, 4, y - 4);
+        }
+      }
+      ctx.restore();
+    });
+  }, [scoutLines, currentIndex, series]);
 
   // Handle mouse interactions for scrolling
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -135,10 +215,19 @@ export function TemporaryMPRSeriesViewer({
       >
         <canvas
           ref={canvasRef}
-          className="max-w-full max-h-full object-contain cursor-ns-resize"
+          className="cursor-ns-resize"
           style={{
             transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale}) rotate(${viewTransform.rotation}deg) scaleX(${viewTransform.flipH ? -1 : 1}) scaleY(${viewTransform.flipV ? -1 : 1})`,
             filter: viewTransform.invert ? "invert(1)" : "none",
+          }}
+        />
+        {/* Scout line overlay — sized to CSS display dimensions, positioned over main canvas */}
+        <canvas
+          ref={scoutCanvasRef}
+          className="absolute pointer-events-none"
+          style={{
+            transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale}) rotate(${viewTransform.rotation}deg) scaleX(${viewTransform.flipH ? -1 : 1}) scaleY(${viewTransform.flipV ? -1 : 1})`,
+            zIndex: 5,
           }}
         />
 

@@ -282,53 +282,50 @@ async function extractPixelData(
     transferSyntax === "1.2.840.10008.1.2.4.91";
 
   if (isJ2K) {
-    // Extract the pixel data region - create an independent copy immediately
-    // This avoids issues with detached ArrayBuffers from WebAssembly/shared buffers
-    const pixelDataRegion = new Uint8Array(safeLength);
-    const sourceView = new Uint8Array(
+    // Get the pixel data as a Uint8Array view into the buffer
+    // This matches the approach used in DicomViewer which works reliably
+    const rawPixelData = new Uint8Array(
       bufferCopy,
       pixelDataElement.dataOffset,
       safeLength,
     );
-    pixelDataRegion.set(sourceView);
 
     // Find J2K start marker (0xFF 0x4F)
     let j2kStart = 0;
-    for (let i = 0; i < 4000 && i < pixelDataRegion.length - 1; i++) {
-      if (pixelDataRegion[i] === 0xff && pixelDataRegion[i + 1] === 0x4f) {
+    for (let i = 0; i < 4000 && i < rawPixelData.length - 1; i++) {
+      if (rawPixelData[i] === 0xff && rawPixelData[i + 1] === 0x4f) {
         j2kStart = i;
         break;
       }
     }
 
-    // Create a new buffer for J2K decoder (independent copy)
-    const j2kDataLength = pixelDataRegion.length - j2kStart;
-    const j2kBuffer = new ArrayBuffer(j2kDataLength);
-    const j2kData = new Uint8Array(j2kBuffer);
-    j2kData.set(pixelDataRegion.subarray(j2kStart));
+    // Pass the sliced buffer to decoder
+    const decoded = await decodeJ2K(rawPixelData.slice(j2kStart).buffer);
 
-    const decoded = await decodeJ2K(j2kBuffer);
+    // Extract decoded data
+    // Note: With serial decoding (CONCURRENT_LOADS=1), buffer detachment issues are minimized
+    let decodedData = new Uint8Array(decoded.decodedBuffer);
 
-    // Immediately copy the decoded data to a new independent buffer
-    // The decoder's buffer may be transferred/detached
-    const decodedLength = decoded.decodedBuffer.byteLength;
-    const decodedCopy = new Uint8Array(decodedLength);
-    decodedCopy.set(new Uint8Array(decoded.decodedBuffer));
-
-    // Byte swap detection - use first 100 samples
-    const sampleCount = Math.min(100, decodedCopy.length / 2);
-    const temp = new Uint16Array(sampleCount);
-    for (let i = 0; i < sampleCount; i++) {
-      temp[i] = decodedCopy[i * 2] | (decodedCopy[i * 2 + 1] << 8);
+    if (decodedData.length === 0) {
+      throw new Error(
+        `J2K decoder returned empty data. Buffer size: ${decoded.decodedBuffer.byteLength}, Frame info: ${JSON.stringify(decoded.frameInfo)}`
+      );
     }
 
-    let finalBytes = decodedCopy;
+    // Byte swap detection - use first 100 samples
+    const sampleCount = Math.min(100, decodedData.length / 2);
+    const temp = new Uint16Array(sampleCount);
+    for (let i = 0; i < sampleCount; i++) {
+      temp[i] = decodedData[i * 2] | (decodedData[i * 2 + 1] << 8);
+    }
+
+    let finalBytes = decodedData;
     if (Math.max(...Array.from(temp)) < 256) {
       // Need byte swap
-      const swapped = new Uint8Array(decodedCopy.length);
-      for (let i = 0; i < decodedCopy.length; i += 2) {
-        swapped[i] = decodedCopy[i + 1];
-        swapped[i + 1] = decodedCopy[i];
+      const swapped = new Uint8Array(decodedData.length);
+      for (let i = 0; i < decodedData.length; i += 2) {
+        swapped[i] = decodedData[i + 1];
+        swapped[i + 1] = decodedData[i];
       }
       finalBytes = swapped;
     }
@@ -392,8 +389,9 @@ export async function buildVolume(
   // Calculate slice spacing
   const { sliceSpacing, normal } = sortSlicesByPosition(sortedInstances);
 
-  // Load slices with concurrency limit
-  const CONCURRENT_LOADS = 5;
+  // Load slices serially (concurrency = 1) to avoid WASM decoder conflicts
+  // The openjpeg WASM decoder has global state that can be corrupted by parallel decoding
+  const CONCURRENT_LOADS = 1;
   let loadedCount = 0;
 
   const loadSlice = async (instance: Instance, sliceIndex: number) => {

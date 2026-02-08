@@ -99,6 +99,7 @@ export interface TemporaryMPRSeries {
   createdAt: number; // Timestamp
   windowCenter: number;
   windowWidth: number;
+  physicalAspectRatio?: number; // Physical width/height ratio accounting for spacing
 }
 
 export type GridLayout = "1x1" | "1x2" | "2x2";
@@ -235,6 +236,9 @@ interface ViewerContextType {
   // Stack speed (1-10, default 4)
   stackSpeed: number;
   setStackSpeed: (speed: number) => void;
+  // Scout line
+  showScoutLine: boolean;
+  setShowScoutLine: (show: boolean) => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -307,6 +311,7 @@ export function ViewerLayout() {
     total: number;
   } | null>(null);
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
+  const [showScoutLine, setShowScoutLine] = useState(false);
 
   // Window presets have fixed keys (1-7), other shortcuts start empty for user to assign
   const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -404,6 +409,13 @@ export function ViewerLayout() {
     const config = GRID_LAYOUTS.find((l) => l.id === layout);
     return config ? config.rows * config.cols : 1;
   };
+
+  // Auto-enable scout line when switching to multi-pane layout
+  useEffect(() => {
+    if (gridLayout !== "1x1") {
+      setShowScoutLine(true);
+    }
+  }, [gridLayout]);
 
   // Initialize/update pane states when layout or series change
   useEffect(() => {
@@ -524,6 +536,20 @@ export function ViewerLayout() {
   // Wrapper to reset W/L and view state when switching series
   const handleSetSelectedSeries = (series: Series | null) => {
     setSelectedSeries(series);
+    // Also update active pane's series in multi-pane mode
+    if (series && gridLayout !== "1x1") {
+      setPaneStates((prev) => {
+        const newStates = [...prev];
+        if (newStates[activePaneIndex]) {
+          newStates[activePaneIndex] = {
+            ...newStates[activePaneIndex],
+            seriesId: series._id,
+            currentImageIndex: 0,
+          };
+        }
+        return newStates;
+      });
+    }
     // Reset W/L to original (null means use DICOM default)
     setViewTransform((prev) => ({
       ...prev,
@@ -688,6 +714,8 @@ export function ViewerLayout() {
     updateShortcut,
     stackSpeed,
     setStackSpeed,
+    showScoutLine,
+    setShowScoutLine,
   };
 
   if (loading) {

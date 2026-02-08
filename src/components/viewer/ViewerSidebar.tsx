@@ -275,6 +275,7 @@ const ViewerSidebar = () => {
           isCurrent={true}
         >
           {caseData.series
+            .filter((series) => series.image_count > 0)
             .sort((a, b) => a.series_number - b.series_number)
             .map((series) => (
               <SeriesItem

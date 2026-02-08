@@ -1,6 +1,6 @@
-import { Download, ImageIcon, ChevronDown, ChevronUp, SlidersHorizontal, ClipboardCheck, FolderOpen, MessageSquare, Bookmark, Settings } from "lucide-react";
+import { Download, ImageIcon, ChevronDown, ChevronUp, SlidersHorizontal, ClipboardCheck, FolderOpen, MessageSquare, Bookmark, Settings, Eye } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import type { VisibilityState } from '@tanstack/react-table';
+import type { VisibilityState, ColumnSizingState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import type { Patient } from "@/components/patient/PacDetailsModal";
 import { apiService } from "@/lib/api";
@@ -38,6 +38,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 };
 
 const STORAGE_KEY_PACS_LIST = 'pacs_list_table_columns';
+const STORAGE_KEY_PACS_LIST_SIZING = 'pacs_list_table_column_sizing';
 
 const PacsList = () => {
     const [patients, setPatients] = useState<Patient[]>([]);
@@ -104,6 +105,26 @@ const PacsList = () => {
             console.error('Failed to save column visibility to localStorage:', error);
         }
     }, [columnVisibility]);
+
+    // Initialize column sizing from localStorage or use empty (default sizes)
+    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY_PACS_LIST_SIZING);
+            if (stored) return JSON.parse(stored);
+        } catch (error) {
+            console.error('Failed to load column sizing from localStorage:', error);
+        }
+        return {};
+    });
+
+    // Save column sizing to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY_PACS_LIST_SIZING, JSON.stringify(columnSizing));
+        } catch (error) {
+            console.error('Failed to save column sizing to localStorage:', error);
+        }
+    }, [columnSizing]);
 
     // Fetch available centers
     useEffect(() => {
@@ -368,6 +389,8 @@ const PacsList = () => {
                 </div>
             ),
             enableHiding: false,
+            size: 125,
+            minSize: 80,
             cell: (props: any) => (
                 <TooltipProvider>
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
@@ -516,6 +539,8 @@ const PacsList = () => {
         columnHelper.accessor('name', {
             header: 'Patient Name',
             enableSorting: true,
+            size: 150,
+            minSize: 30,
             cell: (info: any) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
@@ -526,10 +551,10 @@ const PacsList = () => {
                             onClick={() => {
                                 window.open(`${window.location.origin}/case/${caseId}/viewer`, `viewer_${caseId}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
                             }}
-                            className="text-blue-600 hover:text-blue-800 text-[10px] font-medium shrink-0"
+                            className="text-red-500 hover:text-red-700 shrink-0"
                             title="Open Viewer"
                         >
-                            [View]
+                            <Eye className="w-4 h-4" />
                         </button>
                     </div>
                 );
@@ -539,6 +564,8 @@ const PacsList = () => {
             id: 'case_id',
             header: 'Case ID',
             enableSorting: false,
+            size: 85,
+            minSize: 30,
             cell: (props: any) => {
                 const patientId = props.row.original.pac_patinet_id || props.row.original.patient?.patient_id || '-';
                 return <CellWithCopy content={patientId} cellId={`${props.row.id}-case-id`} />;
@@ -548,6 +575,8 @@ const PacsList = () => {
             id: 'age',
             header: 'Age',
             enableSorting: false,
+            size: 40,
+            minSize: 20,
             cell: (props: any) => {
                 const age = props.row.original.age || props.row.original.patient?.age || '-';
                 return <CellWithCopy content={String(age)} cellId={`${props.row.id}-age`} />;
@@ -557,6 +586,8 @@ const PacsList = () => {
             id: 'sex',
             header: 'Sex',
             enableSorting: false,
+            size: 40,
+            minSize: 20,
             cell: (props: any) => {
                 const sex = props.row.original.sex || props.row.original.patient?.sex || '-';
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
@@ -566,6 +597,8 @@ const PacsList = () => {
             id: 'study_date_time',
             header: 'Study Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props: any) => {
                 const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
@@ -592,6 +625,8 @@ const PacsList = () => {
             id: 'history_date_time',
             header: 'History Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props: any) => {
                 const updatedAt = props.row.original.updatedAt;
                 if (!updatedAt) return <span className="text-gray-400">-</span>;
@@ -612,6 +647,8 @@ const PacsList = () => {
             id: 'reporting_date_time',
             header: 'Reporting Date & Time',
             enableSorting: true,
+            size: 120,
+            minSize: 30,
             cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
@@ -631,12 +668,16 @@ const PacsList = () => {
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             enableSorting: false,
+            size: 105,
+            minSize: 30,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-accession`} />,
         }),
         columnHelper.display({
             id: 'center',
             header: 'Center',
             enableSorting: false,
+            size: 90,
+            minSize: 30,
             cell: (props: any) => {
                 const centerName = props.row.original.hospital_name || '-';
                 return <CellWithCopy content={centerName} cellId={`${props.row.id}-center`} />;
@@ -646,6 +687,8 @@ const PacsList = () => {
             id: 'referring_doctor',
             header: 'Referring Doctor',
             enableSorting: false,
+            size: 105,
+            minSize: 30,
             cell: (props: any) => {
                 const referringDoctor = props.row.original.referring_doctor || '-';
                 return <CellWithCopy content={referringDoctor} cellId={`${props.row.id}-ref-doc`} />;
@@ -655,6 +698,8 @@ const PacsList = () => {
             id: 'image_count',
             header: 'Image Count',
             enableSorting: false,
+            size: 60,
+            minSize: 20,
             cell: (props: any) => {
                 const instanceCount = props.row.original.instance_count || 0;
                 return <CellWithCopy content={String(instanceCount)} cellId={`${props.row.id}-img-count`} />;
@@ -663,17 +708,23 @@ const PacsList = () => {
         columnHelper.accessor('case_description', {
             header: 'Study Description',
             enableSorting: false,
+            size: 130,
+            minSize: 30,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-desc`} />,
         }),
         columnHelper.accessor('modality', {
             header: 'Modality',
             enableSorting: false,
+            size: 55,
+            minSize: 20,
             cell: (info: any) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-modality`} />,
         }),
         columnHelper.display({
             id: 'case_type',
             header: 'Case Type',
             enableSorting: false,
+            size: 70,
+            minSize: 20,
             cell: (props: any) => {
                 const caseType = props.row.original.treatment_type || '-';
                 return <CellWithCopy content={caseType} cellId={`${props.row.id}-case-type`} />;
@@ -683,6 +734,8 @@ const PacsList = () => {
             id: 'reported',
             header: 'Reported',
             enableSorting: false,
+            size: 75,
+            minSize: 30,
             cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (attachedReport) {
@@ -699,7 +752,7 @@ const PacsList = () => {
                 return <span className="text-gray-400">-</span>;
             },
         }),
-    ], []);
+    ], [handleDeleteBookmark, handleSaveBookmark, handleZipDownload, handleMessageClick, handleDocumentClick, handleHistoryClick]);
 
     return (
         <div className="p-6 space-y-4">
@@ -751,6 +804,9 @@ const PacsList = () => {
                 onColumnVisibilityChange={setColumnVisibility}
                 isColumnModalOpen={isColumnModalOpen}
                 onColumnModalOpenChange={setIsColumnModalOpen}
+                enableColumnResizing={true}
+                columnSizing={columnSizing}
+                onColumnSizingChange={setColumnSizing}
             />
 
             {/* Footer with Total Cases and Pagination */}

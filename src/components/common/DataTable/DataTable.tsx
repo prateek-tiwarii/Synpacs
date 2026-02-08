@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { flexRender, useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel } from "@tanstack/react-table";
-import type { ColumnDef, VisibilityState, SortingState, ColumnFiltersState, RowSelectionState } from '@tanstack/react-table';
+import type { ColumnDef, VisibilityState, SortingState, ColumnFiltersState, RowSelectionState, ColumnSizingState } from '@tanstack/react-table';
 import { Loader2, RotateCcwIcon, Settings, UserPlus, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState } from "react";
 import {
@@ -67,6 +67,9 @@ export interface DataTableProps<TData> {
     tableDescription?: string;
     isColumnModalOpen?: boolean;
     onColumnModalOpenChange?: (open: boolean) => void;
+    columnSizing?: ColumnSizingState;
+    onColumnSizingChange?: (sizing: ColumnSizingState) => void;
+    enableColumnResizing?: boolean;
     // onRefresh?: () => void | Promise<void>;
 }
 
@@ -96,6 +99,9 @@ export function DataTable<TData>({
     tableDescription = "",
     isColumnModalOpen: externalIsColumnModalOpen,
     onColumnModalOpenChange: externalOnColumnModalOpenChange,
+    columnSizing: externalColumnSizing,
+    onColumnSizingChange: externalOnColumnSizingChange,
+    enableColumnResizing = false,
     // onRefresh,
 }: DataTableProps<TData>) {
     console.log('=== DataTable Render ===');
@@ -127,6 +133,7 @@ export function DataTable<TData>({
             sorting: enableSorting ? sorting : undefined,
             columnFilters: enableFiltering ? columnFilters : undefined,
             rowSelection: enableRowSelection ? rowSelection : undefined,
+            ...(enableColumnResizing && externalColumnSizing ? { columnSizing: externalColumnSizing } : {}),
         },
         onColumnVisibilityChange: (updater) => {
             if (onColumnVisibilityChange) {
@@ -140,6 +147,16 @@ export function DataTable<TData>({
         onColumnFiltersChange: enableFiltering ? setColumnFilters : undefined,
         onRowSelectionChange: enableRowSelection && onRowSelectionChange ? (updater) => onRowSelectionChange(updater as RowSelectionState) : undefined,
         enableRowSelection: enableRowSelection,
+        enableColumnResizing,
+        columnResizeMode: 'onChange',
+        onColumnSizingChange: enableColumnResizing && externalOnColumnSizingChange
+            ? (updater) => {
+                const newSizing = typeof updater === 'function'
+                    ? updater(externalColumnSizing || {})
+                    : updater;
+                externalOnColumnSizingChange(newSizing);
+            }
+            : undefined,
         getCoreRowModel: getCoreRowModel(),
         getFilteredRowModel: enableFiltering ? getFilteredRowModel() : undefined,
         getSortedRowModel: enableSorting ? getSortedRowModel() : undefined,
@@ -409,20 +426,22 @@ export function DataTable<TData>({
                                         const isNameCol = header.id === 'name';
                                         const isFixedCol = isSelectCol || isActionsCol || isNameCol;
 
-                                        // Set specific widths for fixed columns
-                                        const colStyle: React.CSSProperties = isSelectCol
-                                            ? { width: '32px' }
-                                            : isActionsCol
-                                                ? { width: '140px' }
-                                                : isNameCol
-                                                    ? { width: '180px' }
-                                                    : {};
+                                        // Set specific widths for fixed columns, or use column size when resizing is enabled
+                                        const colStyle: React.CSSProperties = enableColumnResizing
+                                            ? { width: header.getSize(), position: 'relative' }
+                                            : isSelectCol
+                                                ? { width: '32px' }
+                                                : isActionsCol
+                                                    ? { width: '140px' }
+                                                    : isNameCol
+                                                        ? { width: '180px' }
+                                                        : {};
 
                                         return (
                                             <TableHead
                                                 key={header.id}
                                                 style={colStyle}
-                                                className={`font-semibold text-[11px] px-1 py-1 ${isFixedCol ? 'whitespace-nowrap' : 'overflow-hidden'}`}
+                                                className="font-semibold text-[11px] px-1 py-1 whitespace-nowrap"
                                             >
                                                 {header.isPlaceholder ? null : (
                                                     <div
@@ -452,6 +471,14 @@ export function DataTable<TData>({
                                                         )}
                                                     </div>
                                                 )}
+                                                {enableColumnResizing && header.column.getCanResize() && (
+                                                    <div
+                                                        onMouseDown={header.getResizeHandler()}
+                                                        onTouchStart={header.getResizeHandler()}
+                                                        onDoubleClick={() => header.column.resetSize()}
+                                                        className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-blue-500 ${header.column.getIsResizing() ? 'bg-blue-600' : 'bg-transparent'}`}
+                                                    />
+                                                )}
                                             </TableHead>
                                         );
                                     })}
@@ -469,13 +496,13 @@ export function DataTable<TData>({
                                         data-state={enableRowSelection && row.getIsSelected() ? "selected" : undefined}
                                     >
                                         {row.getVisibleCells().map((cell) => {
-                                            const isFixedCol = cell.column.id === 'actions' || cell.column.id === 'select' || cell.column.id === 'name';
                                             return (
                                                 <TableCell
                                                     key={cell.id}
-                                                    className={`text-[11px] px-1 py-1 ${isFixedCol ? 'whitespace-nowrap' : 'overflow-hidden'}`}
+                                                    className="text-[11px] px-1 py-1 max-w-0"
+                                                    style={enableColumnResizing ? { width: cell.column.getSize() } : undefined}
                                                 >
-                                                    <div className={isFixedCol ? '' : 'truncate'} title={isFixedCol ? undefined : String(cell.getValue() ?? '')}>
+                                                    <div className="truncate" title={String(cell.getValue() ?? '')}>
                                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                                     </div>
                                                 </TableCell>
