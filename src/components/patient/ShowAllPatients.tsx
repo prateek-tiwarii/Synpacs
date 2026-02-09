@@ -467,9 +467,7 @@ const ShowAllPatients = () => {
       if (filters.patientId) {
         apiFilters.patient_id = filters.patientId;
       }
-      if (filters.bodyPart) {
-        apiFilters.body_part = filters.bodyPart;
-      }
+      // Note: bodyPart filter is applied client-side to search both description and report content
       if (filters.hospital) {
         apiFilters.hospital = filters.hospital;
       }
@@ -511,7 +509,25 @@ const ShowAllPatients = () => {
       const response = await apiService.getAllPacCases(page, limit, apiFilters) as ApiResponse;
 
       if (response.success) {
-        const casesData = response.data?.cases || [];
+        let casesData = response.data?.cases || [];
+        
+        // Apply client-side filtering for study description search in report content
+        if (filters.bodyPart && filters.bodyPart.trim() !== '') {
+          const searchTerm = filters.bodyPart.toLowerCase().trim();
+          casesData = casesData.filter((caseItem: any) => {
+            // Search in study description
+            const descriptionMatch = (caseItem.description || '').toLowerCase().includes(searchTerm);
+            
+            // Search in report content if report exists
+            const reportContentMatch = caseItem.attached_report?.content_plain_text
+              ? caseItem.attached_report.content_plain_text.toLowerCase().includes(searchTerm)
+              : false;
+            
+            // Return true if match found in either description or report content
+            return descriptionMatch || reportContentMatch;
+          });
+        }
+        
         setCases(casesData);
         setPagination(response.pagination || null);
 
