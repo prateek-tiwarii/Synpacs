@@ -194,6 +194,23 @@ const PacsList = () => {
                     });
                 }
 
+                // Filter by study description (searches in description and report content)
+                if (filters.bodyPart && filters.bodyPart.trim() !== '') {
+                    const searchTerm = filters.bodyPart.toLowerCase().trim();
+                    filteredData = filteredData.filter((caseItem: any) => {
+                        // Search in study description
+                        const descriptionMatch = (caseItem.description || '').toLowerCase().includes(searchTerm);
+                        
+                        // Search in report content if report exists
+                        const reportContentMatch = caseItem.attached_report?.content_plain_text
+                            ? caseItem.attached_report.content_plain_text.toLowerCase().includes(searchTerm)
+                            : false;
+                        
+                        // Return true if match found in either description or report content
+                        return descriptionMatch || reportContentMatch;
+                    });
+                }
+
                 // Filter by modality
                 const selectedModalities = Object.entries(filters.modalities)
                     .filter(([_, isSelected]) => isSelected)

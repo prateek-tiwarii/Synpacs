@@ -143,7 +143,7 @@ const AssignedPatientsTable = ({
                 end_date: filters?.endDate || '',
                 patient_name: filters?.patientName || '',
                 patient_id: filters?.patientId || '',
-                body_part: filters?.bodyPart || '',
+                // Note: body_part filter is applied client-side to search both description and report content
                 reporting_status: reporting_status,
                 gender: '',
                 modality: '',
@@ -189,8 +189,27 @@ const AssignedPatientsTable = ({
             console.log('Response data length:', response.data?.length);
             
             if (response.success && response.data) {
+                let casesData = response.data;
+                
+                // Apply client-side filtering for study description search in report content
+                if (filters?.bodyPart && filters.bodyPart.trim() !== '') {
+                    const searchTerm = filters.bodyPart.toLowerCase().trim();
+                    casesData = casesData.filter((caseItem: any) => {
+                        // Search in study description
+                        const descriptionMatch = (caseItem.description || '').toLowerCase().includes(searchTerm);
+                        
+                        // Search in report content if report exists
+                        const reportContentMatch = caseItem.attached_report?.content_plain_text
+                            ? caseItem.attached_report.content_plain_text.toLowerCase().includes(searchTerm)
+                            : false;
+                        
+                        // Return true if match found in either description or report content
+                        return descriptionMatch || reportContentMatch;
+                    });
+                }
+                
                 // Map API response to match Patient interface
-                const mappedPatients: Patient[] = response.data.map((caseItem: any) => {
+                const mappedPatients: Patient[] = casesData.map((caseItem: any) => {
                     // Format case_date to readable format (YYYYMMDD -> YYYY-MM-DD)
                     const formatCaseDate = (dateStr: string): string => {
                         if (!dateStr || dateStr.length !== 8) return dateStr;
