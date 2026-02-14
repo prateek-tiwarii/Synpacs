@@ -10,6 +10,7 @@ import { getCookie } from "@/lib/cookies";
 import DicomViewer, { type ScoutLine } from "@/components/viewer/DicomViewer";
 import SRViewer from "@/components/viewer/SRViewer";
 import TemporaryMPRSeriesViewer from "@/components/viewer/TemporaryMPRSeriesViewer";
+import VRTViewer from "@/components/viewer/VRTViewer";
 import { Loader2, ChevronDown, Check } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,6 +32,7 @@ import {
   applyWindowLevel,
   calculateSliceNormal,
   getSliceGeometry,
+  extractMiniMIPSlice,
 } from "@/lib/mpr";
 import toast from "react-hot-toast";
 import { imageCache } from "@/lib/imageCache";
@@ -312,6 +314,7 @@ const CaseViewer = () => {
     selectedSeries,
     setSelectedSeries,
     selectedTemporarySeriesId,
+    setSelectedTemporarySeriesId,
     temporaryMPRSeries,
     pendingMPRGeneration,
     clearPendingMPRGeneration,
@@ -323,13 +326,24 @@ const CaseViewer = () => {
     activePaneIndex,
     setActivePaneIndex,
     showScoutLine,
+    isVRTActive,
+    setIsVRTActive,
   } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // VRT volume reference (kept across renders, not in context to avoid re-renders)
+  const vrtVolumeRef = useRef<VolumeData | null>(null);
+
   // Track series IDs known to have no instances so we can skip them
   const emptySeriesIds = useRef<Set<string>>(new Set());
+
+  // 2D-MPR split layout state
+  const [active2DMPRPane, setActive2DMPRPane] = useState<number>(0); // 0=original, 1=coronal, 2=sagittal
+  const [coronalIndex, setCoronalIndex] = useState(0);
+  const [sagittalIndex, setSagittalIndex] = useState(0);
+  const [originalIndex, setOriginalIndex] = useState(0);
 
   // Multi-pane scout line tracking: per-pane image index, total, plane, and source
   const [paneImageInfo, setPaneImageInfo] = useState<
@@ -434,6 +448,56 @@ const CaseViewer = () => {
   const selectedTempSeries = selectedTemporarySeriesId
     ? temporaryMPRSeries.find((ts) => ts.id === selectedTemporarySeriesId)
     : null;
+
+  // Detect 2D-MPR layout mode: both Coronal and Sagittal temp series exist for same source
+  const mpr2DSeries = useMemo(() => {
+    if (!selectedSeries) return null;
+    const sourceId = selectedSeries._id;
+    const coronal = temporaryMPRSeries.find(
+      (ts) => ts.sourceSeriesId === sourceId && ts.description.includes("(2D-MPR)") && ts.mprMode === "Coronal",
+    );
+    const sagittal = temporaryMPRSeries.find(
+      (ts) => ts.sourceSeriesId === sourceId && ts.description.includes("(2D-MPR)") && ts.mprMode === "Sagittal",
+    );
+    if (coronal && sagittal) return { coronal, sagittal };
+    return null;
+  }, [selectedSeries, temporaryMPRSeries]);
+
+  const is2DMPRLayout = !!mpr2DSeries && !!selectedTempSeries && selectedTempSeries.description.includes("(2D-MPR)");
+
+  // Scout line computation for 2D-MPR layout
+  const get2DMPRScoutLines = useCallback(
+    (targetPane: number): ScoutLine[] => {
+      if (!mpr2DSeries) return [];
+      const lines: ScoutLine[] = [];
+
+      // Ratios: position of each pane's current slice as 0-1
+      const axialTotal = instances.length;
+      const coronalTotal = mpr2DSeries.coronal.sliceCount;
+      const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
+
+      const axialRatio = axialTotal > 1 ? originalIndex / (axialTotal - 1) : 0;
+      const coronalRatio = coronalTotal > 1 ? coronalIndex / (coronalTotal - 1) : 0;
+      const sagittalRatio = sagittalTotal > 1 ? sagittalIndex / (sagittalTotal - 1) : 0;
+
+      if (targetPane === 0) {
+        // Original/Axial view: show Coronal (horizontal) and Sagittal (vertical)
+        lines.push({ ratio: coronalRatio, color: "#ffff00", label: "Cor", orientation: "horizontal" });
+        lines.push({ ratio: sagittalRatio, color: "#00ffff", label: "Sag", orientation: "vertical" });
+      } else if (targetPane === 1) {
+        // Coronal view: show Axial (horizontal, inverted) and Sagittal (vertical)
+        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", label: "Ax", orientation: "horizontal" });
+        lines.push({ ratio: sagittalRatio, color: "#00ffff", label: "Sag", orientation: "vertical" });
+      } else if (targetPane === 2) {
+        // Sagittal view: show Axial (horizontal, inverted) and Coronal (vertical)
+        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", label: "Ax", orientation: "horizontal" });
+        lines.push({ ratio: coronalRatio, color: "#ffff00", label: "Cor", orientation: "vertical" });
+      }
+
+      return lines;
+    },
+    [mpr2DSeries, instances.length, originalIndex, coronalIndex, sagittalIndex],
+  );
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
@@ -678,13 +742,27 @@ const CaseViewer = () => {
             addTemporaryMPRSeries(tempSeries);
           }
         }
-        // Handle 3D-MPR: Same as single plane for now (oblique not implemented yet)
+        // Handle 3D-MPR: Activate VRT (3D Volume Rendering)
         else if (mode === "3D-MPR") {
-          // Default to Axial for 3D-MPR (oblique manipulation to be implemented)
+          if (gridLayout !== "1x1") {
+            toast("3D VRT is only available in 1x1 layout");
+            clearPendingMPRGeneration();
+            setIsGeneratingMPR(false);
+            setMprGenerationProgress({ phase: "", current: 0, total: 0 });
+            return;
+          }
+          // Store volume reference and activate VRT mode
+          vrtVolumeRef.current = volume;
+          setIsVRTActive(true);
+          setSelectedTemporarySeriesId(null);
+        }
+        // Handle MiniMIP: thin-slab Maximum Intensity Projection along axial plane
+        else if (mode === "MiniMIP") {
           const plane: PlaneType = "Axial";
           const maxIndex = getMaxIndex(volume, plane);
           const totalSlices = maxIndex + 1;
           const slices: MPRSliceData[] = [];
+          const slabHalfSize = 5; // ~11 slices per slab
 
           setMprGenerationProgress({
             phase: "slices",
@@ -693,7 +771,7 @@ const CaseViewer = () => {
           });
 
           for (let i = 0; i <= maxIndex; i++) {
-            const sliceResult = extractSlice(volume, plane, i);
+            const sliceResult = extractMiniMIPSlice(volume, plane, i, slabHalfSize);
             const imageData = applyWindowLevel(
               sliceResult.data,
               sliceResult.width,
@@ -720,18 +798,18 @@ const CaseViewer = () => {
             }
           }
 
-          const geo3d = getSliceGeometry(volume, plane);
+          const geoMiniMIP = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
-            id: `mpr-${selectedSeries._id}-3D-MPR-${Date.now()}`,
+            id: `mpr-${selectedSeries._id}-MiniMIP-${Date.now()}`,
             sourceSeriesId: selectedSeries._id,
-            mprMode: "3D-MPR" as MPRMode,
-            description: `3D-MPR from ${selectedSeries.description || "Series " + selectedSeries.series_number}`,
+            mprMode: "MiniMIP" as MPRMode,
+            description: `MiniMIP from ${selectedSeries.description || "Series " + selectedSeries.series_number}`,
             slices,
             sliceCount: slices.length,
             createdAt: Date.now(),
             windowCenter,
             windowWidth,
-            physicalAspectRatio: geo3d.aspectRatio,
+            physicalAspectRatio: geoMiniMIP.aspectRatio,
           };
 
           addTemporaryMPRSeries(tempSeries);
@@ -818,6 +896,35 @@ const CaseViewer = () => {
     setCrosshairIndices,
   ]);
 
+  // Stable callbacks for 2D-MPR pane index changes (avoid re-render cascades)
+  const handleCoronalIndexChange = useCallback((idx: number) => setCoronalIndex(idx), []);
+  const handleSagittalIndexChange = useCallback((idx: number) => setSagittalIndex(idx), []);
+  const handleOriginalIndexChange = useCallback((idx: number) => setOriginalIndex(idx), []);
+
+  // Memoized scout lines for each 2D-MPR pane
+  const scoutLinesOriginal = useMemo(() => get2DMPRScoutLines(0), [get2DMPRScoutLines]);
+  const scoutLinesCoronal = useMemo(() => get2DMPRScoutLines(1), [get2DMPRScoutLines]);
+  const scoutLinesSagittal = useMemo(() => get2DMPRScoutLines(2), [get2DMPRScoutLines]);
+
+  // VRT exit handler
+  const handleExitVRT = useCallback(() => {
+    setIsVRTActive(false);
+    vrtVolumeRef.current = null;
+  }, [setIsVRTActive]);
+
+  // Show VRT viewer when active
+  if (isVRTActive && vrtVolumeRef.current) {
+    return (
+      <div className="flex-1 flex flex-col bg-black h-full relative">
+        <VRTViewer
+          volume={vrtVolumeRef.current}
+          onExit={handleExitVRT}
+          className="flex-1"
+        />
+      </div>
+    );
+  }
+
   // Show MPR generation progress
   if (isGeneratingMPR) {
     const progress =
@@ -899,6 +1006,56 @@ const CaseViewer = () => {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
         <span className="text-gray-500 text-sm">Loading next series...</span>
+      </div>
+    );
+  }
+
+  // 2D-MPR split layout: Left (Coronal + Sagittal stacked) | Right (Original)
+  if (is2DMPRLayout && mpr2DSeries) {
+    return (
+      <div className="flex-1 flex bg-black h-full gap-0.5">
+        {/* Left column — Coronal (top) + Sagittal (bottom) */}
+        <div className="w-1/2 flex flex-col gap-0.5 min-w-0">
+          {/* Coronal — top */}
+          <div
+            className={`flex-1 min-h-0 relative overflow-hidden ${active2DMPRPane === 1 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+            onClick={() => setActive2DMPRPane(1)}
+          >
+            <TemporaryMPRSeriesViewer
+              series={mpr2DSeries.coronal}
+              className="h-full"
+              scoutLines={scoutLinesCoronal}
+              onImageIndexChange={handleCoronalIndexChange}
+              compact
+            />
+          </div>
+          {/* Sagittal — bottom */}
+          <div
+            className={`flex-1 min-h-0 relative overflow-hidden ${active2DMPRPane === 2 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+            onClick={() => setActive2DMPRPane(2)}
+          >
+            <TemporaryMPRSeriesViewer
+              series={mpr2DSeries.sagittal}
+              className="h-full"
+              scoutLines={scoutLinesSagittal}
+              onImageIndexChange={handleSagittalIndexChange}
+              compact
+            />
+          </div>
+        </div>
+
+        {/* Right column — Original images */}
+        <div
+          className={`w-1/2 min-h-0 min-w-0 overflow-hidden ${active2DMPRPane === 0 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+          onClick={() => setActive2DMPRPane(0)}
+        >
+          <DicomViewer
+            instances={instances}
+            className="h-full"
+            scoutLines={scoutLinesOriginal}
+            onImageIndexChange={handleOriginalIndexChange}
+          />
+        </div>
       </div>
     );
   }

@@ -308,6 +308,107 @@ export function getCrosshairScreenPosition(
 }
 
 /**
+ * Extract a MiniMIP (thin-slab Maximum Intensity Projection) slice from the volume.
+ * For each pixel position, the maximum HU value across a slab of consecutive slices
+ * centered on `centerIndex` is projected.
+ */
+export function extractMiniMIPSlice(
+  volume: VolumeData,
+  plane: PlaneType,
+  centerIndex: number,
+  slabHalfSize: number = 5,
+): SliceResult {
+  const [cols, rows, slices] = volume.dimensions;
+
+  switch (plane) {
+    case "Axial": {
+      const slice = new Int16Array(cols * rows);
+      const zMin = Math.max(0, centerIndex - slabHalfSize);
+      const zMax = Math.min(slices - 1, centerIndex + slabHalfSize);
+
+      // Initialize with first slab slice
+      const firstOffset = zMin * cols * rows;
+      for (let i = 0; i < cols * rows; i++) {
+        slice[i] = volume.data[firstOffset + i];
+      }
+
+      // Take max across remaining slab slices
+      for (let z = zMin + 1; z <= zMax; z++) {
+        const offset = z * cols * rows;
+        for (let i = 0; i < cols * rows; i++) {
+          if (volume.data[offset + i] > slice[i]) {
+            slice[i] = volume.data[offset + i];
+          }
+        }
+      }
+
+      return {
+        data: slice,
+        width: cols,
+        height: rows,
+        geometry: getSliceGeometry(volume, "Axial"),
+      };
+    }
+
+    case "Coronal": {
+      const slice = new Int16Array(cols * slices);
+      const yMin = Math.max(0, centerIndex - slabHalfSize);
+      const yMax = Math.min(rows - 1, centerIndex + slabHalfSize);
+
+      // Initialize with -32768 (min Int16) so first comparison always wins
+      slice.fill(-32768);
+
+      for (let y = yMin; y <= yMax; y++) {
+        for (let z = 0; z < slices; z++) {
+          for (let x = 0; x < cols; x++) {
+            const srcIdx = z * (cols * rows) + y * cols + x;
+            const dstIdx = (slices - 1 - z) * cols + x;
+            if (volume.data[srcIdx] > slice[dstIdx]) {
+              slice[dstIdx] = volume.data[srcIdx];
+            }
+          }
+        }
+      }
+
+      return {
+        data: slice,
+        width: cols,
+        height: slices,
+        geometry: getSliceGeometry(volume, "Coronal"),
+      };
+    }
+
+    case "Sagittal": {
+      const slice = new Int16Array(rows * slices);
+      const xMin = Math.max(0, centerIndex - slabHalfSize);
+      const xMax = Math.min(cols - 1, centerIndex + slabHalfSize);
+
+      // Initialize with -32768 (min Int16) so first comparison always wins
+      slice.fill(-32768);
+
+      for (let x = xMin; x <= xMax; x++) {
+        for (let z = 0; z < slices; z++) {
+          for (let y = 0; y < rows; y++) {
+            const srcIdx = z * (cols * rows) + y * cols + x;
+            const dstIdx = (slices - 1 - z) * rows + y;
+            if (volume.data[srcIdx] > slice[dstIdx]) {
+              slice[dstIdx] = volume.data[srcIdx];
+            }
+          }
+        }
+      }
+
+      return {
+        data: slice,
+        width: rows,
+        height: slices,
+        geometry: getSliceGeometry(volume, "Sagittal"),
+      };
+    }
+  }
+}
+
+/**
  * Apply window/level to slice data and convert to RGBA ImageData.
  */
 export function applyWindowLevel(

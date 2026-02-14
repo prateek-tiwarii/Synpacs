@@ -1392,7 +1392,8 @@ export function DicomViewer({
             }
           }
           const decoded = await decodeJ2K(rawPixelData.slice(j2kStart).buffer);
-          let rawDecodedBytes = new Uint8Array(decoded.decodedBuffer);
+          // Copy immediately to avoid detached ArrayBuffer from WASM decoder
+          let rawDecodedBytes = new Uint8Array(new Uint8Array(decoded.decodedBuffer));
 
           // Smart byte-swap detection: compare both byte orders against the
           // DICOM window center to determine which produces valid HU values.

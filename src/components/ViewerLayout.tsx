@@ -72,7 +72,7 @@ export type ViewerTool =
   | "HU";
 
 // MPR Mode types
-export type MPRMode = "Axial" | "Coronal" | "Sagittal" | "2D-MPR" | "3D-MPR";
+export type MPRMode = "Axial" | "Coronal" | "Sagittal" | "2D-MPR" | "3D-MPR" | "MiniMIP";
 
 // Crosshair indices for MPR views
 export interface CrosshairIndices {
@@ -239,6 +239,9 @@ interface ViewerContextType {
   // Scout line
   showScoutLine: boolean;
   setShowScoutLine: (show: boolean) => void;
+  // VRT (3D Volume Rendering) mode
+  isVRTActive: boolean;
+  setIsVRTActive: (active: boolean) => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -312,6 +315,7 @@ export function ViewerLayout() {
   } | null>(null);
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
   const [showScoutLine, setShowScoutLine] = useState(false);
+  const [isVRTActive, setIsVRTActive] = useState(false);
 
   // Window presets have fixed keys (1-7), other shortcuts start empty for user to assign
   const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -716,6 +720,8 @@ export function ViewerLayout() {
     setStackSpeed,
     showScoutLine,
     setShowScoutLine,
+    isVRTActive,
+    setIsVRTActive,
   };
 
   if (loading) {

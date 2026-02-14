@@ -33,6 +33,7 @@ export {
   updateCrosshairFromClick,
   getCrosshairScreenPosition,
   applyWindowLevel,
+  extractMiniMIPSlice,
 } from "./mprSampler";
 
 // Interpolation

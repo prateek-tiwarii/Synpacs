@@ -153,6 +153,7 @@ const MPR_MODES: {
     { id: "Sagittal", label: "Sagittal", description: "Side view" },
     { id: "2D-MPR", label: "2D MPR", description: "Three linked views" },
     { id: "3D-MPR", label: "3D MPR", description: "Oblique plane" },
+    { id: "MiniMIP", label: "MiniMIP", description: "Thin-slab Max Intensity Projection" },
   ];
 
 const ViewerHeader = () => {
@@ -182,6 +183,8 @@ const ViewerHeader = () => {
     setStackSpeed,
     showScoutLine,
     setShowScoutLine,
+    isVRTActive,
+    setIsVRTActive,
   } = useViewerContext();
 
   const [activeTab, setActiveTab] = useState<
@@ -273,6 +276,15 @@ const ViewerHeader = () => {
       // Check for modifier keys alone
       if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
 
+      // VRT mode: block all shortcuts except Escape to exit
+      if (isVRTActive) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setIsVRTActive(false);
+        }
+        return;
+      }
+
       const shortcut = shortcuts.find((s) => s.key === e.key);
       if (shortcut) {
         e.preventDefault();
@@ -316,6 +328,8 @@ const ViewerHeader = () => {
     handleFlipH,
     handleFlipV,
     saveToHistory,
+    isVRTActive,
+    setIsVRTActive,
   ]);
 
   interface ViewerToolConfig {
@@ -597,6 +611,29 @@ const ViewerHeader = () => {
         : [...prev, toolId],
     );
   };
+
+  // VRT mode: show minimal header with exit button only
+  if (isVRTActive) {
+    return (
+      <TooltipProvider>
+        <header className="bg-gray-900 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-3">
+              <Box size={18} className="text-purple-400" />
+              <span className="text-sm font-medium text-white">3D Volume Rendering</span>
+              <span className="text-xs text-gray-500">Press Escape or click Exit to return</span>
+            </div>
+            <button
+              onClick={() => setIsVRTActive(false)}
+              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors font-medium"
+            >
+              Exit VRT
+            </button>
+          </div>
+        </header>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>

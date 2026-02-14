@@ -4,6 +4,7 @@ import {
   useViewerContext,
   type TemporaryMPRSeries,
 } from "@/components/ViewerLayout";
+import toast from "react-hot-toast";
 
 interface Series {
   _id: string;
@@ -225,16 +226,25 @@ const ViewerSidebar = () => {
     selectedTemporarySeriesId,
     setSelectedTemporarySeriesId,
     seriesLoadProgress,
+    isVRTActive,
   } = useViewerContext();
 
   // Handle selecting a regular series (deselect any temp series)
   const handleSelectSeries = (series: Series) => {
+    if (isVRTActive) {
+      toast("Exit VRT mode before switching series");
+      return;
+    }
     setSelectedSeries(series);
     setSelectedTemporarySeriesId(null);
   };
 
   // Handle selecting a temporary MPR series
   const handleSelectTempSeries = (tempSeries: TemporaryMPRSeries) => {
+    if (isVRTActive) {
+      toast("Exit VRT mode before switching series");
+      return;
+    }
     setSelectedTemporarySeriesId(tempSeries.id);
   };
 
@@ -263,8 +273,16 @@ const ViewerSidebar = () => {
         </p>
       </div>
 
+      {/* VRT active indicator */}
+      {isVRTActive && (
+        <div className="px-3 py-2 bg-purple-900/30 border-b border-purple-800/50">
+          <p className="text-[11px] text-purple-400 font-medium">VRT Mode Active</p>
+          <p className="text-[10px] text-gray-500">Exit VRT to switch series</p>
+        </div>
+      )}
+
       {/* Studies List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className={`flex-1 overflow-y-auto ${isVRTActive ? "opacity-50" : ""}`}>
         {/* Current Study */}
         <StudyAccordion
           date={formatCaseDate(caseData.case_date)}
