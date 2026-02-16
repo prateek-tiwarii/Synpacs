@@ -809,11 +809,16 @@ const ShowAllPatients = () => {
       cell: (info) => <CellWithCopy content={info.getValue() || '-'} cellId={`${info.row.id}-sex`} />,
     }),
     // Study Date & Time
-    columnHelper.display({
-      id: 'study_date_time',
-      header: 'Study Date & Time',
-      enableSorting: true,
-      cell: (props) => {
+    columnHelper.accessor(
+      (row: any) => {
+        const value = row.study_date_time || '';
+        return value; // Already in sortable format: "YYYYMMDD HHMMSS.ms"
+      },
+      {
+        id: 'study_date_time',
+        header: 'Study Date & Time',
+        enableSorting: true,
+        cell: (props) => {
         const value = props.row.original.study_date_time;
         if (!value || value === '-') return <span className="text-gray-400">-</span>;
 
@@ -837,33 +842,46 @@ const ShowAllPatients = () => {
 
         return <CellWithCopy content={`${formattedDate} ${formattedTime}`.trim()} cellId={`${props.row.id}-study-dt`} />;
       },
-    }),
+    }
+    ),
     // History Date & Time
-    columnHelper.display({
-      id: 'history_date_time',
-      header: 'History Date & Time',
-      enableSorting: true,
-      cell: (props) => {
+    columnHelper.accessor(
+      (row: any) => {
+        const value = row.history_date_time;
+        return value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+      },
+      {
+        id: 'history_date_time',
+        header: 'History Date & Time',
+        enableSorting: true,
+        cell: (props) => {
         const value = props.row.original.history_date_time;
         if (!value) return <span className="text-gray-400">-</span>;
         const date = new Date(value);
         const formatted = date.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
       },
-    }),
+    }
+    ),
     // Reporting Date & Time
-    columnHelper.display({
-      id: 'reporting_date_time',
-      header: 'Reporting Date & Time',
-      enableSorting: true,
-      cell: (props) => {
+    columnHelper.accessor(
+      (row: any) => {
+        const value = row.reporting_date_time;
+        return value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+      },
+      {
+        id: 'reporting_date_time',
+        header: 'Reporting Date & Time',
+        enableSorting: true,
+        cell: (props) => {
         const value = props.row.original.reporting_date_time;
         if (!value) return <span className="text-gray-400">-</span>;
         const date = new Date(value);
         const formatted = date.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
       },
-    }),
+    }
+    ),
     // Center
     columnHelper.accessor('center_name', {
       header: 'Center',
@@ -975,8 +993,6 @@ const ShowAllPatients = () => {
   const handleClearSelection = () => {
     setRowSelection({});
   };
-
-  console.log('Case', selectedCase)
 
   return (
     <>

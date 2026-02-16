@@ -27,7 +27,7 @@ export const CellWithCopy = ({ content, cellId }: CellWithCopyProps) => {
                     e.stopPropagation();
                     handleCopy(content, cellId);
                 }}
-                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded flex-shrink-0"
+                className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded shrink-0"
             >
                 {copiedCell === cellId ? (
                     <Check className="w-3 h-3 text-green-600" />

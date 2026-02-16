@@ -163,17 +163,6 @@ export function DataTable<TData>({
         manualPagination,
     });
 
-    // const handleRefresh = async () => {
-    //     if (onRefresh && !isRefreshing) {
-    //         setIsRefreshing(true);
-    //         try {
-    //             await onRefresh();
-    //         } finally {
-    //             setIsRefreshing(false);
-    //         }
-    //     }
-    // };
-
     // Skeleton loading component - use default columns count when columns array is empty
     const skeletonColumnCount = columns.length > 0 ? columns.length : 8;
 
@@ -199,7 +188,7 @@ export function DataTable<TData>({
                             <TableRow key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-green-100/30' : 'bg-blue-100/30'}>
                                 {[...Array(skeletonColumnCount)].map((_, colIndex) => (
                                     <TableCell key={colIndex} className="text-[11px] px-1 py-1">
-                                        <Skeleton className="h-3 w-full max-w-[100px]" />
+                                        <Skeleton className="h-3 w-full max-w-25" />
                                     </TableCell>
                                 ))}
                             </TableRow>
@@ -459,7 +448,7 @@ export function DataTable<TData>({
                                                             )}
                                                         </span>
                                                         {header.column.getCanSort() && (
-                                                            <span className="flex-shrink-0 ml-0.5">
+                                                            <span className="shrink-0 ml-0.5">
                                                                 {header.column.getIsSorted() === 'asc' ? (
                                                                     <ArrowUp className="h-3 w-3" />
                                                                 ) : header.column.getIsSorted() === 'desc' ? (

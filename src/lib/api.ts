@@ -314,7 +314,7 @@ class ApiService {
   }
 
   async getBookmarkedCases() {
-    return this.request('/api/v1/cases/bookmark', {
+    return this.request('/api/v1/cases/bookmark?populate=notes,user_id,created_by', {
       method: 'GET',
     })
   }

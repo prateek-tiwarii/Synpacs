@@ -17,6 +17,7 @@ interface SearchFilters {
   modality: string;
   sex: 'all' | 'M' | 'F';
   centerId: string;
+  keyword: string;
 }
 
 interface SearchResultsProps {
@@ -51,6 +52,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCases, setTotalCases] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Initialize column visibility from localStorage or use default
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -100,9 +105,19 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
         apiFilters.modality = filters.modality.toUpperCase();
       }
 
-      const response = await apiService.getAllCasesWithFilters(1, 50, apiFilters) as any;
+      // Keyword search
+      if (filters.keyword && filters.keyword.trim()) {
+        apiFilters.keyword = filters.keyword.trim();
+      }
+
+      const response = await apiService.getAllCasesWithFilters(currentPage, pageSize, apiFilters) as any;
 
       if (response.success && response.data?.cases) {
+        // Update pagination info
+        if (response.pagination) {
+          setTotalCases(response.pagination.totalCases || 0);
+          setTotalPages(response.pagination.totalPages || 1);
+        }
         // Reported-only rule: include only cases with non-draft report
         let filteredData = [...response.data.cases].filter((caseItem: any) => {
           const report = caseItem.attached_report;
@@ -198,10 +213,15 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
     }
   }, [filters]);
 
-  // Fetch patients on mount and when filters change
+  // Fetch patients on mount and when filters or pagination change
   useEffect(() => {
     fetchPatients();
-  }, [fetchPatients]);
+  }, [fetchPatients, currentPage, pageSize]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
 
   const columnHelper = createColumnHelper<Patient>();
 
@@ -356,11 +376,18 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
         return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
       },
     }),
-    columnHelper.display({
-      id: 'study_date_time',
-      header: 'Study Date & Time',
-      enableSorting: true,
-      cell: (props: any) => {
+    columnHelper.accessor(
+      (row: any) => {
+        const dateStr = row.case_date || '';
+        const timeStr = row.case_time || '';
+        // Return sortable value: combine date and time
+        return dateStr + (timeStr.split('.')[0] || '000000').padEnd(6, '0');
+      },
+      {
+        id: 'study_date_time',
+        header: 'Study Date & Time',
+        enableSorting: true,
+        cell: (props: any) => {
         const dateStr = props.row.original.case_date || '';
         let formattedDate = '-';
         if (dateStr && dateStr.length === 8) {
@@ -381,12 +408,18 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
 
         return <CellWithCopy content={`${formattedDate} ${formattedTime}`} cellId={`${props.row.id}-study-dt`} />;
       },
-    }),
-    columnHelper.display({
-      id: 'history_date_time',
-      header: 'History Date & Time',
-      enableSorting: true,
-      cell: (props: any) => {
+    }
+    ),
+    columnHelper.accessor(
+      (row: any) => {
+        const updatedAt = row.updatedAt;
+        return updatedAt ? new Date(updatedAt).getTime() : Number.MAX_SAFE_INTEGER;
+      },
+      {
+        id: 'history_date_time',
+        header: 'History Date & Time',
+        enableSorting: true,
+        cell: (props: any) => {
         const updatedAt = props.row.original.updatedAt;
         if (!updatedAt) return <span className="text-gray-400">-</span>;
 
@@ -401,12 +434,18 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
         });
         return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
       },
-    }),
-    columnHelper.display({
-      id: 'reporting_date_time',
-      header: 'Reporting Date & Time',
-      enableSorting: true,
-      cell: (props: any) => {
+    }
+    ),
+    columnHelper.accessor(
+      (row: any) => {
+        const createdAt = row.attached_report?.created_at;
+        return createdAt ? new Date(createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+      },
+      {
+        id: 'reporting_date_time',
+        header: 'Reporting Date & Time',
+        enableSorting: true,
+        cell: (props: any) => {
         const attachedReport = props.row.original.attached_report;
         if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
@@ -421,7 +460,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
         });
         return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
       },
-    }),
+    }
+    ),
     columnHelper.accessor('accession_number', {
       header: 'Accession Number',
       enableSorting: false,
@@ -532,6 +572,53 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
           onColumnModalOpenChange={setIsColumnModalOpen}
         />
       </div>
+
+      {/* Pagination Footer */}
+      {!loading && !error && totalCases > 0 && (
+        <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-t border-slate-100">
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-slate-600">
+              Showing <span className="font-semibold">{Math.min((currentPage - 1) * pageSize + 1, totalCases)}</span> to{' '}
+              <span className="font-semibold">{Math.min(currentPage * pageSize, totalCases)}</span> of{' '}
+              <span className="font-semibold">{totalCases}</span> cases
+            </span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="text-xs border border-slate-200 rounded px-2 py-1"
+            >
+              <option value={10}>10 per page</option>
+              <option value={20}>20 per page</option>
+              <option value={50}>50 per page</option>
+              <option value={100}>100 per page</option>
+            </select>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-slate-600 font-medium">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

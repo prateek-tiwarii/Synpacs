@@ -50,6 +50,8 @@ const Bookmark = () => {
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
 
     // Dialog states for actions aligned with PACS List
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -151,6 +153,15 @@ const Bookmark = () => {
     useEffect(() => {
         fetchBookmarks();
     }, []);
+
+    // Paginated bookmarks
+    const paginatedBookmarks = useMemo(() => {
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        return bookmarks.slice(startIndex, endIndex);
+    }, [bookmarks, currentPage, pageSize]);
+
+    const totalPages = Math.ceil(bookmarks.length / pageSize);
 
     // Remove a bookmark
     const removeBookmark = async (caseId: string) => {
@@ -434,17 +445,21 @@ const Bookmark = () => {
                                                     </span>
                                                 </div>
                                             </div>
-                                            <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note}</p>
+                                            <p className="text-sm text-gray-700 mb-2 leading-relaxed">{note.note || '-'}</p>
                                             <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
                                                 <span className="font-medium">
-                                                    {note.created_by?.full_name || 'Unknown User'}
+                                                    {note.created_by?.full_name || 
+                                                     (typeof note.user_id === 'object' && note.user_id?.full_name) || 
+                                                     'Unknown User'}
                                                 </span>
                                                 <span>
-                                                    {new Date(note.createdAt || note.created_at || Date.now()).toLocaleDateString('en-US', {
-                                                        month: 'short',
-                                                        day: 'numeric',
-                                                        year: 'numeric'
-                                                    })}
+                                                    {(note.createdAt || note.created_at) ? 
+                                                        new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric'
+                                                        }) : 'No Date'
+                                                    }
                                                 </span>
                                             </div>
                                         </div>
@@ -519,11 +534,17 @@ const Bookmark = () => {
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
             },
         }),
-        columnHelper.display({
-            id: 'study_date_time',
-            header: 'Study Date & Time',
-            enableSorting: true,
-            cell: (props: any) => {
+        columnHelper.accessor(
+            (row: any) => {
+                const dateStr = row.case_date || '';
+                const timeStr = row.case_time || '';
+                return dateStr + (timeStr.split('.')[0] || '000000').padEnd(6, '0');
+            },
+            {
+                id: 'study_date_time',
+                header: 'Study Date & Time',
+                enableSorting: true,
+                cell: (props: any) => {
                 const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
                 if (dateStr && dateStr.length === 8) {
@@ -544,12 +565,18 @@ const Bookmark = () => {
 
                 return <CellWithCopy content={`${formattedDate} ${formattedTime}`} cellId={`${props.row.id}-study-dt`} />;
             },
-        }),
-        columnHelper.display({
-            id: 'history_date_time',
-            header: 'History Date & Time',
-            enableSorting: true,
-            cell: (props: any) => {
+        }
+        ),
+        columnHelper.accessor(
+            (row: any) => {
+                const updatedAt = row.updatedAt;
+                return updatedAt ? new Date(updatedAt).getTime() : Number.MAX_SAFE_INTEGER;
+            },
+            {
+                id: 'history_date_time',
+                header: 'History Date & Time',
+                enableSorting: true,
+                cell: (props: any) => {
                 const updatedAt = props.row.original.updatedAt;
                 if (!updatedAt) return <span className="text-gray-400">-</span>;
 
@@ -564,12 +591,18 @@ const Bookmark = () => {
                 });
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
             },
-        }),
-        columnHelper.display({
-            id: 'reporting_date_time',
-            header: 'Reporting Date & Time',
-            enableSorting: true,
-            cell: (props: any) => {
+        }
+        ),
+        columnHelper.accessor(
+            (row: any) => {
+                const createdAt = row.attached_report?.created_at;
+                return createdAt ? new Date(createdAt).getTime() : Number.MAX_SAFE_INTEGER;
+            },
+            {
+                id: 'reporting_date_time',
+                header: 'Reporting Date & Time',
+                enableSorting: true,
+                cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
@@ -584,7 +617,8 @@ const Bookmark = () => {
                 });
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
             },
-        }),
+        }
+        ),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             enableSorting: false,
@@ -703,7 +737,7 @@ const Bookmark = () => {
                     </div>
                 )}
                 <DataTable
-                    data={bookmarks}
+                    data={paginatedBookmarks}
                     columns={columns}
                     isLoading={isLoading}
                     error={error}
@@ -720,6 +754,52 @@ const Bookmark = () => {
                     isColumnModalOpen={isColumnModalOpen}
                     onColumnModalOpenChange={setIsColumnModalOpen}
                 />
+                {/* Pagination Footer */}
+                {!isLoading && !error && bookmarks.length > 0 && (
+                    <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-t border-slate-100 mt-2">
+                        <div className="flex items-center gap-4">
+                            <span className="text-xs text-slate-600">
+                                Showing <span className="font-semibold">{Math.min((currentPage - 1) * pageSize + 1, bookmarks.length)}</span> to{' '}
+                                <span className="font-semibold">{Math.min(currentPage * pageSize, bookmarks.length)}</span> of{' '}
+                                <span className="font-semibold">{bookmarks.length}</span> bookmarks
+                            </span>
+                            <select
+                                value={pageSize}
+                                onChange={(e) => {
+                                    setPageSize(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}
+                                className="text-xs border border-slate-200 rounded px-2 py-1"
+                            >
+                                <option value={10}>10 per page</option>
+                                <option value={20}>20 per page</option>
+                                <option value={50}>50 per page</option>
+                                <option value={100}>100 per page</option>
+                            </select>
+                        </div>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs text-slate-600 font-medium">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
                 <DownloadModal
                     open={downloadModalOpen}
                     onClose={() => {

@@ -610,13 +610,20 @@ const PacsList = () => {
                 return <CellWithCopy content={sex} cellId={`${props.row.id}-sex`} />;
             },
         }),
-        columnHelper.display({
-            id: 'study_date_time',
-            header: 'Study Date & Time',
-            enableSorting: true,
-            size: 120,
-            minSize: 30,
-            cell: (props: any) => {
+        columnHelper.accessor(
+            (row: any) => {
+                const dateStr = row.case_date || '';
+                const timeStr = row.case_time || '';
+                // Return sortable value: combine date and time
+                return dateStr + (timeStr.split('.')[0] || '000000').padEnd(6, '0');
+            },
+            {
+                id: 'study_date_time',
+                header: 'Study Date & Time',
+                enableSorting: true,
+                size: 120,
+                minSize: 30,
+                cell: (props: any) => {
                 const dateStr = props.row.original.case_date || '';
                 let formattedDate = '-';
                 if (dateStr && dateStr.length === 8) {
@@ -636,15 +643,22 @@ const PacsList = () => {
                 }
 
                 return <CellWithCopy content={`${formattedDate} ${formattedTime}`} cellId={`${props.row.id}-study-dt`} />;
+                },
+            }
+        ),
+        columnHelper.accessor(
+            (row: any) => {
+                // Return sortable value: timestamp or large number for missing dates
+                const updatedAt = row.updatedAt;
+                return updatedAt ? new Date(updatedAt).getTime() : Number.MAX_SAFE_INTEGER;
             },
-        }),
-        columnHelper.display({
-            id: 'history_date_time',
-            header: 'History Date & Time',
-            enableSorting: true,
-            size: 120,
-            minSize: 30,
-            cell: (props: any) => {
+            {
+                id: 'history_date_time',
+                header: 'History Date & Time',
+                enableSorting: true,
+                size: 120,
+                minSize: 30,
+                cell: (props: any) => {
                 const updatedAt = props.row.original.updatedAt;
                 if (!updatedAt) return <span className="text-gray-400">-</span>;
 
@@ -658,15 +672,22 @@ const PacsList = () => {
                     hour12: false
                 });
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-history-dt`} />;
+                },
+            }
+        ),
+        columnHelper.accessor(
+            (row: any) => {
+                // Return sortable value: timestamp or large number for missing dates
+                const createdAt = row.attached_report?.created_at;
+                return createdAt ? new Date(createdAt).getTime() : Number.MAX_SAFE_INTEGER;
             },
-        }),
-        columnHelper.display({
-            id: 'reporting_date_time',
-            header: 'Reporting Date & Time',
-            enableSorting: true,
-            size: 120,
-            minSize: 30,
-            cell: (props: any) => {
+            {
+                id: 'reporting_date_time',
+                header: 'Reporting Date & Time',
+                enableSorting: true,
+                size: 120,
+                minSize: 30,
+                cell: (props: any) => {
                 const attachedReport = props.row.original.attached_report;
                 if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
 
@@ -680,8 +701,9 @@ const PacsList = () => {
                     hour12: false
                 });
                 return <CellWithCopy content={formatted} cellId={`${props.row.id}-report-dt`} />;
-            },
-        }),
+                },
+            }
+        ),
         columnHelper.accessor('accession_number', {
             header: 'Accession Number',
             enableSorting: false,
@@ -775,7 +797,7 @@ const PacsList = () => {
         <div className="p-6 space-y-4">
             {/* Header with Filter Toggle */}
             <div className="border border-slate-200 bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="flex items-center justify-end px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+                <div className="flex items-center justify-end px-4 py-3 bg-linear-to-r from-slate-50 to-white border-b border-slate-100">
                     <button
                         onClick={() => setIsFilterCollapsed(!isFilterCollapsed)}
                         className={`
