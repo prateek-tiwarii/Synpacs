@@ -92,7 +92,7 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="w-[340px] sm:w-[380px] bg-gray-950 border-gray-800 text-gray-100 p-0 overflow-hidden flex flex-col">
+            <SheetContent className="w-85 sm:w-95 bg-gray-950 border-gray-800 text-gray-100 p-0 overflow-hidden flex flex-col">
                 <SheetHeader className="p-4 border-b border-gray-800">
                     <SheetTitle className="text-gray-100 flex items-center gap-2 text-sm">
                         <Monitor className="w-4 h-4 text-blue-500" />
@@ -163,7 +163,7 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
                                             <span className="text-gray-300">{preset.label}</span>
                                             <span className="text-[9px] text-gray-500">{preset.wl}</span>
                                         </div>
-                                        <span className="min-w-[24px] h-5 flex items-center justify-center rounded bg-gray-800 text-gray-400 font-mono text-[10px]">
+                                        <span className="min-w-6 h-5 flex items-center justify-center rounded bg-gray-800 text-gray-400 font-mono text-[10px]">
                                             {preset.key}
                                         </span>
                                     </div>
@@ -220,7 +220,7 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
                                                         <span className="text-gray-400 truncate text-[10px]">{s.label}</span>
                                                         <button
                                                             onClick={() => setRecordingId(recordingId === s.id ? null : s.id)}
-                                                            className={`min-w-[28px] h-5 flex items-center justify-center rounded px-1.5 font-mono text-[10px] font-medium transition-all ${recordingId === s.id
+                                                            className={`min-w-7 h-5 flex items-center justify-center rounded px-1.5 font-mono text-[10px] font-medium transition-all ${recordingId === s.id
                                                                 ? "bg-blue-500 text-white animate-pulse"
                                                                 : s.key
                                                                     ? "bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-500"

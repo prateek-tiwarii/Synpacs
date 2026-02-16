@@ -15,6 +15,7 @@ interface SearchFilters {
   modality: string;
   sex: 'all' | 'M' | 'F';
   centerId: string;
+  keyword: string;
 }
 
 const Research = () => {
@@ -36,6 +37,7 @@ const Research = () => {
     modality: '',
     sex: 'all',
     centerId: 'all',
+    keyword: '',
   });
 
   useEffect(() => {

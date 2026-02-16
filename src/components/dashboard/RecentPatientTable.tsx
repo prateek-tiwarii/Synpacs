@@ -136,7 +136,17 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(true);
   const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
+  // Paginated patients
+  const paginatedPatients = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return patients.slice(startIndex, endIndex);
+  }, [patients, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(patients.length / pageSize);
 
   // Fetch available centers
   useEffect(() => {
@@ -486,15 +496,6 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
       enableSorting: false,
       enableHiding: false,
     },
-    // {
-    //   accessorKey: "pac_patinet_id",
-    //   header: "Patient ID",
-    //   cell: ({ row }) => (
-    //     <span className="font-medium text-xs">
-    //       {row.original.pac_patinet_id}
-    //     </span>
-    //   ),
-    // },
     {
       accessorKey: "name",
       header: "Name",
@@ -552,6 +553,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
     {
       accessorKey: "date_of_capture",
       header: "Date of Capture",
+      enableSorting: true,
       cell: ({ row }) => (
         <span className="text-xs">
           {formatDate(row.original.date_of_capture)}
@@ -680,7 +682,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
 
       <CardContent className="px-3">
         <DataTable
-          data={patients}
+          data={paginatedPatients}
           columns={columns}
           isLoading={loading}
           error={error}
@@ -696,6 +698,52 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
           onColumnVisibilityChange={setColumnVisibility}
           showDoctorsOnSelect={true}
         />
+        {/* Pagination Footer */}
+        {!loading && !error && patients.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-t border-slate-100 mt-2">
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-slate-600">
+                Showing <span className="font-semibold">{Math.min((currentPage - 1) * pageSize + 1, patients.length)}</span> to{' '}
+                <span className="font-semibold">{Math.min(currentPage * pageSize, patients.length)}</span> of{' '}
+                <span className="font-semibold">{patients.length}</span> cases
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="text-xs border border-slate-200 rounded px-2 py-1"
+              >
+                <option value={5}>5 per page</option>
+                <option value={10}>10 per page</option>
+                <option value={20}>20 per page</option>
+                <option value={50}>50 per page</option>
+              </select>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-xs text-slate-600 font-medium">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

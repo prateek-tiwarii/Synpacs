@@ -12,6 +12,7 @@ interface SearchFilters {
   modality: string;
     sex: 'all' | 'M' | 'F';
     centerId: string;
+    keyword: string;
 }
 
 interface SearchOptionsProps {
@@ -29,6 +30,7 @@ export const SearchOptions: React.FC<SearchOptionsProps> = ({ onSearch, availabl
     modality: '',
         sex: 'all',
         centerId: 'all',
+        keyword: '',
   });
 
   const handleResetFilters = () => {
@@ -40,6 +42,7 @@ export const SearchOptions: React.FC<SearchOptionsProps> = ({ onSearch, availabl
       modality: '',
             sex: 'all',
             centerId: 'all',
+            keyword: '',
     });
   };
 
@@ -71,6 +74,21 @@ export const SearchOptions: React.FC<SearchOptionsProps> = ({ onSearch, availabl
       {!isFilterCollapsed && (
         <div className="px-4 py-3 bg-slate-50/50">
             <div className="flex flex-col gap-3">
+                {/* Keyword Search */}
+                <div className="space-y-1">
+                    <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                        <Search className="w-3 h-3" />
+                        Keyword Search
+                    </label>
+                    <Input
+                        type="text"
+                        placeholder="Search by patient name, case ID, accession number, description..."
+                        value={filters.keyword}
+                        onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+                        className="bg-white border-slate-200 h-9 text-sm rounded-md focus:ring-1 focus:ring-slate-200 focus:border-slate-400 transition-all"
+                    />
+                </div>
+
                 {/* Row 1: Sex, Modality, Center */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="space-y-1">
