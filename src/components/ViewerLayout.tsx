@@ -1,5 +1,5 @@
 import { Outlet, useParams } from "react-router-dom";
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import ViewerHeader from "./viewer/ViewerHeader";
 import ViewerSidebar from "./viewer/ViewerSidebar";
 import { apiService } from "@/lib/api";
@@ -85,7 +85,8 @@ export interface CrosshairIndices {
 // Temporary MPR Series - stored in memory only
 export interface MPRSliceData {
   index: number;
-  imageData: ImageData; // Pre-rendered slice with W/L applied
+  imageData?: ImageData; // Optional windowed image cache (generated lazily for performance)
+  rawData?: Int16Array; // Raw HU slice data for lazy windowing
   width: number;
   height: number;
 }
@@ -219,7 +220,10 @@ interface ViewerContextType {
   ) => void;
   // Temporary MPR series (in-memory only)
   temporaryMPRSeries: TemporaryMPRSeries[];
-  addTemporaryMPRSeries: (series: TemporaryMPRSeries) => void;
+  addTemporaryMPRSeries: (
+    series: TemporaryMPRSeries,
+    options?: { autoSelect?: boolean },
+  ) => void;
   removeTemporaryMPRSeries: (id: string) => void;
   selectedTemporarySeriesId: string | null;
   setSelectedTemporarySeriesId: (id: string | null) => void;
@@ -303,6 +307,7 @@ export function ViewerLayout() {
   const [temporaryMPRSeries, setTemporaryMPRSeries] = useState<
     TemporaryMPRSeries[]
   >([]);
+  const temporaryMPRSeriesRef = useRef<TemporaryMPRSeries[]>([]);
   const [selectedTemporarySeriesId, setSelectedTemporarySeriesId] = useState<
     string | null
   >(null);
@@ -367,33 +372,97 @@ export function ViewerLayout() {
     });
   };
 
+  useEffect(() => {
+    temporaryMPRSeriesRef.current = temporaryMPRSeries;
+  }, [temporaryMPRSeries]);
+
   // Add a temporary MPR series and auto-select it
-  const addTemporaryMPRSeries = (series: TemporaryMPRSeries) => {
+  const addTemporaryMPRSeries = (
+    series: TemporaryMPRSeries,
+    options?: { autoSelect?: boolean },
+  ) => {
+    const autoSelect = options?.autoSelect ?? true;
+    const previousSeries = temporaryMPRSeriesRef.current;
+    const existingIndex = previousSeries.findIndex(
+      (s) =>
+        s.sourceSeriesId === series.sourceSeriesId &&
+        s.mprMode === series.mprMode,
+    );
+
     let newId = series.id;
-    setTemporaryMPRSeries((prev) => {
-      // Check if we already have this mode for this source series
-      const existingIndex = prev.findIndex(
-        (s) =>
-          s.sourceSeriesId === series.sourceSeriesId &&
-          s.mprMode === series.mprMode,
-      );
-      if (existingIndex >= 0) {
-        // Replace existing, keep same id
-        newId = prev[existingIndex].id;
-        const updated = [...prev];
-        updated[existingIndex] = { ...series, id: newId };
-        return updated;
-      }
-      // Add new
-      return [...prev, series];
-    });
+    let nextSeries = previousSeries;
+
+    if (existingIndex >= 0) {
+      // Replace existing, keep stable id so pane references remain valid
+      newId = previousSeries[existingIndex].id;
+      nextSeries = [...previousSeries];
+      nextSeries[existingIndex] = { ...series, id: newId };
+    } else {
+      nextSeries = [...previousSeries, series];
+    }
+
+    temporaryMPRSeriesRef.current = nextSeries;
+    setTemporaryMPRSeries(nextSeries);
+
+    if (!autoSelect) {
+      return;
+    }
+
     // Auto-select the newly added/updated series
     setSelectedTemporarySeriesId(newId);
+
+    const resetTransform = {
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      flipH: false,
+      flipV: false,
+      invert: false,
+      windowWidth: null as number | null,
+      windowCenter: null as number | null,
+    };
+
+    // Reset single-view transform so generated MPR opens fit-to-view
+    setViewTransform((prev) => ({
+      ...prev,
+      ...resetTransform,
+    }));
+
+    // Immediately show generated MPR in the active pane
+    setPaneStates((prev) => {
+      const targetPaneIndex = gridLayout === "1x1" ? 0 : activePaneIndex;
+      const nextStates = [...prev];
+      if (nextStates[targetPaneIndex]) {
+        nextStates[targetPaneIndex] = {
+          ...nextStates[targetPaneIndex],
+          seriesId: newId,
+          currentImageIndex: 0,
+          viewTransform: {
+            ...nextStates[targetPaneIndex].viewTransform,
+            ...resetTransform,
+          },
+        };
+      } else if (targetPaneIndex === 0) {
+        nextStates[0] = {
+          ...createDefaultPaneState(newId),
+          viewTransform: {
+            ...createDefaultPaneState(newId).viewTransform,
+            ...resetTransform,
+          },
+        };
+      }
+      return nextStates;
+    });
   };
 
   // Remove a temporary MPR series
   const removeTemporaryMPRSeries = (id: string) => {
-    setTemporaryMPRSeries((prev) => prev.filter((s) => s.id !== id));
+    setTemporaryMPRSeries((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      temporaryMPRSeriesRef.current = next;
+      return next;
+    });
     if (selectedTemporarySeriesId === id) {
       setSelectedTemporarySeriesId(null);
     }

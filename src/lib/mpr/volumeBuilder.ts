@@ -252,15 +252,11 @@ export function validateStackability(instances: Instance[]): ValidationResult {
 /**
  * Extract pixel data from a DICOM ArrayBuffer.
  * Reuses the same decoding logic as DicomViewer.
- * Note: Creates copies of buffers to avoid detached ArrayBuffer errors.
  */
 async function extractPixelData(
   arrayBuffer: ArrayBuffer,
-  _instance: Instance,
 ): Promise<Int16Array | Uint16Array> {
-  // Create a copy of the ArrayBuffer to avoid issues with detached buffers
-  const bufferCopy = arrayBuffer.slice(0);
-  const byteArray = new Uint8Array(bufferCopy);
+  const byteArray = new Uint8Array(arrayBuffer);
   const dataSet = dicomParser.parseDicom(byteArray);
 
   const pixelRepresentation = dataSet.uint16("x00280103") ?? 0;
@@ -275,7 +271,7 @@ async function extractPixelData(
   const safeLength =
     pixelDataElement.length > 0
       ? pixelDataElement.length
-      : bufferCopy.byteLength - pixelDataElement.dataOffset;
+      : arrayBuffer.byteLength - pixelDataElement.dataOffset;
 
   const isJ2K =
     transferSyntax === "1.2.840.10008.1.2.4.90" ||
@@ -285,7 +281,7 @@ async function extractPixelData(
     // Get the pixel data as a Uint8Array view into the buffer
     // This matches the approach used in DicomViewer which works reliably
     const rawPixelData = new Uint8Array(
-      bufferCopy,
+      arrayBuffer,
       pixelDataElement.dataOffset,
       safeLength,
     );
@@ -304,7 +300,7 @@ async function extractPixelData(
 
     // Extract decoded data
     // Note: With serial decoding (CONCURRENT_LOADS=1), buffer detachment issues are minimized
-    let decodedData = new Uint8Array(decoded.decodedBuffer);
+    const decodedData = new Uint8Array(decoded.decodedBuffer);
 
     if (decodedData.length === 0) {
       throw new Error(
@@ -354,15 +350,23 @@ async function extractPixelData(
       }
     }
   } else {
-    // Uncompressed data - create a clean copy
-    const rawData = bufferCopy.slice(
-      pixelDataElement.dataOffset,
-      pixelDataElement.dataOffset + safeLength,
-    );
-    pixelData =
-      pixelRepresentation === 1
-        ? new Int16Array(rawData)
-        : new Uint16Array(rawData);
+    // Uncompressed data can use a typed view directly.
+    const dataOffset = pixelDataElement.dataOffset;
+    const byteLength = Math.max(0, Math.min(safeLength, arrayBuffer.byteLength - dataOffset));
+    const valueCount = Math.floor(byteLength / 2);
+    if (dataOffset % 2 === 0) {
+      pixelData =
+        pixelRepresentation === 1
+          ? new Int16Array(arrayBuffer, dataOffset, valueCount)
+          : new Uint16Array(arrayBuffer, dataOffset, valueCount);
+    } else {
+      // Rare misalignment fallback: copy into aligned buffer.
+      const alignedBuffer = arrayBuffer.slice(dataOffset, dataOffset + valueCount * 2);
+      pixelData =
+        pixelRepresentation === 1
+          ? new Int16Array(alignedBuffer)
+          : new Uint16Array(alignedBuffer);
+    }
   }
 
   return pixelData;
@@ -389,74 +393,83 @@ export async function buildVolume(
   // Calculate slice spacing
   const { sliceSpacing, normal } = sortSlicesByPosition(sortedInstances);
 
-  // Load slices serially (concurrency = 1) to avoid WASM decoder conflicts
-  // The openjpeg WASM decoder has global state that can be corrupted by parallel decoding
-  const CONCURRENT_LOADS = 1;
+  // Decode remains serial (OpenJPEG global state), but fetch is pipelined.
+  const FETCH_LOOKAHEAD = 8;
   let loadedCount = 0;
+  const sliceVoxelCount = cols * rows;
 
-  const loadSlice = async (instance: Instance, sliceIndex: number) => {
-    let arrayBuffer: ArrayBuffer;
-
-    // Check cache first
-    if (cache.has(instance.instance_uid)) {
-      // Get from cache and make a copy to avoid detachment issues
-      const cached = cache.get(instance.instance_uid)!;
-      // Check if buffer is detached before using
-      try {
-        arrayBuffer = cached.slice(0);
-      } catch {
-        // Buffer was detached, need to refetch
-        const response = await fetch(
-          `${apiBaseUrl}/api/v1/instances/${instance.instance_uid}/dicom`,
-        );
-        if (!response.ok) {
-          throw new Error(`Failed to fetch instance ${instance.instance_uid}`);
-        }
-        arrayBuffer = await response.arrayBuffer();
-        cache.set(instance.instance_uid, arrayBuffer.slice(0)); // Store a copy
-      }
-    } else {
-      const response = await fetch(
-        `${apiBaseUrl}/api/v1/instances/${instance.instance_uid}/dicom`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        },
-      );
-      if (!response.ok) {
-        throw new Error(`Failed to fetch instance ${instance.instance_uid}`);
-      }
-      arrayBuffer = await response.arrayBuffer();
-      // Store a copy in cache to preserve original
-      cache.set(instance.instance_uid, arrayBuffer.slice(0));
+  const fetchSliceBuffer = async (instance: Instance): Promise<ArrayBuffer> => {
+    const cached = cache.get(instance.instance_uid);
+    if (cached && cached.byteLength > 0) {
+      return cached;
     }
 
-    // Extract pixel data (this function now handles its own buffer copying)
-    const pixelData = await extractPixelData(arrayBuffer, instance);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(
+      `${apiBaseUrl}/api/v1/instances/${instance.instance_uid}/dicom`,
+      { headers },
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to fetch instance ${instance.instance_uid}`);
+    }
+
+    const fetchedBuffer = await response.arrayBuffer();
+    cache.set(instance.instance_uid, fetchedBuffer);
+    return fetchedBuffer;
+  };
+
+  const pendingFetches = new Map<number, Promise<ArrayBuffer>>();
+  const scheduleFetch = (sliceIndex: number) => {
+    if (sliceIndex >= slices || pendingFetches.has(sliceIndex)) return;
+    pendingFetches.set(
+      sliceIndex,
+      fetchSliceBuffer(sortedInstances[sliceIndex]),
+    );
+  };
+
+  for (let i = 0; i < Math.min(slices, FETCH_LOOKAHEAD); i++) {
+    scheduleFetch(i);
+  }
+
+  for (let sliceIndex = 0; sliceIndex < slices; sliceIndex++) {
+    scheduleFetch(sliceIndex + FETCH_LOOKAHEAD);
+
+    const instance = sortedInstances[sliceIndex];
+    const bufferPromise = pendingFetches.get(sliceIndex);
+    if (!bufferPromise) {
+      throw new Error(`Missing fetch task for slice index ${sliceIndex}`);
+    }
+    const arrayBuffer = await bufferPromise;
+    pendingFetches.delete(sliceIndex);
+
+    // Decode remains serial to avoid OpenJPEG WASM global-state conflicts.
+    const pixelData = await extractPixelData(arrayBuffer);
 
     // Apply rescale slope/intercept to get HU values
     const slope = instance.rescale_slope || 1;
     const intercept = instance.rescale_intercept || 0;
+    const sliceOffset = sliceIndex * sliceVoxelCount;
+    const pixelCount = Math.min(sliceVoxelCount, pixelData.length);
 
-    // Copy to volume array at correct position
-    const sliceOffset = sliceIndex * cols * rows;
-    for (let i = 0; i < pixelData.length; i++) {
-      volumeArray[sliceOffset + i] = Math.round(
-        pixelData[i] * slope + intercept,
-      );
+    if (slope === 1 && intercept === 0 && pixelData instanceof Int16Array && pixelCount === sliceVoxelCount) {
+      volumeArray.set(pixelData, sliceOffset);
+    } else if (slope === 1 && Number.isInteger(intercept)) {
+      const interceptInt = intercept | 0;
+      for (let i = 0; i < pixelCount; i++) {
+        volumeArray[sliceOffset + i] = pixelData[i] + interceptInt;
+      }
+    } else {
+      for (let i = 0; i < pixelCount; i++) {
+        volumeArray[sliceOffset + i] = Math.round(pixelData[i] * slope + intercept);
+      }
     }
 
     loadedCount++;
     onProgress?.(loadedCount, slices);
-  };
-
-  // Process in batches
-  for (let i = 0; i < sortedInstances.length; i += CONCURRENT_LOADS) {
-    const batch = sortedInstances.slice(i, i + CONCURRENT_LOADS);
-    await Promise.all(
-      batch.map((instance, batchIdx) => loadSlice(instance, i + batchIdx)),
-    );
   }
 
   // Build orientation vectors

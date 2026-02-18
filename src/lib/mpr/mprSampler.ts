@@ -7,6 +7,43 @@
 
 import type { VolumeData } from "./volumeBuilder";
 
+const WINDOW_LEVEL_LUT_OFFSET = 32768;
+const WINDOW_LEVEL_LUT_SIZE = 65536;
+const MAX_WINDOW_LEVEL_LUT_CACHE = 8;
+const windowLevelLUTCache = new Map<string, Uint8ClampedArray>();
+
+function getWindowLevelLUT(
+  windowCenter: number,
+  windowWidth: number,
+): Uint8ClampedArray {
+  const safeWindowWidth = Math.max(windowWidth, 1);
+  const cacheKey = `${windowCenter.toFixed(2)}:${safeWindowWidth.toFixed(2)}`;
+  const cached = windowLevelLUTCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const lut = new Uint8ClampedArray(WINDOW_LEVEL_LUT_SIZE);
+  const minValue = windowCenter - safeWindowWidth / 2;
+  const scale = 255 / safeWindowWidth;
+
+  for (let i = 0; i < WINDOW_LEVEL_LUT_SIZE; i++) {
+    const huValue = i - WINDOW_LEVEL_LUT_OFFSET;
+    const displayValue = Math.max(0, Math.min(255, (huValue - minValue) * scale));
+    lut[i] = displayValue;
+  }
+
+  windowLevelLUTCache.set(cacheKey, lut);
+  if (windowLevelLUTCache.size > MAX_WINDOW_LEVEL_LUT_CACHE) {
+    const firstKey = windowLevelLUTCache.keys().next().value as string | undefined;
+    if (firstKey) {
+      windowLevelLUTCache.delete(firstKey);
+    }
+  }
+
+  return lut;
+}
+
 // Slice geometry information
 export interface SliceGeometry {
   width: number; // Pixel width of extracted slice
@@ -95,10 +132,7 @@ export function extractAxialSlice(
 
   // Direct copy from volume - axial is the native slice orientation
   const offset = z * sliceSize;
-  // Use manual copy to avoid issues with detached buffers
-  for (let i = 0; i < sliceSize; i++) {
-    slice[i] = volume.data[offset + i];
-  }
+  slice.set(volume.data.subarray(offset, offset + sliceSize));
 
   return {
     data: slice,
@@ -123,16 +157,17 @@ export function extractCoronalSlice(
   const y = Math.max(0, Math.min(rows - 1, Math.round(yIndex)));
 
   const slice = new Int16Array(cols * slices);
+  const planeSize = cols * rows;
+  const rowOffset = y * cols;
 
   // Iterate over X (columns) and Z (slices)
   // Y is fixed at yIndex
   for (let z = 0; z < slices; z++) {
+    const srcBase = z * planeSize + rowOffset;
+    const dstBase = (slices - 1 - z) * cols;
     for (let x = 0; x < cols; x++) {
-      // Source index in volume: z * (cols * rows) + y * cols + x
-      const srcIdx = z * (cols * rows) + y * cols + x;
-      // Destination: flip Z for correct anatomical orientation (superior at top)
-      const dstIdx = (slices - 1 - z) * cols + x;
-      slice[dstIdx] = volume.data[srcIdx];
+      // Destination flips Z so superior appears at top
+      slice[dstBase + x] = volume.data[srcBase + x];
     }
   }
 
@@ -159,16 +194,17 @@ export function extractSagittalSlice(
   const x = Math.max(0, Math.min(cols - 1, Math.round(xIndex)));
 
   const slice = new Int16Array(rows * slices);
+  const planeSize = cols * rows;
 
   // Iterate over Y (rows) and Z (slices)
   // X is fixed at xIndex
   for (let z = 0; z < slices; z++) {
+    const dstBase = (slices - 1 - z) * rows;
+    let srcIdx = z * planeSize + x;
     for (let y = 0; y < rows; y++) {
-      // Source index in volume
-      const srcIdx = z * (cols * rows) + y * cols + x;
-      // Destination: flip Z for correct anatomical orientation
-      const dstIdx = (slices - 1 - z) * rows + y;
-      slice[dstIdx] = volume.data[srcIdx];
+      // Destination flips Z so superior appears at top
+      slice[dstBase + y] = volume.data[srcIdx];
+      srcIdx += cols;
     }
   }
 
@@ -419,18 +455,14 @@ export function applyWindowLevel(
   windowWidth: number,
 ): ImageData {
   const rgbaData = new Uint8ClampedArray(width * height * 4);
-  const minValue = windowCenter - windowWidth / 2;
+  const lut = getWindowLevelLUT(windowCenter, windowWidth);
 
-  for (let i = 0; i < sliceData.length; i++) {
-    const huValue = sliceData[i];
-    let displayValue = ((huValue - minValue) / windowWidth) * 255;
-    displayValue = Math.max(0, Math.min(255, displayValue));
-
-    const idx = i * 4;
-    rgbaData[idx] = displayValue; // R
-    rgbaData[idx + 1] = displayValue; // G
-    rgbaData[idx + 2] = displayValue; // B
-    rgbaData[idx + 3] = 255; // A
+  for (let i = 0, rgbaIdx = 0; i < sliceData.length; i++, rgbaIdx += 4) {
+    const displayValue = lut[sliceData[i] + WINDOW_LEVEL_LUT_OFFSET];
+    rgbaData[rgbaIdx] = displayValue; // R
+    rgbaData[rgbaIdx + 1] = displayValue; // G
+    rgbaData[rgbaIdx + 2] = displayValue; // B
+    rgbaData[rgbaIdx + 3] = 255; // A
   }
 
   return new ImageData(rgbaData, width, height);

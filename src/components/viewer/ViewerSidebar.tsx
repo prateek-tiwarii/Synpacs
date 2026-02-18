@@ -7,6 +7,7 @@ import {
 import toast from "react-hot-toast";
 import { getCookie } from "@/lib/cookies";
 import { generateDicomInstanceThumbnail } from "@/lib/dicom/thumbnail";
+import { applyWindowLevel } from "@/lib/mpr";
 
 interface Series {
   _id: string;
@@ -181,55 +182,130 @@ const MPRSeriesItem = ({
   onRemove,
   dragPayload,
   isDraggable = true,
-}: MPRSeriesItemProps) => (
-  <div
-    draggable={isDraggable}
-    onDragStart={(event) => {
-      if (!dragPayload) return;
-      setSeriesDragData(event, dragPayload);
-    }}
-    onClick={onClick}
-    className={`rounded-lg overflow-hidden border transition-all relative ${
-      isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-    } ${
-      isSelected
-        ? "border-purple-500 bg-purple-500/10"
-        : "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
-    }`}
-  >
-    <div className="flex items-center gap-2 p-2">
-      {/* Thumbnail */}
-      <div className="w-12 h-12 rounded flex items-center justify-center relative flex-shrink-0 bg-purple-900/30">
-        <Layers size={20} className="text-purple-400/50" />
-        <span className="absolute top-0.5 left-0.5 text-[8px] bg-purple-600/80 px-0.5 rounded text-white font-mono">
-          MPR
-        </span>
-      </div>
+}: MPRSeriesItemProps) => {
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-      {/* Series info */}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-purple-300 font-medium truncate">
-          {series.mprMode}
-        </p>
-        <p className="text-[11px] text-gray-400 mt-0.5">
-          {series.sliceCount} slices
-        </p>
-      </div>
+  useEffect(() => {
+    const previewCanvas = previewCanvasRef.current;
+    if (!previewCanvas) return;
 
+    const previewSlice =
+      series.slices[Math.floor(series.sliceCount / 2)] || series.slices[0];
+    if (!previewSlice) {
+      return;
+    }
+
+    try {
+      const previewImageData =
+        previewSlice.imageData ||
+        (previewSlice.rawData
+          ? applyWindowLevel(
+              previewSlice.rawData,
+              previewSlice.width,
+              previewSlice.height,
+              series.windowCenter,
+              series.windowWidth,
+            )
+          : null);
+      if (!previewImageData) {
+        return;
+      }
+
+      const sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = previewSlice.width;
+      sourceCanvas.height = previewSlice.height;
+      const sourceCtx = sourceCanvas.getContext("2d");
+      const previewCtx = previewCanvas.getContext("2d");
+      if (!sourceCtx || !previewCtx) {
+        return;
+      }
+
+      sourceCtx.putImageData(previewImageData, 0, 0);
+
+      const maxPreviewWidth = 160;
+      const maxPreviewHeight = 120;
+      const scale = Math.min(
+        maxPreviewWidth / previewSlice.width,
+        maxPreviewHeight / previewSlice.height,
+        1,
+      );
+      const previewWidth = Math.max(1, Math.round(previewSlice.width * scale));
+      const previewHeight = Math.max(
+        1,
+        Math.round(previewSlice.height * scale),
+      );
+
+      previewCanvas.width = previewWidth;
+      previewCanvas.height = previewHeight;
+      previewCtx.clearRect(0, 0, previewWidth, previewHeight);
+      previewCtx.imageSmoothingEnabled = true;
+      previewCtx.drawImage(sourceCanvas, 0, 0, previewWidth, previewHeight);
+    } catch {
+      // Ignore preview rendering failures and keep fallback icon style.
+    }
+  }, [series.sliceCount, series.slices, series.windowCenter, series.windowWidth]);
+
+  return (
+    <div
+      draggable={isDraggable}
+      onDragStart={(event) => {
+        if (!dragPayload) return;
+        setSeriesDragData(event, dragPayload);
+      }}
+      onClick={onClick}
+      className={`rounded-lg overflow-hidden border transition-all relative ${
+        isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+      } ${
+        isSelected
+          ? "border-purple-500 bg-purple-500/10 shadow-[0_0_0_1px_rgba(168,85,247,0.45)]"
+          : "border-gray-700 bg-gray-900/70 hover:border-gray-500 hover:bg-gray-800/70"
+      }`}
+    >
       {/* Remove button */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onRemove();
         }}
-        className="p-1 hover:bg-red-600/50 rounded transition-colors"
+        className="absolute right-1 top-1 z-10 p-1 bg-black/40 hover:bg-red-600/70 rounded transition-colors"
         title="Remove MPR series"
       >
-        <X size={14} className="text-gray-400 hover:text-white" />
+        <X size={12} className="text-gray-300 hover:text-white" />
       </button>
+
+      <div className="p-2">
+        {/* Thumbnail */}
+        <div className="w-full aspect-[4/3] rounded-md flex items-center justify-center relative overflow-hidden bg-purple-900/30">
+          <canvas
+            ref={previewCanvasRef}
+            aria-label={`${series.mprMode} preview`}
+            className="w-full h-full"
+          />
+          <Layers
+            size={22}
+            className="absolute text-purple-400/30 pointer-events-none"
+          />
+          <span className="absolute top-0.5 left-0.5 text-[8px] bg-purple-600/80 px-0.5 rounded text-white font-mono">
+            MPR
+          </span>
+        </div>
+
+        {/* Series info */}
+        <div className="mt-2 min-w-0">
+          <p className="text-[10px] text-purple-300 font-semibold tracking-wide">
+            {series.mprMode}
+          </p>
+          <p className="text-[11px] text-white font-medium leading-tight break-words h-8 overflow-hidden mt-1">
+            {series.description || `${series.mprMode} MPR`}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            {series.sliceCount} slices
+          </p>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Study accordion for grouping series by date
 interface StudyAccordionProps {
@@ -507,7 +583,7 @@ const ViewerSidebar = () => {
                 <Layers size={10} />
                 Generated MPR Views
               </p>
-              <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-2">
                 {currentTempSeries.map((tempSeries) => (
                   <MPRSeriesItem
                     key={tempSeries.id}

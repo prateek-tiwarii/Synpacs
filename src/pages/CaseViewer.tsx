@@ -29,7 +29,6 @@ import {
   buildVolume,
   extractSlice,
   getMaxIndex,
-  applyWindowLevel,
   calculateSliceNormal,
   getSliceGeometry,
   extractMiniMIPSlice,
@@ -332,6 +331,7 @@ const PaneViewer = ({
           scoutLines={scoutLines}
           onImageIndexChange={handleMPRImageIndexChange}
           viewTransformOverride={paneTransform}
+          onViewTransformChangeOverride={handlePaneTransformChange}
           isFullscreenOverride={isFullscreen}
           onToggleFullscreenOverride={onToggleFullscreen}
         />
@@ -405,10 +405,10 @@ const CaseViewer = () => {
   const emptySeriesIds = useRef<Set<string>>(new Set());
 
   // 2D-MPR split layout state
-  const [active2DMPRPane, setActive2DMPRPane] = useState<number>(0); // 0=original, 1=coronal, 2=sagittal
+  const [active2DMPRPane, setActive2DMPRPane] = useState<number>(0); // 0=axial, 1=coronal, 2=sagittal
+  const [axialIndex, setAxialIndex] = useState(0);
   const [coronalIndex, setCoronalIndex] = useState(0);
   const [sagittalIndex, setSagittalIndex] = useState(0);
-  const [originalIndex, setOriginalIndex] = useState(0);
   const [fullscreenPaneIndex, setFullscreenPaneIndex] = useState<number | null>(
     null,
   );
@@ -559,21 +559,44 @@ const CaseViewer = () => {
     ? temporaryMPRSeries.find((ts) => ts.id === selectedTemporarySeriesId)
     : null;
 
-  // Detect 2D-MPR layout mode: both Coronal and Sagittal temp series exist for same source
+  // Detect 2D-MPR layout mode: Axial, Coronal, and Sagittal temp series exist for same source
   const mpr2DSeries = useMemo(() => {
     if (!selectedSeries) return null;
     const sourceId = selectedSeries._id;
+    let sourcePlane: PlaneOrientation | null = null;
+    if (instances[0]?.image_orientation_patient?.length === 6) {
+      const normal = calculateSliceNormal(instances[0].image_orientation_patient);
+      const absX = Math.abs(normal[0]);
+      const absY = Math.abs(normal[1]);
+      const absZ = Math.abs(normal[2]);
+      if (absZ > absX && absZ > absY) sourcePlane = "Axial";
+      else if (absY > absX && absY > absZ) sourcePlane = "Coronal";
+      else if (absX > absY && absX > absZ) sourcePlane = "Sagittal";
+    }
+    const axial =
+      sourcePlane === "Axial"
+        ? null
+        : temporaryMPRSeries.find(
+            (ts) =>
+              ts.sourceSeriesId === sourceId &&
+              ts.description.includes("(2D-MPR)") &&
+              ts.mprMode === "Axial",
+          ) ?? null;
     const coronal = temporaryMPRSeries.find(
       (ts) => ts.sourceSeriesId === sourceId && ts.description.includes("(2D-MPR)") && ts.mprMode === "Coronal",
     );
     const sagittal = temporaryMPRSeries.find(
       (ts) => ts.sourceSeriesId === sourceId && ts.description.includes("(2D-MPR)") && ts.mprMode === "Sagittal",
     );
-    if (coronal && sagittal) return { coronal, sagittal };
+    if (coronal && sagittal) return { axial, coronal, sagittal };
     return null;
-  }, [selectedSeries, temporaryMPRSeries]);
+  }, [selectedSeries, temporaryMPRSeries, instances]);
 
-  const is2DMPRLayout = !!mpr2DSeries && !!selectedTempSeries && selectedTempSeries.description.includes("(2D-MPR)");
+  const is2DMPRLayout =
+    !!mpr2DSeries &&
+    !!selectedTempSeries &&
+    selectedTempSeries.description.includes("(2D-MPR)") &&
+    selectedTempSeries.sourceSeriesId === selectedSeries?._id;
 
   // Scout line computation for 2D-MPR layout
   const get2DMPRScoutLines = useCallback(
@@ -582,31 +605,31 @@ const CaseViewer = () => {
       const lines: ScoutLine[] = [];
 
       // Ratios: position of each pane's current slice as 0-1
-      const axialTotal = instances.length;
+      const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : instances.length;
       const coronalTotal = mpr2DSeries.coronal.sliceCount;
       const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
 
-      const axialRatio = axialTotal > 1 ? originalIndex / (axialTotal - 1) : 0;
-      const coronalRatio = coronalTotal > 1 ? coronalIndex / (coronalTotal - 1) : 0;
-      const sagittalRatio = sagittalTotal > 1 ? sagittalIndex / (sagittalTotal - 1) : 0;
+      const axialRatio = axialTotal > 1 ? clampRatio(axialIndex / (axialTotal - 1)) : 0;
+      const coronalRatio = coronalTotal > 1 ? clampRatio(coronalIndex / (coronalTotal - 1)) : 0;
+      const sagittalRatio = sagittalTotal > 1 ? clampRatio(sagittalIndex / (sagittalTotal - 1)) : 0;
 
       if (targetPane === 0) {
-        // Original/Axial view: show Coronal (horizontal) and Sagittal (vertical)
-        lines.push({ ratio: coronalRatio, color: "#ffff00", label: "Cor", orientation: "horizontal" });
-        lines.push({ ratio: sagittalRatio, color: "#00ffff", label: "Sag", orientation: "vertical" });
+        // Axial view: show Coronal (horizontal) and Sagittal (vertical)
+        lines.push({ ratio: coronalRatio, color: "#ffff00", orientation: "horizontal" });
+        lines.push({ ratio: sagittalRatio, color: "#00ffff", orientation: "vertical" });
       } else if (targetPane === 1) {
         // Coronal view: show Axial (horizontal, inverted) and Sagittal (vertical)
-        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", label: "Ax", orientation: "horizontal" });
-        lines.push({ ratio: sagittalRatio, color: "#00ffff", label: "Sag", orientation: "vertical" });
+        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", orientation: "horizontal" });
+        lines.push({ ratio: sagittalRatio, color: "#00ffff", orientation: "vertical" });
       } else if (targetPane === 2) {
         // Sagittal view: show Axial (horizontal, inverted) and Coronal (vertical)
-        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", label: "Ax", orientation: "horizontal" });
-        lines.push({ ratio: coronalRatio, color: "#ffff00", label: "Cor", orientation: "vertical" });
+        lines.push({ ratio: 1 - axialRatio, color: "#00ff00", orientation: "horizontal" });
+        lines.push({ ratio: coronalRatio, color: "#ffff00", orientation: "vertical" });
       }
 
       return lines;
     },
-    [mpr2DSeries, instances.length, originalIndex, coronalIndex, sagittalIndex],
+    [mpr2DSeries, instances.length, axialIndex, coronalIndex, sagittalIndex],
   );
 
   const API_BASE_URL =
@@ -777,12 +800,24 @@ const CaseViewer = () => {
             current: 0,
             total: instances.length,
           });
+          const volumeProgressStep = Math.max(
+            8,
+            Math.floor(instances.length / 50),
+          );
+          let lastVolumeProgress = 0;
           volume = await buildVolume(
             sortedInstances,
             imageCacheMap.current,
             API_BASE_URL,
             getCookie("jwt") || "",
             (loaded, total) => {
+              if (
+                loaded !== total &&
+                loaded - lastVolumeProgress < volumeProgressStep
+              ) {
+                return;
+              }
+              lastVolumeProgress = loaded;
               setMprGenerationProgress({
                 phase: "volume",
                 current: loaded,
@@ -807,49 +842,85 @@ const CaseViewer = () => {
         const windowCenter =
           viewTransform.windowCenter ?? volume.windowCenter ?? 40;
 
-        // Handle 2D-MPR: generate all three planes
-        if (mode === "2D-MPR") {
-          const planes: PlaneType[] = ["Axial", "Coronal", "Sagittal"];
+        const generateSlices = async (
+          totalSlices: number,
+          phase: string,
+          extractor: (index: number) => {
+            data: Int16Array;
+            width: number;
+            height: number;
+          },
+        ): Promise<MPRSliceData[]> => {
+          const slices: MPRSliceData[] = new Array(totalSlices);
+          const progressUpdateEvery = Math.max(8, Math.floor(totalSlices / 40));
+          const yieldEvery = Math.max(6, Math.floor(totalSlices / 100));
 
-          for (const plane of planes) {
-            const maxIndex = getMaxIndex(volume, plane);
-            const totalSlices = maxIndex + 1;
-            const slices: MPRSliceData[] = [];
+          setMprGenerationProgress({
+            phase,
+            current: 0,
+            total: totalSlices,
+          });
 
-            setMprGenerationProgress({
-              phase: `slices-${plane}`,
-              current: 0,
-              total: totalSlices,
-            });
+          for (let i = 0; i < totalSlices; i++) {
+            const sliceResult = extractor(i);
 
-            for (let i = 0; i <= maxIndex; i++) {
-              const sliceResult = extractSlice(volume, plane, i);
-              const imageData = applyWindowLevel(
-                sliceResult.data,
-                sliceResult.width,
-                sliceResult.height,
-                windowCenter,
-                windowWidth,
-              );
+            slices[i] = {
+              index: i,
+              rawData: sliceResult.data,
+              width: sliceResult.width,
+              height: sliceResult.height,
+            };
 
-              slices.push({
-                index: i,
-                imageData,
-                width: sliceResult.width,
-                height: sliceResult.height,
-              });
-
+            const completed = i + 1;
+            if (completed === totalSlices || completed % progressUpdateEvery === 0) {
               setMprGenerationProgress({
-                phase: `slices-${plane}`,
-                current: i + 1,
+                phase,
+                current: completed,
                 total: totalSlices,
               });
-
-              // Yield to UI thread every 10 slices
-              if (i % 10 === 0) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-              }
             }
+
+            if (completed < totalSlices && completed % yieldEvery === 0) {
+              await new Promise<void>((resolve) => {
+                if (typeof requestAnimationFrame === "function") {
+                  requestAnimationFrame(() => resolve());
+                } else {
+                  setTimeout(() => resolve(), 0);
+                }
+              });
+            }
+          }
+
+          return slices;
+        };
+
+        // Handle 2D-MPR: generate all three planes
+        if (mode === "2D-MPR") {
+          let sourcePlane: PlaneOrientation | null = null;
+          if (instances[0]?.image_orientation_patient?.length === 6) {
+            const normal = calculateSliceNormal(instances[0].image_orientation_patient);
+            const absX = Math.abs(normal[0]);
+            const absY = Math.abs(normal[1]);
+            const absZ = Math.abs(normal[2]);
+            if (absZ > absX && absZ > absY) sourcePlane = "Axial";
+            else if (absY > absX && absY > absZ) sourcePlane = "Coronal";
+            else if (absX > absY && absX > absZ) sourcePlane = "Sagittal";
+          }
+
+          // If source stack is already axial, skip redundant axial MPR generation.
+          const planes: PlaneType[] =
+            sourcePlane === "Axial"
+              ? ["Coronal", "Sagittal"]
+              : ["Axial", "Coronal", "Sagittal"];
+
+          const generatedSeries: TemporaryMPRSeries[] = [];
+          for (const plane of planes) {
+            const totalSlices = getMaxIndex(volume, plane) + 1;
+            const slices = await generateSlices(
+              totalSlices,
+              `slices-${plane}`,
+              (index) => extractSlice(volume, plane, index),
+            );
 
             // Create temporary series for this plane
             const geometry = getSliceGeometry(volume, plane);
@@ -866,7 +937,14 @@ const CaseViewer = () => {
               physicalAspectRatio: geometry.aspectRatio,
             };
 
-            addTemporaryMPRSeries(tempSeries);
+            generatedSeries.push(tempSeries);
+          }
+
+          for (let i = 0; i < generatedSeries.length; i++) {
+            const tempSeries = generatedSeries[i];
+            addTemporaryMPRSeries(tempSeries, {
+              autoSelect: i === generatedSeries.length - 1,
+            });
           }
         }
         // Handle 3D-MPR: Activate VRT (3D Volume Rendering)
@@ -886,44 +964,11 @@ const CaseViewer = () => {
         // Handle MiniMIP: thin-slab Maximum Intensity Projection along axial plane
         else if (mode === "MiniMIP") {
           const plane: PlaneType = "Axial";
-          const maxIndex = getMaxIndex(volume, plane);
-          const totalSlices = maxIndex + 1;
-          const slices: MPRSliceData[] = [];
+          const totalSlices = getMaxIndex(volume, plane) + 1;
           const slabHalfSize = 5; // ~11 slices per slab
-
-          setMprGenerationProgress({
-            phase: "slices",
-            current: 0,
-            total: totalSlices,
-          });
-
-          for (let i = 0; i <= maxIndex; i++) {
-            const sliceResult = extractMiniMIPSlice(volume, plane, i, slabHalfSize);
-            const imageData = applyWindowLevel(
-              sliceResult.data,
-              sliceResult.width,
-              sliceResult.height,
-              windowCenter,
-              windowWidth,
-            );
-
-            slices.push({
-              index: i,
-              imageData,
-              width: sliceResult.width,
-              height: sliceResult.height,
-            });
-
-            setMprGenerationProgress({
-              phase: "slices",
-              current: i + 1,
-              total: totalSlices,
-            });
-
-            if (i % 10 === 0) {
-              await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-          }
+          const slices = await generateSlices(totalSlices, "slices", (index) =>
+            extractMiniMIPSlice(volume, plane, index, slabHalfSize),
+          );
 
           const geoMiniMIP = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
@@ -944,44 +989,10 @@ const CaseViewer = () => {
         // Handle single plane (Axial, Coronal, Sagittal)
         else {
           const plane = mode as PlaneType;
-          const maxIndex = getMaxIndex(volume, plane);
-          const totalSlices = maxIndex + 1;
-          const slices: MPRSliceData[] = [];
-
-          setMprGenerationProgress({
-            phase: "slices",
-            current: 0,
-            total: totalSlices,
-          });
-
-          for (let i = 0; i <= maxIndex; i++) {
-            const sliceResult = extractSlice(volume, plane, i);
-            const imageData = applyWindowLevel(
-              sliceResult.data,
-              sliceResult.width,
-              sliceResult.height,
-              windowCenter,
-              windowWidth,
-            );
-
-            slices.push({
-              index: i,
-              imageData,
-              width: sliceResult.width,
-              height: sliceResult.height,
-            });
-
-            setMprGenerationProgress({
-              phase: "slices",
-              current: i + 1,
-              total: totalSlices,
-            });
-
-            // Yield to UI thread every 10 slices
-            if (i % 10 === 0) {
-              await new Promise((resolve) => setTimeout(resolve, 0));
-            }
-          }
+          const totalSlices = getMaxIndex(volume, plane) + 1;
+          const slices = await generateSlices(totalSlices, "slices", (index) =>
+            extractSlice(volume, plane, index),
+          );
 
           // Create the temporary series
           const geoSingle = getSliceGeometry(volume, plane);
@@ -1024,12 +1035,12 @@ const CaseViewer = () => {
   ]);
 
   // Stable callbacks for 2D-MPR pane index changes (avoid re-render cascades)
+  const handleAxialIndexChange = useCallback((idx: number) => setAxialIndex(idx), []);
   const handleCoronalIndexChange = useCallback((idx: number) => setCoronalIndex(idx), []);
   const handleSagittalIndexChange = useCallback((idx: number) => setSagittalIndex(idx), []);
-  const handleOriginalIndexChange = useCallback((idx: number) => setOriginalIndex(idx), []);
 
   // Memoized scout lines for each 2D-MPR pane
-  const scoutLinesOriginal = useMemo(() => get2DMPRScoutLines(0), [get2DMPRScoutLines]);
+  const scoutLinesAxial = useMemo(() => get2DMPRScoutLines(0), [get2DMPRScoutLines]);
   const scoutLinesCoronal = useMemo(() => get2DMPRScoutLines(1), [get2DMPRScoutLines]);
   const scoutLinesSagittal = useMemo(() => get2DMPRScoutLines(2), [get2DMPRScoutLines]);
 
@@ -1137,7 +1148,7 @@ const CaseViewer = () => {
     );
   }
 
-  // 2D-MPR split layout: Left (Coronal + Sagittal stacked) | Right (Original)
+  // 2D-MPR split layout: Left (Coronal + Sagittal stacked) | Right (Axial)
   if (is2DMPRLayout && mpr2DSeries) {
     return (
       <div className="flex-1 flex bg-black h-full gap-0.5">
@@ -1171,18 +1182,28 @@ const CaseViewer = () => {
           </div>
         </div>
 
-        {/* Right column — Original images */}
+        {/* Right column — Axial */}
         <div
           className={`w-1/2 min-h-0 min-w-0 overflow-hidden ${active2DMPRPane === 0 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
           onClick={() => setActive2DMPRPane(0)}
         >
-          <DicomViewer
-            instances={instances}
-            seriesId={selectedSeries._id}
-            className="h-full"
-            scoutLines={scoutLinesOriginal}
-            onImageIndexChange={handleOriginalIndexChange}
-          />
+          {mpr2DSeries.axial ? (
+            <TemporaryMPRSeriesViewer
+              series={mpr2DSeries.axial}
+              className="h-full"
+              scoutLines={scoutLinesAxial}
+              onImageIndexChange={handleAxialIndexChange}
+              compact
+            />
+          ) : (
+            <DicomViewer
+              instances={instances}
+              seriesId={selectedSeries._id}
+              className="h-full"
+              scoutLines={scoutLinesAxial}
+              onImageIndexChange={handleAxialIndexChange}
+            />
+          )}
         </div>
       </div>
     );

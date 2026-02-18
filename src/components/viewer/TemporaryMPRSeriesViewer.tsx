@@ -13,6 +13,7 @@ import {
 } from "../ViewerLayout";
 import { Maximize, Minimize } from "lucide-react";
 import type { ScoutLine } from "./DicomViewer";
+import { applyWindowLevel } from "@/lib/mpr";
 
 interface TemporaryMPRSeriesViewerProps {
   series: TemporaryMPRSeries;
@@ -21,6 +22,9 @@ interface TemporaryMPRSeriesViewerProps {
   onImageIndexChange?: (index: number) => void;
   compact?: boolean;
   viewTransformOverride?: ViewTransform;
+  onViewTransformChangeOverride?: (
+    transform: ViewTransform | ((prev: ViewTransform) => ViewTransform),
+  ) => void;
   isFullscreenOverride?: boolean;
   onToggleFullscreenOverride?: () => void;
 }
@@ -41,17 +45,23 @@ export function TemporaryMPRSeriesViewer({
   onImageIndexChange,
   compact = false,
   viewTransformOverride,
+  onViewTransformChangeOverride,
   isFullscreenOverride,
   onToggleFullscreenOverride,
 }: TemporaryMPRSeriesViewerProps) {
   const {
+    activeTool,
+    stackSpeed,
     viewTransform: globalViewTransform,
+    setViewTransform: setGlobalViewTransform,
     caseData,
     isFullscreen: globalIsFullscreen,
     toggleFullscreen: toggleGlobalFullscreen,
     setCurrentImageIndex,
   } = useViewerContext();
   const viewTransform = viewTransformOverride ?? globalViewTransform;
+  const setViewTransform =
+    onViewTransformChangeOverride ?? setGlobalViewTransform;
   const isFullscreen = isFullscreenOverride ?? globalIsFullscreen;
   const toggleFullscreen =
     onToggleFullscreenOverride ?? toggleGlobalFullscreen;
@@ -61,6 +71,120 @@ export function TemporaryMPRSeriesViewer({
   const [currentIndex, setCurrentIndex] = useState(0);
   const isDragging = useRef(false);
   const lastY = useRef(0);
+  const lastX = useRef(0);
+  const MAX_IMAGE_DATA_CACHE = 320;
+  const MAX_BITMAP_CACHE = 160;
+  const bitmapCacheRef = useRef<Map<number, ImageBitmap>>(new Map());
+  const imageDataCacheRef = useRef<Map<number, ImageData>>(new Map());
+  const pendingBitmapGenerationRef = useRef<Set<number>>(new Set());
+  const wheelAccumulator = useRef(0);
+  const wheelRAF = useRef<number | null>(null);
+
+  const updateIndexBySteps = useCallback(
+    (steps: number) => {
+      if (!steps) return;
+      setCurrentIndex((prev) =>
+        Math.max(0, Math.min(series.sliceCount - 1, prev + steps)),
+      );
+    },
+    [series.sliceCount],
+  );
+
+  const getSliceImageData = useCallback(
+    (index: number): ImageData | null => {
+      const slice = series.slices[index];
+      if (!slice) return null;
+      if (slice.imageData) return slice.imageData;
+
+      const cached = imageDataCacheRef.current.get(index);
+      if (cached) return cached;
+      if (!slice.rawData) return null;
+
+      const generated = applyWindowLevel(
+        slice.rawData,
+        slice.width,
+        slice.height,
+        series.windowCenter,
+        series.windowWidth,
+      );
+      imageDataCacheRef.current.set(index, generated);
+      if (imageDataCacheRef.current.size > MAX_IMAGE_DATA_CACHE) {
+        const oldestKey = imageDataCacheRef.current.keys().next().value;
+        if (oldestKey !== undefined && oldestKey !== index) {
+          imageDataCacheRef.current.delete(oldestKey);
+        }
+      }
+      return generated;
+    },
+    [series.slices, series.windowCenter, series.windowWidth],
+  );
+
+  const ensureBitmapForIndex = useCallback(
+    (index: number) => {
+      const slice = series.slices[index];
+      if (!slice) return;
+      if (bitmapCacheRef.current.has(index)) return;
+      if (pendingBitmapGenerationRef.current.has(index)) return;
+
+      const imageData = getSliceImageData(index);
+      if (!imageData) return;
+
+      pendingBitmapGenerationRef.current.add(index);
+      createImageBitmap(imageData)
+        .then((bitmap) => {
+          const existing = bitmapCacheRef.current.get(index);
+          if (existing) {
+            existing.close();
+          }
+          bitmapCacheRef.current.set(index, bitmap);
+          if (bitmapCacheRef.current.size > MAX_BITMAP_CACHE) {
+            const oldestKey = bitmapCacheRef.current.keys().next().value;
+            if (oldestKey !== undefined && oldestKey !== index) {
+              const oldestBitmap = bitmapCacheRef.current.get(oldestKey);
+              oldestBitmap?.close();
+              bitmapCacheRef.current.delete(oldestKey);
+            }
+          }
+        })
+        .catch(() => {
+          // Ignore bitmap conversion failures and continue with putImageData fallback.
+        })
+        .finally(() => {
+          pendingBitmapGenerationRef.current.delete(index);
+        });
+    },
+    [getSliceImageData, series.slices],
+  );
+
+  useEffect(() => {
+    setCurrentIndex(0);
+    wheelAccumulator.current = 0;
+    if (wheelRAF.current !== null) {
+      cancelAnimationFrame(wheelRAF.current);
+      wheelRAF.current = null;
+    }
+
+    imageDataCacheRef.current.clear();
+    pendingBitmapGenerationRef.current.clear();
+    bitmapCacheRef.current.forEach((bitmap) => bitmap.close());
+    bitmapCacheRef.current.clear();
+  }, [series.id, series.windowCenter, series.windowWidth]);
+
+  useEffect(() => {
+    const bitmapCache = bitmapCacheRef.current;
+    const imageDataCache = imageDataCacheRef.current;
+    const pendingBitmapGeneration = pendingBitmapGenerationRef.current;
+
+    return () => {
+      if (wheelRAF.current !== null) {
+        cancelAnimationFrame(wheelRAF.current);
+      }
+      bitmapCache.forEach((bitmap) => bitmap.close());
+      bitmapCache.clear();
+      imageDataCache.clear();
+      pendingBitmapGeneration.clear();
+    };
+  }, []);
 
   // Sync current index with global context (skip in compact/2D-MPR mode to avoid cross-pane re-renders)
   useEffect(() => {
@@ -87,11 +211,29 @@ export function TemporaryMPRSeriesViewer({
     if (!ctx) return;
 
     // Set canvas dimensions
-    canvas.width = slice.width;
-    canvas.height = slice.height;
+    if (canvas.width !== slice.width) canvas.width = slice.width;
+    if (canvas.height !== slice.height) canvas.height = slice.height;
 
-    // Draw the pre-rendered ImageData
-    ctx.putImageData(slice.imageData, 0, 0);
+    const bitmap = bitmapCacheRef.current.get(currentIndex);
+    if (bitmap) {
+      ctx.drawImage(bitmap, 0, 0, slice.width, slice.height);
+    } else {
+      const imageData = getSliceImageData(currentIndex);
+      if (imageData) {
+        ctx.putImageData(imageData, 0, 0);
+        ensureBitmapForIndex(currentIndex);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    // Pre-warm nearby slices so wheel scrolling feels smooth.
+    const nearby = [currentIndex + 1, currentIndex - 1, currentIndex + 2, currentIndex - 2];
+    nearby.forEach((idx) => {
+      if (idx >= 0 && idx < series.sliceCount) {
+        ensureBitmapForIndex(idx);
+      }
+    });
 
     // Apply view transforms (pan, zoom, etc.) via CSS
     // Use physical aspect ratio (accounts for pixel spacing vs slice spacing)
@@ -113,7 +255,7 @@ export function TemporaryMPRSeriesViewer({
       canvas.style.width = `${displayWidth}px`;
       canvas.style.height = `${displayHeight}px`;
     }
-  }, [series, currentIndex]);
+  }, [series, currentIndex, getSliceImageData, ensureBitmapForIndex]);
 
   // Render scout lines on overlay canvas (CSS-display-sized to avoid scaling issues)
   useEffect(() => {
@@ -174,11 +316,13 @@ export function TemporaryMPRSeriesViewer({
       }
       ctx.restore();
     });
-  }, [scoutLines, currentIndex, series]);
+  }, [scoutLines, currentIndex]);
 
   // Handle mouse interactions for scrolling
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     isDragging.current = true;
+    lastX.current = e.clientX;
     lastY.current = e.clientY;
   }, []);
 
@@ -186,17 +330,34 @@ export function TemporaryMPRSeriesViewer({
     (e: React.MouseEvent) => {
       if (!isDragging.current) return;
 
+      const deltaX = e.clientX - lastX.current;
       const deltaY = e.clientY - lastY.current;
+      lastX.current = e.clientX;
       lastY.current = e.clientY;
+
+      if (activeTool === "Pan") {
+        setViewTransform((prev) => ({
+          ...prev,
+          x: prev.x + deltaX,
+          y: prev.y + deltaY,
+        }));
+        return;
+      }
+
+      if (activeTool === "Zoom") {
+        setViewTransform((prev) => ({
+          ...prev,
+          scale: Math.max(0.1, Math.min(8, prev.scale - deltaY * 0.01)),
+        }));
+        return;
+      }
 
       if (Math.abs(deltaY) >= 2) {
         const step = deltaY > 0 ? 1 : -1;
-        setCurrentIndex((prev) =>
-          Math.max(0, Math.min(series.sliceCount - 1, prev + step)),
-        );
+        updateIndexBySteps(step);
       }
     },
-    [series.sliceCount],
+    [activeTool, setViewTransform, updateIndexBySteps],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -210,15 +371,41 @@ export function TemporaryMPRSeriesViewer({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const step = e.deltaY > 0 ? 1 : -1;
-      setCurrentIndex((prev) =>
-        Math.max(0, Math.min(series.sliceCount - 1, prev + step)),
-      );
+      if (activeTool === "Zoom" || e.ctrlKey || e.metaKey) {
+        const zoomFactor = Math.exp(-e.deltaY * 0.0015);
+        setViewTransform((prev) => ({
+          ...prev,
+          scale: Math.max(0.1, Math.min(8, prev.scale * zoomFactor)),
+        }));
+        return;
+      }
+
+      const threshold = Math.max(8, 100 / stackSpeed);
+      wheelAccumulator.current += e.deltaY;
+
+      if (wheelRAF.current === null) {
+        wheelRAF.current = requestAnimationFrame(() => {
+          wheelRAF.current = null;
+          const delta = wheelAccumulator.current;
+          const steps = Math.trunc(delta / threshold);
+
+          if (steps !== 0) {
+            wheelAccumulator.current = delta - steps * threshold;
+            updateIndexBySteps(steps);
+          }
+        });
+      }
     };
 
     container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheel);
-  }, [series.sliceCount]);
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+      if (wheelRAF.current !== null) {
+        cancelAnimationFrame(wheelRAF.current);
+        wheelRAF.current = null;
+      }
+    };
+  }, [activeTool, setViewTransform, stackSpeed, updateIndexBySteps]);
 
   return (
     <div className={`flex-1 flex flex-col bg-black ${className}`}>
@@ -233,7 +420,13 @@ export function TemporaryMPRSeriesViewer({
       >
         <canvas
           ref={canvasRef}
-          className="cursor-ns-resize"
+          className={
+            activeTool === "Zoom"
+              ? "cursor-zoom-in"
+              : activeTool === "Pan"
+              ? "cursor-grab active:cursor-grabbing"
+              : "cursor-ns-resize"
+          }
           style={{
             transform: `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale}) rotate(${viewTransform.rotation}deg) scaleX(${viewTransform.flipH ? -1 : 1}) scaleY(${viewTransform.flipV ? -1 : 1})`,
             filter: viewTransform.invert ? "invert(1)" : "none",
@@ -253,10 +446,7 @@ export function TemporaryMPRSeriesViewer({
         <div className="absolute inset-4 pointer-events-none select-none text-[11px] md:text-xs font-mono text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
           {compact ? (
             <>
-              {/* Compact mode: plane label top-left, slice counter bottom-left */}
-              <div className="absolute top-0 left-0 font-bold text-sm uppercase tracking-wide">
-                {series.mprMode}
-              </div>
+              {/* Compact mode: only slice counter */}
               <div className="absolute bottom-0 left-0 font-medium">
                 {currentIndex + 1} / {series.sliceCount}
               </div>
