@@ -40,6 +40,37 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 const STORAGE_KEY_PACS_LIST = 'pacs_list_table_columns';
 const STORAGE_KEY_PACS_LIST_SIZING = 'pacs_list_table_column_sizing';
 
+const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
+    if (!dateStr || dateStr.length !== 8) return null;
+
+    const year = Number(dateStr.substring(0, 4));
+    const month = Number(dateStr.substring(4, 6));
+    const day = Number(dateStr.substring(6, 8));
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
+    const hour = Number(safeTime.substring(0, 2) || '0');
+    const minute = Number(safeTime.substring(2, 4) || '0');
+    const second = Number(safeTime.substring(4, 6) || '0');
+
+    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const parseDateTimeValue = (value?: string | null): number | null => {
+    if (!value) return null;
+    const timestamp = new Date(value).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+};
+
 const PacsList = () => {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -48,7 +79,7 @@ const PacsList = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCases, setTotalCases] = useState(0);
-    const pageSize = 20;
+    const [pageSize, setPageSize] = useState(20);
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [activePeriod, setActivePeriod] = useState('1M');
     const [availableCenters, setAvailableCenters] = useState<{ id: string; name: string }[]>([]);
@@ -175,6 +206,10 @@ const PacsList = () => {
                     setCurrentPage(response.pagination.currentPage);
                     setTotalPages(response.pagination.totalPages);
                     setTotalCases(response.pagination.totalCases || response.data.cases.length);
+                } else {
+                    setCurrentPage(1);
+                    setTotalPages(1);
+                    setTotalCases(response.data.cases.length);
                 }
 
                 // Apply client-side filtering
@@ -481,11 +516,11 @@ const PacsList = () => {
                                                                 (typeof note.user_id === 'object' ? note.user_id.full_name : 'Unknown User')}
                                                         </span>
                                                         <span>
-                                                            {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
+                                                            {new Date(note.createdAt || note.created_at || Date.now()).toLocaleDateString('en-US', {
                                                                 month: 'short',
                                                                 day: 'numeric',
                                                                 year: 'numeric'
-                                                            })} at {new Date(note.createdAt || note.created_at).toLocaleTimeString('en-US', {
+                                                            })} at {new Date(note.createdAt || note.created_at || Date.now()).toLocaleTimeString('en-US', {
                                                                 hour: '2-digit',
                                                                 minute: '2-digit'
                                                             })}
@@ -846,37 +881,21 @@ const PacsList = () => {
                 enableColumnResizing={true}
                 columnSizing={columnSizing}
                 onColumnSizingChange={setColumnSizing}
+                manualPagination={true}
+                manualPageIndex={Math.max(currentPage - 1, 0)}
+                manualPageSize={pageSize}
+                manualTotalRows={totalCases || patients.length}
+                manualTotalPages={Math.max(totalPages, 1)}
+                manualHasPreviousPage={currentPage > 1}
+                manualHasNextPage={currentPage < Math.max(totalPages, 1)}
+                onManualPageChange={(nextPageIndex) => {
+                    setCurrentPage(nextPageIndex + 1);
+                }}
+                onManualPageSizeChange={(nextPageSize) => {
+                    setPageSize(nextPageSize);
+                    setCurrentPage(1);
+                }}
             />
-
-            {/* Footer with Total Cases and Pagination */}
-            {!isLoading && !error && (
-                <div className="flex items-center justify-end gap-4">
-                    <span className="text-xs text-slate-600">
-                        Total: <span className="font-semibold">{totalCases}</span> cases
-                    </span>
-                    {totalPages > 1 && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-md border border-slate-200">
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                disabled={currentPage === 1 || isLoading}
-                                className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Previous
-                            </button>
-                            <span className="text-xs text-slate-600 font-medium">
-                                Page {currentPage} of {totalPages}
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                disabled={currentPage === totalPages || isLoading}
-                                className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
 
             {/* Dialogs */}
             <MessageDialog

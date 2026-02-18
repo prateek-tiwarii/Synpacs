@@ -6,7 +6,11 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useViewerContext, type TemporaryMPRSeries } from "../ViewerLayout";
+import {
+  useViewerContext,
+  type TemporaryMPRSeries,
+  type ViewTransform,
+} from "../ViewerLayout";
 import { Maximize, Minimize } from "lucide-react";
 import type { ScoutLine } from "./DicomViewer";
 
@@ -16,6 +20,9 @@ interface TemporaryMPRSeriesViewerProps {
   scoutLines?: ScoutLine[];
   onImageIndexChange?: (index: number) => void;
   compact?: boolean;
+  viewTransformOverride?: ViewTransform;
+  isFullscreenOverride?: boolean;
+  onToggleFullscreenOverride?: () => void;
 }
 
 // Helper to format DICOM date (YYYYMMDD) to readable format
@@ -33,14 +40,21 @@ export function TemporaryMPRSeriesViewer({
   scoutLines,
   onImageIndexChange,
   compact = false,
+  viewTransformOverride,
+  isFullscreenOverride,
+  onToggleFullscreenOverride,
 }: TemporaryMPRSeriesViewerProps) {
   const {
-    viewTransform,
+    viewTransform: globalViewTransform,
     caseData,
-    isFullscreen,
-    toggleFullscreen,
+    isFullscreen: globalIsFullscreen,
+    toggleFullscreen: toggleGlobalFullscreen,
     setCurrentImageIndex,
   } = useViewerContext();
+  const viewTransform = viewTransformOverride ?? globalViewTransform;
+  const isFullscreen = isFullscreenOverride ?? globalIsFullscreen;
+  const toggleFullscreen =
+    onToggleFullscreenOverride ?? toggleGlobalFullscreen;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoutCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

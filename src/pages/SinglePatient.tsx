@@ -48,7 +48,7 @@ interface AssignedDoctor {
 interface Note {
     _id: string;
     note: string;
-    flag_type: 'urgent' | 'routine';
+    flag_type: 'urgent' | 'routine' | 'info' | 'warning' | 'error' | 'bookmark_note';
     created_by: {
         _id: string;
         full_name: string;

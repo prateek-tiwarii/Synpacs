@@ -1,7 +1,23 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FileText, CheckCircle, AlertCircle, FileEdit, Eye } from 'lucide-react';
+import { createColumnHelper } from '@tanstack/react-table';
+import { DataTable } from '@/components/common/DataTable';
 
 import { Checkbox } from '@/components/ui/checkbox';
+
+interface PerformanceRow {
+  name: string;
+  login: string;
+  assigned: number;
+  reported: number;
+  unreported: number;
+  drafted: number;
+  reviewed: number;
+  avgTAT: number;
+}
+
+const performanceColumnHelper = createColumnHelper<PerformanceRow>();
+
 const Performance = () => {
   const [activeTab, setActiveTab] = useState('doctor');
   const [timeFilter, setTimeFilter] = useState('1W');
@@ -122,6 +138,24 @@ const Performance = () => {
     );
   };
 
+  const activePerformanceData = activeTab === 'doctor' ? performanceData : centerPerformanceData;
+  const performanceColumns = useMemo(
+    () => [
+      performanceColumnHelper.accessor('name', {
+        header: activeTab === 'doctor' ? 'Doctor' : 'Center',
+        enableSorting: true,
+      }),
+      performanceColumnHelper.accessor('login', { header: 'Login Time', enableSorting: true }),
+      performanceColumnHelper.accessor('assigned', { header: 'Assigned', enableSorting: true }),
+      performanceColumnHelper.accessor('reported', { header: 'Reported', enableSorting: true }),
+      performanceColumnHelper.accessor('unreported', { header: 'Unreported', enableSorting: true }),
+      performanceColumnHelper.accessor('drafted', { header: 'Drafted', enableSorting: true }),
+      performanceColumnHelper.accessor('reviewed', { header: 'Reviewed', enableSorting: true }),
+      performanceColumnHelper.accessor('avgTAT', { header: 'Avg TAT (mins)', enableSorting: true }),
+    ],
+    [activeTab]
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 p-2">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -150,7 +184,9 @@ const Performance = () => {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setActiveTab('doctor')}
+                onClick={() => {
+                  setActiveTab('doctor');
+                }}
                 className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'doctor'
                   ? 'bg-gray-900 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -159,7 +195,9 @@ const Performance = () => {
                 Doctor
               </button>
               <button
-                onClick={() => setActiveTab('center')}
+                onClick={() => {
+                  setActiveTab('center');
+                }}
                 className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'center'
                   ? 'bg-gray-900 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -263,70 +301,17 @@ const Performance = () => {
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-semibold text-gray-900">Performance</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Login
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Assigned
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Reported
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Unreported
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Drafted
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Reviewed
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                    Avg TAT (mins)
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {(activeTab === 'doctor' ? performanceData : centerPerformanceData).map((item, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item.name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {item.login}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.assigned}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.reported}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.unreported}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.drafted}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.reviewed}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.avgTAT}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="p-3">
+            <DataTable
+              data={activePerformanceData}
+              columns={performanceColumns}
+              tableDescription={`${activePerformanceData.length} records`}
+              rowClassName=""
+              showBorder={false}
+              containerClassName="flex flex-col gap-0"
+              defaultPageSize={10}
+              pageSizeOptions={[5, 10, 20]}
+            />
           </div>
         </div>
       </div>

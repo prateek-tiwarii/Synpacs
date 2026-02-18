@@ -18,8 +18,6 @@ interface BookmarkDialogProps {
     onSuccess?: () => void;
 }
 
-type FlagType = 'urgent' | 'routine';
-
 const BookmarkDialog = ({
     open,
     onOpenChange,
@@ -27,7 +25,6 @@ const BookmarkDialog = ({
     onSuccess,
 }: BookmarkDialogProps) => {
     const [note, setNote] = useState('');
-    const [noteFlag, setNoteFlag] = useState<FlagType>('routine');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -41,19 +38,9 @@ const BookmarkDialog = ({
         setError(null);
 
         try {
-            // Save the bookmark
-            await apiService.bookmarkCase(patient._id);
-
-            // If there's a note, add it as well
-            if (note.trim()) {
-                await apiService.createCaseNote(patient._id, {
-                    note: note,
-                    flag_type: noteFlag,
-                });
-            }
+            await apiService.bookmarkCase(patient._id, note.trim() || undefined);
 
             setNote('');
-            setNoteFlag('routine');
             onOpenChange(false);
             onSuccess?.();
         } catch (err) {
@@ -67,25 +54,11 @@ const BookmarkDialog = ({
         if (!isLoading) {
             if (!open) {
                 setNote('');
-                setNoteFlag('routine');
                 setError(null);
             }
             onOpenChange(open);
         }
     };
-
-    const flags: { type: FlagType; label: string; activeClass: string }[] = [
-        {
-            type: 'urgent',
-            label: 'Urgent',
-            activeClass: 'bg-red-600 text-white border-red-600'
-        },
-        {
-            type: 'routine',
-            label: 'Routine',
-            activeClass: 'bg-gray-600 text-white border-gray-600'
-        },
-    ];
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -105,27 +78,6 @@ const BookmarkDialog = ({
                 <div className="px-4 py-3 space-y-3">
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1.5 block">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500 mr-1">Category:</span>
-                        {flags.map((flag) => (
-                            <button
-                                key={flag.type}
-                                onClick={() => setNoteFlag(flag.type)}
-                                disabled={isLoading}
-                                className={`
-                                    inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-all
-                                    ${noteFlag === flag.type
-                                        ? flag.activeClass
-                                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                                    }
-                                    ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                                `}
-                            >
-                                {flag.label}
-                            </button>
-                        ))}
-                    </div>
-
                             Notes/Comments (Optional)
                         </label>
                         <Textarea

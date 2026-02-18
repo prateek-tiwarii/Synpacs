@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Eye, Trash2, Plus, Users, Loader2, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { createColumnHelper } from '@tanstack/react-table';
+import { DataTable } from '@/components/common/DataTable';
 
 import { apiService } from '@/lib/api';
 import { useUser } from '@/hooks/useUser';
@@ -41,6 +42,25 @@ const DAYS_OF_WEEK = [
   { value: 'saturday', label: 'Saturday' },
   { value: 'sunday', label: 'Sunday' }
 ];
+
+interface UserRow {
+  id: string;
+  role: string;
+  fullName: string;
+  displayName: string;
+  phone: string;
+  email: string;
+  addedOn: string;
+  addedBy: string;
+  isActive: boolean;
+  hospitalId?: string;
+  lastLogin?: string;
+  note?: string;
+  specialty?: string;
+  department?: string;
+}
+
+const usersColumnHelper = createColumnHelper<UserRow>();
 
 const UserDialog = ({ open, onOpenChange, onSave }: any) => {
   const [formData, setFormData] = useState({
@@ -463,94 +483,13 @@ const DeleteConfirmationModal = ({ open, onOpenChange, user, onConfirm, isDeleti
   );
 };
 
-const UsersTable = ({ users, onView, onDelete, currentUserId }: any) => {
-  const getRoleLabel = (roleValue: string) => {
-    const role = USER_ROLES.find(r => r.value === roleValue);
-    return role ? role.label : roleValue;
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '—';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Phone Number</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Added On</TableHead>
-          <TableHead>Added By</TableHead>
-          <TableHead>Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {users.map((user: any) => {
-          const isCurrentUser = user.id === currentUserId;
-          return (
-            <TableRow key={user.id} className={isCurrentUser ? "bg-blue-50/50" : ""}>
-              <TableCell className="font-medium">
-                <div className="flex items-center gap-2">
-                  <span>{user.fullName}</span>
-                  {isCurrentUser && (
-                    <Badge className="bg-blue-100 text-blue-800 text-xs">You</Badge>
-                  )}
-                </div>
-                {user.note && <div className="text-xs text-gray-500">{user.note}</div>}
-              </TableCell>
-              <TableCell>
-                <Badge className={ROLE_COLORS[user.role as keyof typeof ROLE_COLORS]}>
-                  {getRoleLabel(user.role)}
-                </Badge>
-              </TableCell>
-              <TableCell>{user.phone}</TableCell>
-              <TableCell className="text-blue-600">{user.email}</TableCell>
-              <TableCell className="text-sm text-gray-600">{formatDate(user.addedOn)}</TableCell>
-              <TableCell className="text-sm text-gray-700">{user.addedBy || '—'}</TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onView(user)}
-                    disabled={isCurrentUser}
-                    className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100! disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={isCurrentUser ? "Cannot view your own profile here" : "View user"}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onDelete(user)}
-                    disabled={isCurrentUser}
-                    className="h-8 w-8 p-0 bg-white! text-red-600! border-gray-300 hover:bg-red-50! disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={isCurrentUser ? "You cannot delete yourself" : "Delete user"}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
-  );
-};
-
-
 // ...existing code...
 // Removed InstitutionDialog and InstitutionManager components
 // ...existing code...
 
 const UserCreate = () => {
   const { user: currentUser } = useUser();
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -571,7 +510,7 @@ const UserCreate = () => {
       const response: any = await apiService.getAllUsers();
 
       if (response.success && response.data) {
-        const mappedUsers = response.data.map((user: any) => ({
+        const mappedUsers: UserRow[] = response.data.map((user: any) => ({
           id: user._id,
           role: user.role,
           fullName: user.full_name,
@@ -583,6 +522,8 @@ const UserCreate = () => {
           isActive: user.is_active,
           hospitalId: user.hospital_id,
           lastLogin: user.last_login,
+          specialty: user.speciality || '',
+          department: user.department || '',
         }));
         setUsers(mappedUsers);
       }
@@ -672,6 +613,106 @@ const UserCreate = () => {
     return matchesSearch && matchesRole;
   });
 
+  const getRoleLabel = (roleValue: string) => {
+    const role = USER_ROLES.find((entry) => entry.value === roleValue);
+    return role ? role.label : roleValue;
+  };
+
+  const formatAddedDate = (dateString: string) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const userColumns = useMemo(
+    () => [
+      usersColumnHelper.accessor('fullName', {
+        header: 'Name',
+        enableSorting: true,
+        cell: ({ row }) => {
+          const user = row.original;
+          const isCurrentUser = user.id === currentUser?._id;
+          return (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span>{user.fullName}</span>
+                {isCurrentUser && (
+                  <Badge className="bg-blue-100 text-blue-800 text-xs">You</Badge>
+                )}
+              </div>
+              {user.note && <span className="text-[10px] text-gray-500">{user.note}</span>}
+            </div>
+          );
+        },
+      }),
+      usersColumnHelper.accessor('role', {
+        header: 'Role',
+        enableSorting: true,
+        cell: ({ row }) => (
+          <Badge className={ROLE_COLORS[row.original.role as keyof typeof ROLE_COLORS]}>
+            {getRoleLabel(row.original.role)}
+          </Badge>
+        ),
+      }),
+      usersColumnHelper.accessor('phone', { header: 'Phone Number', enableSorting: true }),
+      usersColumnHelper.accessor('email', {
+        header: 'Email',
+        enableSorting: true,
+        cell: ({ row }) => <span className="text-blue-600">{row.original.email}</span>,
+      }),
+      usersColumnHelper.accessor('addedOn', {
+        header: 'Added On',
+        enableSorting: true,
+        cell: ({ row }) => <span>{formatAddedDate(row.original.addedOn)}</span>,
+      }),
+      usersColumnHelper.accessor('addedBy', {
+        header: 'Added By',
+        enableSorting: true,
+        cell: ({ row }) => <span>{row.original.addedBy || '—'}</span>,
+      }),
+      usersColumnHelper.display({
+        id: 'actions',
+        header: 'Actions',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const user = row.original;
+          const isCurrentUser = user.id === currentUser?._id;
+          return (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleViewUser(user);
+                }}
+                disabled={isCurrentUser}
+                className="h-8 w-8 p-0 bg-white! text-gray-700! border-gray-300 hover:bg-gray-100! disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isCurrentUser ? "Cannot view your own profile here" : "View user"}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDeleteUser(user);
+                }}
+                disabled={isCurrentUser}
+                className="h-8 w-8 p-0 bg-white! text-red-600! border-gray-300 hover:bg-red-50! disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isCurrentUser ? "You cannot delete yourself" : "Delete user"}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        },
+      }),
+    ],
+    [currentUser?._id, formatAddedDate, getRoleLabel, handleDeleteUser, handleViewUser]
+  );
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gray-50 p-2 space-y-2">
       <div className="flex items-center justify-between">
@@ -751,12 +792,15 @@ const UserCreate = () => {
                 <p className="text-sm">Click "Add User" to create your first user</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <UsersTable
-                  users={filteredUsers}
-                  onView={handleViewUser}
-                  onDelete={handleDeleteUser}
-                  currentUserId={currentUser?._id}
+              <div className="px-3 py-3">
+                <DataTable
+                  data={filteredUsers}
+                  columns={userColumns}
+                  defaultPageSize={10}
+                  pageSizeOptions={[10, 20, 50]}
+                  rowClassName={(row) => (row.id === currentUser?._id ? 'ring-1 ring-blue-200' : '')}
+                  showBorder={true}
+                  containerClassName="flex flex-col gap-0"
                 />
               </div>
             )}

@@ -1,25 +1,25 @@
 import { useParams } from "react-router-dom";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  type DragEvent,
+} from "react";
 import {
   useViewerContext,
   type TemporaryMPRSeries,
   type MPRSliceData,
   type MPRMode,
+  type ViewTransform,
 } from "@/components/ViewerLayout";
 import { getCookie } from "@/lib/cookies";
 import DicomViewer, { type ScoutLine } from "@/components/viewer/DicomViewer";
 import SRViewer from "@/components/viewer/SRViewer";
 import TemporaryMPRSeriesViewer from "@/components/viewer/TemporaryMPRSeriesViewer";
 import VRTViewer from "@/components/viewer/VRTViewer";
-import { Loader2, ChevronDown, Check } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { Loader2 } from "lucide-react";
 import {
   type Instance as MPRInstance,
   type VolumeData,
@@ -63,6 +63,42 @@ interface InstancesResponse {
   instances: Instance[];
 }
 
+const DEFAULT_PANE_VIEW_TRANSFORM: ViewTransform = {
+  x: 0,
+  y: 0,
+  scale: 0.65,
+  rotation: 0,
+  flipH: false,
+  flipV: false,
+  invert: false,
+  windowWidth: null,
+  windowCenter: null,
+};
+
+const SERIES_DND_MIME = "application/x-sync-pacs-series";
+
+interface DragSeriesPayload {
+  seriesId: string;
+  kind: "regular" | "mpr";
+}
+
+const parseDroppedSeriesId = (event: DragEvent<HTMLDivElement>): string | null => {
+  const rawPayload = event.dataTransfer.getData(SERIES_DND_MIME);
+  if (rawPayload) {
+    try {
+      const parsed = JSON.parse(rawPayload) as Partial<DragSeriesPayload>;
+      if (typeof parsed.seriesId === "string" && parsed.seriesId.trim()) {
+        return parsed.seriesId;
+      }
+    } catch {
+      // ignore malformed payload and fallback to text/plain
+    }
+  }
+
+  const fallback = event.dataTransfer.getData("text/plain");
+  return fallback?.trim() || null;
+};
+
 // Self-contained pane viewer for multi-pane grid layout
 type PlaneOrientation = "Axial" | "Coronal" | "Sagittal";
 
@@ -70,7 +106,9 @@ interface PaneViewerProps {
   paneIndex: number;
   seriesId: string | null;
   isActive: boolean;
+  isFullscreen: boolean;
   onActivate: () => void;
+  onToggleFullscreen: () => void;
   onImageIndexChange: (paneIndex: number, index: number, total: number, plane: PlaneOrientation | null, sourceSeriesId: string | null) => void;
   scoutLines: ScoutLine[];
 }
@@ -79,19 +117,23 @@ const PaneViewer = ({
   paneIndex,
   seriesId,
   isActive,
+  isFullscreen,
   onActivate,
+  onToggleFullscreen,
   onImageIndexChange,
   scoutLines,
 }: PaneViewerProps) => {
-  const { caseData, setPaneStates, temporaryMPRSeries } = useViewerContext();
+  const { caseData, paneStates, setPaneStates, temporaryMPRSeries } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
   const series = caseData?.series?.find((s) => s._id === seriesId);
-  const allSeries = caseData?.series || [];
   const selectedTempMPR = temporaryMPRSeries.find((ts) => ts.id === seriesId);
+  const paneTransform =
+    paneStates[paneIndex]?.viewTransform ?? DEFAULT_PANE_VIEW_TRANSFORM;
 
   // Select a series for this pane
   const handleSelectSeries = useCallback(
@@ -103,8 +145,34 @@ const PaneViewer = ({
             ...newStates[paneIndex],
             seriesId: newSeriesId,
             currentImageIndex: 0,
+            viewTransform: { ...DEFAULT_PANE_VIEW_TRANSFORM },
           };
         }
+        return newStates;
+      });
+    },
+    [paneIndex, setPaneStates],
+  );
+
+  const handlePaneTransformChange = useCallback(
+    (
+      transform:
+        | ViewTransform
+        | ((prev: ViewTransform) => ViewTransform),
+    ) => {
+      setPaneStates((prev) => {
+        const newStates = [...prev];
+        if (!newStates[paneIndex]) return prev;
+        const previousTransform =
+          newStates[paneIndex].viewTransform ?? DEFAULT_PANE_VIEW_TRANSFORM;
+        const nextTransform =
+          typeof transform === "function"
+            ? transform(previousTransform)
+            : transform;
+        newStates[paneIndex] = {
+          ...newStates[paneIndex],
+          viewTransform: nextTransform,
+        };
         return newStates;
       });
     },
@@ -117,6 +185,7 @@ const PaneViewer = ({
       return;
     }
     let cancelled = false;
+    setInstances([]);
     setIsLoading(true);
     fetch(`${API_BASE_URL}/api/v1/series/${seriesId}/instances`, {
       headers: {
@@ -197,80 +266,61 @@ const PaneViewer = ({
     [paneIndex, selectedTempMPR?.sliceCount, selectedTempMPR?.sourceSeriesId, mprPlane, onImageIndexChange],
   );
 
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (
+      !event.dataTransfer.types.includes(SERIES_DND_MIME) &&
+      !event.dataTransfer.types.includes("text/plain")
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsDragOver(false);
+
+      const droppedSeriesId = parseDroppedSeriesId(event);
+      if (!droppedSeriesId) return;
+
+      handleSelectSeries(droppedSeriesId);
+      onActivate();
+    },
+    [handleSelectSeries, onActivate],
+  );
+
   return (
     <div
       className={`relative flex flex-col overflow-hidden ${
-        isActive
+        isDragOver
+          ? "ring-2 ring-amber-400 ring-inset"
+          : isActive
           ? "ring-2 ring-blue-500 ring-inset"
           : "ring-1 ring-gray-700 ring-inset"
       }`}
       onClick={onActivate}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
-      {/* Pane header with series selector dropdown */}
       <div className="flex items-center justify-between px-1.5 py-0.5 bg-gray-900/90 text-[10px] border-b border-gray-800 flex-shrink-0 z-10">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-1 text-gray-300 hover:text-white transition-colors min-w-0 max-w-full">
-              <span className="truncate">
-                {series
-                  ? `S${series.series_number}: ${series.description || "No description"}`
-                  : "Select series"}
-              </span>
-              <ChevronDown className="w-3 h-3 flex-shrink-0 opacity-60" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-w-[280px]">
-            <DropdownMenuLabel className="text-xs text-gray-400">
-              Series
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {allSeries.map((s) => (
-              <DropdownMenuItem
-                key={s._id}
-                onClick={() => handleSelectSeries(s._id)}
-                className="flex items-center gap-2 text-xs cursor-pointer"
-              >
-                {seriesId === s._id && (
-                  <Check className="w-3 h-3 text-blue-400 flex-shrink-0" />
-                )}
-                <span className={seriesId === s._id ? "" : "pl-5"}>
-                  S{s.series_number}: {s.description || s.modality}
-                </span>
-                <span className="ml-auto text-gray-500 flex-shrink-0">
-                  {s.image_count} img
-                </span>
-              </DropdownMenuItem>
-            ))}
-            {temporaryMPRSeries.length > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className="text-xs text-gray-400">
-                  MPR
-                </DropdownMenuLabel>
-                {temporaryMPRSeries.map((ts) => (
-                  <DropdownMenuItem
-                    key={ts.id}
-                    onClick={() => handleSelectSeries(ts.id)}
-                    className="flex items-center gap-2 text-xs cursor-pointer"
-                  >
-                    {seriesId === ts.id && (
-                      <Check className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                    )}
-                    <span className={seriesId === ts.id ? "" : "pl-5"}>
-                      {ts.description}
-                    </span>
-                    <span className="ml-auto text-gray-500 flex-shrink-0">
-                      {ts.sliceCount} slc
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {series && (
+        <span className={`truncate ${seriesId ? "text-gray-300" : "text-gray-500"}`}>
+          {selectedTempMPR
+            ? selectedTempMPR.description
+            : series
+            ? `S${series.series_number}: ${series.description || "No description"}`
+            : "Drop a series here"}
+        </span>
+        {seriesId && (
           <span className="text-gray-500 ml-1 flex-shrink-0">
-            {instances.length} img
+            {selectedTempMPR ? `${selectedTempMPR.sliceCount} slc` : `${instances.length} img`}
           </span>
         )}
       </div>
@@ -281,14 +331,22 @@ const PaneViewer = ({
           className="flex-1"
           scoutLines={scoutLines}
           onImageIndexChange={handleMPRImageIndexChange}
+          viewTransformOverride={paneTransform}
+          isFullscreenOverride={isFullscreen}
+          onToggleFullscreenOverride={onToggleFullscreen}
         />
       ) : instances.length > 0 ? (
         <DicomViewer
           instances={instances}
+          seriesId={seriesId}
           paneIndex={paneIndex}
           scoutLines={scoutLines}
           onImageIndexChange={handleImageIndexChange}
           className="flex-1"
+          paneViewTransform={paneTransform}
+          onPaneViewTransformChange={handlePaneTransformChange}
+          isPaneFullscreen={isFullscreen}
+          onTogglePaneFullscreen={onToggleFullscreen}
         />
       ) : isLoading ? (
         <div className="flex-1 flex items-center justify-center bg-black">
@@ -296,11 +354,18 @@ const PaneViewer = ({
         </div>
       ) : !seriesId ? (
         <div className="flex-1 flex items-center justify-center bg-black">
-          <span className="text-gray-600 text-xs">Select a series from dropdown above</span>
+          <span className="text-gray-600 text-xs">Drag a series from the left panel and drop it here</span>
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center bg-black">
           <span className="text-gray-600 text-xs">No images</span>
+        </div>
+      )}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-20 border-2 border-dashed border-amber-400 bg-amber-500/10 flex items-center justify-center">
+          <span className="text-xs text-amber-200 font-medium uppercase tracking-wider">
+            Drop Series
+          </span>
         </div>
       )}
     </div>
@@ -344,6 +409,9 @@ const CaseViewer = () => {
   const [coronalIndex, setCoronalIndex] = useState(0);
   const [sagittalIndex, setSagittalIndex] = useState(0);
   const [originalIndex, setOriginalIndex] = useState(0);
+  const [fullscreenPaneIndex, setFullscreenPaneIndex] = useState<number | null>(
+    null,
+  );
 
   // Multi-pane scout line tracking: per-pane image index, total, plane, and source
   const [paneImageInfo, setPaneImageInfo] = useState<
@@ -362,55 +430,97 @@ const CaseViewer = () => {
     [],
   );
 
-  // Cross-plane scout line mapping table
-  const CROSS_PLANE_MAP: Record<string, { orientation: "horizontal" | "vertical"; invertRatio: boolean }> = {
-    "Axial->Coronal":    { orientation: "horizontal", invertRatio: true },
-    "Axial->Sagittal":   { orientation: "horizontal", invertRatio: true },
-    "Coronal->Axial":    { orientation: "horizontal", invertRatio: false },
-    "Coronal->Sagittal": { orientation: "vertical",   invertRatio: false },
-    "Sagittal->Axial":   { orientation: "vertical",   invertRatio: false },
-    "Sagittal->Coronal": { orientation: "vertical",   invertRatio: false },
-  };
+  const clampRatio = (value: number) => Math.max(0, Math.min(1, value));
 
   const getScoutLinesForPane = useCallback(
     (currentPaneIdx: number): ScoutLine[] => {
       if (!showScoutLine || gridLayout === "1x1") return [];
-      const colors = ["#00ff00", "#ffff00", "#00ffff", "#ff00ff"];
-      const lines: ScoutLine[] = [];
       const currentInfo = paneImageInfo[currentPaneIdx];
+      if (!currentInfo?.plane || !currentInfo.sourceSeriesId) return [];
+
+      const sourcePlaneInfo = {
+        Axial: null as null | { ratio: number; paneIdx: number },
+        Coronal: null as null | { ratio: number; paneIdx: number },
+        Sagittal: null as null | { ratio: number; paneIdx: number },
+      };
 
       Object.entries(paneImageInfo).forEach(([paneIdxStr, info]) => {
-        const paneIdx = parseInt(paneIdxStr);
-        if (paneIdx === currentPaneIdx) return;
-        if (info.total <= 1) return;
-
-        const ratio = info.index / (info.total - 1);
-        const color = colors[paneIdx % colors.length];
-        const label = `P${paneIdx + 1}`;
-
-        // Check if this is a cross-plane pair (same source series, different planes)
         if (
-          info.plane && currentInfo?.plane &&
-          info.plane !== currentInfo.plane &&
-          info.sourceSeriesId && currentInfo.sourceSeriesId &&
-          info.sourceSeriesId === currentInfo.sourceSeriesId
+          !info.plane ||
+          !info.sourceSeriesId ||
+          info.sourceSeriesId !== currentInfo.sourceSeriesId ||
+          info.total <= 1
         ) {
-          const key = `${info.plane}->${currentInfo.plane}`;
-          const mapping = CROSS_PLANE_MAP[key];
-          if (mapping) {
-            lines.push({
-              ratio: mapping.invertRatio ? 1 - ratio : ratio,
-              color,
-              label,
-              orientation: mapping.orientation,
-            });
-            return;
-          }
+          return;
         }
 
-        // Fallback: same-orientation or unknown — horizontal line (existing behavior)
-        lines.push({ ratio, color, label });
+        const ratio = clampRatio(info.index / (info.total - 1));
+        sourcePlaneInfo[info.plane] = {
+          ratio,
+          paneIdx: parseInt(paneIdxStr, 10),
+        };
       });
+
+      const planeColors = {
+        Axial: "#00ff66",
+        Coronal: "#ffe14d",
+        Sagittal: "#00d4ff",
+      } as const;
+
+      const lines: ScoutLine[] = [];
+
+      if (currentInfo.plane === "Axial") {
+        if (sourcePlaneInfo.Coronal) {
+          lines.push({
+            ratio: sourcePlaneInfo.Coronal.ratio,
+            color: planeColors.Coronal,
+            label: `Cor P${sourcePlaneInfo.Coronal.paneIdx + 1}`,
+            orientation: "horizontal",
+          });
+        }
+        if (sourcePlaneInfo.Sagittal) {
+          lines.push({
+            ratio: sourcePlaneInfo.Sagittal.ratio,
+            color: planeColors.Sagittal,
+            label: `Sag P${sourcePlaneInfo.Sagittal.paneIdx + 1}`,
+            orientation: "vertical",
+          });
+        }
+      } else if (currentInfo.plane === "Coronal") {
+        if (sourcePlaneInfo.Axial) {
+          lines.push({
+            ratio: clampRatio(1 - sourcePlaneInfo.Axial.ratio),
+            color: planeColors.Axial,
+            label: `Ax P${sourcePlaneInfo.Axial.paneIdx + 1}`,
+            orientation: "horizontal",
+          });
+        }
+        if (sourcePlaneInfo.Sagittal) {
+          lines.push({
+            ratio: sourcePlaneInfo.Sagittal.ratio,
+            color: planeColors.Sagittal,
+            label: `Sag P${sourcePlaneInfo.Sagittal.paneIdx + 1}`,
+            orientation: "vertical",
+          });
+        }
+      } else if (currentInfo.plane === "Sagittal") {
+        if (sourcePlaneInfo.Axial) {
+          lines.push({
+            ratio: clampRatio(1 - sourcePlaneInfo.Axial.ratio),
+            color: planeColors.Axial,
+            label: `Ax P${sourcePlaneInfo.Axial.paneIdx + 1}`,
+            orientation: "horizontal",
+          });
+        }
+        if (sourcePlaneInfo.Coronal) {
+          lines.push({
+            ratio: sourcePlaneInfo.Coronal.ratio,
+            color: planeColors.Coronal,
+            label: `Cor P${sourcePlaneInfo.Coronal.paneIdx + 1}`,
+            orientation: "vertical",
+          });
+        }
+      }
 
       return lines;
     },
@@ -511,6 +621,7 @@ const CaseViewer = () => {
 
     setIsLoading(true);
     setError(null);
+    setInstances([]);
 
     try {
       console.log(`Fetching instances for series: ${selectedSeries._id}`);
@@ -562,6 +673,22 @@ const CaseViewer = () => {
   useEffect(() => {
     fetchInstances();
   }, [fetchInstances]);
+
+  useEffect(() => {
+    if (gridLayout === "1x1") {
+      setFullscreenPaneIndex(null);
+      return;
+    }
+    const layoutConfig: Record<string, { rows: number; cols: number }> = {
+      "1x2": { rows: 1, cols: 2 },
+      "2x2": { rows: 2, cols: 2 },
+    };
+    const config = layoutConfig[gridLayout] || { rows: 1, cols: 1 };
+    const paneCount = config.rows * config.cols;
+    if (fullscreenPaneIndex !== null && fullscreenPaneIndex >= paneCount) {
+      setFullscreenPaneIndex(null);
+    }
+  }, [gridLayout, fullscreenPaneIndex]);
 
   // Auto-skip series that return no instances — select the next available series
   useEffect(() => {
@@ -1051,6 +1178,7 @@ const CaseViewer = () => {
         >
           <DicomViewer
             instances={instances}
+            seriesId={selectedSeries._id}
             className="h-full"
             scoutLines={scoutLinesOriginal}
             onImageIndexChange={handleOriginalIndexChange}
@@ -1069,6 +1197,24 @@ const CaseViewer = () => {
     const config = layoutConfig[gridLayout] || { rows: 1, cols: 1 };
     const paneCount = config.rows * config.cols;
 
+    if (fullscreenPaneIndex !== null) {
+      const paneIdx = fullscreenPaneIndex;
+      return (
+        <div className="flex-1 flex flex-col bg-black h-full">
+          <PaneViewer
+            paneIndex={paneIdx}
+            seriesId={paneStates[paneIdx]?.seriesId || null}
+            isActive={activePaneIndex === paneIdx}
+            isFullscreen={true}
+            onActivate={() => setActivePaneIndex(paneIdx)}
+            onToggleFullscreen={() => setFullscreenPaneIndex(null)}
+            onImageIndexChange={handlePaneImageIndexChange}
+            scoutLines={getScoutLinesForPane(paneIdx)}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="flex-1 flex flex-col bg-black h-full">
         <div
@@ -1084,7 +1230,11 @@ const CaseViewer = () => {
               paneIndex={idx}
               seriesId={paneStates[idx]?.seriesId || null}
               isActive={activePaneIndex === idx}
+              isFullscreen={false}
               onActivate={() => setActivePaneIndex(idx)}
+              onToggleFullscreen={() =>
+                setFullscreenPaneIndex((prev) => (prev === idx ? null : idx))
+              }
               onImageIndexChange={handlePaneImageIndexChange}
               scoutLines={getScoutLinesForPane(idx)}
             />
@@ -1125,7 +1275,11 @@ const CaseViewer = () => {
       ) : selectedSeries.modality === "SR" ? (
         <SRViewer instances={instances || []} className="flex-1" />
       ) : (
-        <DicomViewer instances={instances || []} className="flex-1" />
+        <DicomViewer
+          instances={instances || []}
+          seriesId={selectedSeries._id}
+          className="flex-1"
+        />
       )}
     </div>
   );

@@ -9,21 +9,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
 import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, Eye, X, ImageIcon, Settings } from "lucide-react";
 import { Heading } from "@/components/common/Heading";
 import PatientDetailsModal from "./PacDetailsModal";
@@ -1081,88 +1067,31 @@ const ShowAllPatients = () => {
           onRowSelectionChange={setRowSelection}
           showDoctorsOnSelect={true}
           manualPagination={true}
+          pageSizeOptions={[20, 50, 100]}
+          manualPageIndex={Math.max(page - 1, 0)}
+          manualPageSize={limit}
+          manualTotalRows={pagination?.totalCases ?? flattenedCases.length}
+          manualTotalPages={pagination?.totalPages ?? Math.max(1, Math.ceil((pagination?.totalCases ?? flattenedCases.length) / limit))}
+          manualHasPreviousPage={pagination?.hasPrevPage ?? page > 1}
+          manualHasNextPage={pagination?.hasNextPage ?? page < (pagination?.totalPages ?? 1)}
+          onManualPageChange={(nextPageIndex) => {
+            setSearchParams((prev) => {
+              const newParams = new URLSearchParams(prev);
+              newParams.set("page", String(nextPageIndex + 1));
+              return newParams;
+            });
+          }}
+          onManualPageSizeChange={(nextPageSize) => {
+            setSearchParams((prev) => {
+              const newParams = new URLSearchParams(prev);
+              newParams.set("limit", String(nextPageSize));
+              newParams.set("page", "1");
+              return newParams;
+            });
+          }}
           isColumnModalOpen={isColumnModalOpen}
           onColumnModalOpenChange={setIsColumnModalOpen}
         />
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-2 py-3">
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-muted-foreground">Rows per page</p>
-            <Select
-              value={`${limit}`}
-              onValueChange={(value) => {
-                const newLimit = Number(value);
-                setSearchParams((prev) => {
-                  const newParams = new URLSearchParams(prev);
-                  newParams.set("limit", newLimit.toString());
-                  newParams.set("page", "1"); // Reset to page 1 when changing limit
-                  return newParams;
-                });
-              }}
-            >
-              <SelectTrigger className="h-7 w-15 text-xs">
-                <SelectValue placeholder={limit.toString()} />
-              </SelectTrigger>
-              <SelectContent side="top">
-                {[20, 50, 100].map((pageSize) => (
-                  <SelectItem key={pageSize} value={`${pageSize}`} className="text-xs">
-                    {pageSize}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-muted-foreground flex whitespace-nowrap">
-                <span>Page {page} {pagination ? `of ${pagination.totalPages}` : ''}</span>
-              </p>
-            </div>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (pagination?.hasPrevPage || page > 1) {
-                        setSearchParams((prev) => {
-                          const newParams = new URLSearchParams(prev);
-                          newParams.set("page", (page - 1).toString());
-                          return newParams;
-                        });
-                      }
-                    }}
-                    className={
-                      !pagination?.hasPrevPage && page <= 1
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer"
-                    }
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (pagination?.hasNextPage) {
-                        setSearchParams((prev) => {
-                          const newParams = new URLSearchParams(prev);
-                          newParams.set("page", (page + 1).toString());
-                          return newParams;
-                        });
-                      }
-                    }}
-                    className={
-                      !pagination?.hasNextPage
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer"
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        </div>
       </div>
 
       <PatientDetailsModal

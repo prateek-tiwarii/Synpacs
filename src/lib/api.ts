@@ -299,10 +299,10 @@ class ApiService {
     })
   }
 
-  async bookmarkCase(caseId: string) {
+  async bookmarkCase(caseId: string, note?: string) {
     return this.request('/api/v1/cases/bookmark', {
       method: 'POST',
-      body: JSON.stringify({ case_id: caseId }),
+      body: JSON.stringify({ case_id: caseId, ...(note ? { note } : {}) }),
     })
   }
 
@@ -440,8 +440,9 @@ class ApiService {
   // Export API - Downloads file as blob
   async exportData(payload: {
     exportType: 'search' | 'bookmarks' | 'audit';
-    fileFormat: 'excel' | 'csv' | 'word';
+    fileFormat: 'excel' | 'csv';
     columns: string[];
+    active_hospital?: string;
     searchFilters?: {
       minAge?: number;
       maxAge?: number;
@@ -455,6 +456,8 @@ class ApiService {
     bookmarkOptions?: {
       caseIds: string[];
       includeNotes: boolean;
+      startDate?: string;
+      endDate?: string;
     };
     auditFilters?: {
       startDate: string;
@@ -481,7 +484,11 @@ class ApiService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Export failed' }))
-      throw new Error(error.message || 'Export failed')
+      const message =
+        error?.message ||
+        error?.error?.message ||
+        'Export failed'
+      throw new Error(message)
     }
 
     return response.blob()

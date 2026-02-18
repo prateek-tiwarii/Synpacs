@@ -40,15 +40,15 @@ export interface Note {
     _id: string;
     case_id: string;
     note: string;
-    flag_type: 'urgent' | 'routine';
-    user_id: string | {
+    flag_type: 'urgent' | 'routine' | 'info' | 'warning' | 'error' | 'bookmark_note';
+    user_id?: string | {
         _id: string;
         full_name: string;
         email: string;
         role?: string;
     };
-    created_at: string;
-    updated_at: string;
+    created_at?: string;
+    updated_at?: string;
     createdAt: string;
     updatedAt: string;
     created_by?: {
@@ -114,6 +114,7 @@ export interface Patient {
     updatedAt?: string;
     __v?: number;
     notes?: Note[];
+    bookmark_notes?: Note[];
     isBookmarked?: boolean;
     patient_history?: string[];
 }

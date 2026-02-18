@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import dicomParser from 'dicom-parser';
 import { Loader2, FileText, AlertCircle } from 'lucide-react';
 import { getCookie } from '@/lib/cookies';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    Pagination,
+    PaginationContent,
+    PaginationItem,
+    PaginationNext,
+    PaginationPrevious,
+} from '@/components/ui/pagination';
 
 interface SRInstance {
     instance_uid: string;
@@ -114,6 +122,8 @@ export function SRViewer({ instances, className = '' }: SRViewerProps) {
     const [error, setError] = useState<string | null>(null);
     const [tableData, setTableData] = useState<TableRow[]>([]);
     const [title, setTitle] = useState('Structured Report');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
 
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -193,6 +203,10 @@ export function SRViewer({ instances, className = '' }: SRViewerProps) {
         return () => { mounted = false; };
     }, [instances, API_BASE_URL]);
 
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [tableData.length, pageSize]);
+
     if (isLoading) {
         return (
             <div className={`flex items-center justify-center bg-[#0a0a0f] ${className}`}>
@@ -215,6 +229,9 @@ export function SRViewer({ instances, className = '' }: SRViewerProps) {
         );
     }
 
+    const totalPages = Math.max(1, Math.ceil(tableData.length / pageSize));
+    const paginatedTableData = tableData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     return (
         <div className={`overflow-auto bg-[#0a0a0f] ${className}`}>
             <div className="max-w-4xl mx-auto p-8">
@@ -235,7 +252,7 @@ export function SRViewer({ instances, className = '' }: SRViewerProps) {
                     <div className="bg-[#111118] rounded-xl border border-gray-800/60 overflow-hidden">
                         <table className="w-full">
                             <tbody>
-                                {tableData.map((row, idx) => (
+                                {paginatedTableData.map((row, idx) => (
                                     row.isHeader ? (
                                         <tr key={idx} className="bg-gray-800/30">
                                             <td
@@ -261,6 +278,58 @@ export function SRViewer({ instances, className = '' }: SRViewerProps) {
                                 ))}
                             </tbody>
                         </table>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-3 border-t border-gray-800/60 bg-[#0f0f16]">
+                            <div className="flex items-center gap-2">
+                                <p className="text-xs text-gray-400">Rows per page</p>
+                                <Select
+                                    value={`${pageSize}`}
+                                    onValueChange={(value) => {
+                                        setPageSize(Number(value));
+                                        setCurrentPage(1);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-7 w-24 text-xs border-gray-700 bg-[#111118] text-gray-200">
+                                        <SelectValue placeholder={`${pageSize}`} />
+                                    </SelectTrigger>
+                                    <SelectContent side="top">
+                                        {[10, 20, 50].map((size) => (
+                                            <SelectItem key={size} value={`${size}`} className="text-xs">
+                                                {size}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <p className="text-xs text-gray-400">
+                                    Page {currentPage} of {totalPages}
+                                </p>
+                                <Pagination className="mx-0 w-auto justify-start">
+                                    <PaginationContent>
+                                        <PaginationItem>
+                                            <PaginationPrevious
+                                                href="#"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setCurrentPage((prev) => Math.max(1, prev - 1));
+                                                }}
+                                                className={currentPage <= 1 ? "pointer-events-none opacity-50 text-gray-500" : "cursor-pointer text-gray-300 hover:text-white"}
+                                            />
+                                        </PaginationItem>
+                                        <PaginationItem>
+                                            <PaginationNext
+                                                href="#"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+                                                }}
+                                                className={currentPage >= totalPages ? "pointer-events-none opacity-50 text-gray-500" : "cursor-pointer text-gray-300 hover:text-white"}
+                                            />
+                                        </PaginationItem>
+                                    </PaginationContent>
+                                </Pagination>
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <div className="bg-[#111118] rounded-xl border border-gray-800/60 p-12 text-center">

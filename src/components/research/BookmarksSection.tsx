@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
+import type { VisibilityState, RowSelectionState, ColumnSizingState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Bookmark as BookmarkIcon, ChevronDown, ChevronUp, ClipboardCheck, Download, FileText, FolderOpen, ImageIcon, MessageSquare, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -17,9 +17,14 @@ import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
 
-type BookmarkedCase = Patient & { notes?: Note[]; patient_history?: any[] };
+type BookmarkedCase = Patient & {
+    notes?: Note[];
+    bookmark_notes?: Note[];
+    patient_history?: any[];
+};
 
 const COLUMN_VISIBILITY_KEY = 'research_bookmarks_columns';
+const COLUMN_SIZING_KEY = 'research_bookmarks_column_sizing';
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     select: true,
@@ -40,6 +45,36 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     modality: true,
     case_type: true,
     reported: true,
+};
+
+const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
+    if (!dateStr || dateStr.length !== 8) return null;
+
+    const year = Number(dateStr.substring(0, 4));
+    const month = Number(dateStr.substring(4, 6));
+    const day = Number(dateStr.substring(6, 8));
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
+    const hour = Number(safeTime.substring(0, 2) || '0');
+    const minute = Number(safeTime.substring(2, 4) || '0');
+    const second = Number(safeTime.substring(4, 6) || '0');
+
+    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const parseDateTimeValue = (value?: string | null): number | null => {
+    if (!value) return null;
+    const timestamp = new Date(value).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
 };
 
 interface BookmarksSectionProps {
@@ -84,6 +119,24 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
             console.error('Failed to save column visibility:', error);
         }
     }, [columnVisibility]);
+
+    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+        try {
+            const stored = localStorage.getItem(COLUMN_SIZING_KEY);
+            if (stored) return JSON.parse(stored);
+        } catch (error) {
+            console.error('Failed to load column sizing:', error);
+        }
+        return {};
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(COLUMN_SIZING_KEY, JSON.stringify(columnSizing));
+        } catch (error) {
+            console.error('Failed to save column sizing:', error);
+        }
+    }, [columnSizing]);
 
     useEffect(() => {
         if (!isCollapsed) {
@@ -151,6 +204,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                         updatedAt: caseItem.updatedAt || '',
                         attached_report: caseItem.attached_report || null,
                         notes: caseItem.notes || [],
+                        bookmark_notes: caseItem.bookmark_notes || [],
                         patient: caseItem.patient,
                         patient_history: caseItem.patient_history || [],
                     } as Patient;
@@ -215,12 +269,30 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
             ),
             enableHiding: false,
             enableSorting: false,
+            size: 40,
+            minSize: 32,
         },
         columnHelper.display({
             id: 'actions',
-            header: 'Actions',
+            header: () => (
+                <div className="flex items-center gap-1">
+                    <span>Actions</span>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColumnModalOpen(true);
+                        }}
+                        className="p-0.5 hover:bg-gray-200 rounded"
+                        title="Column Settings"
+                    >
+                        <Settings className="w-3 h-3 text-gray-600" />
+                    </button>
+                </div>
+            ),
             enableHiding: false,
             enableSorting: false,
+            size: 140,
+            minSize: 90,
             cell: (props: any) => (
                 <TooltipProvider>
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
@@ -377,11 +449,11 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         }),
         columnHelper.display({
             id: 'bookmark_notes',
-            header: 'Note',
+            header: 'Bookmark Note',
             enableSorting: false,
             cell: (props: any) => {
-                const notes = (props.row.original as any).notes;
-                if (!notes || notes.length === 0) {
+                const bookmarkNotes = (props.row.original as any).bookmark_notes;
+                if (!bookmarkNotes || bookmarkNotes.length === 0) {
                     return <span className="text-gray-400 text-xs">-</span>;
                 }
 
@@ -390,16 +462,17 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                         <HoverCardTrigger asChild>
                             <button className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs">
                                 <MessageSquare className="w-3 h-3" />
-                                {notes.length}
+                                {bookmarkNotes.length}
                             </button>
                         </HoverCardTrigger>
                         <HoverCardContent className="w-80">
                             <div className="space-y-2">
-                                {notes.map((note: any) => (
+                                {bookmarkNotes.map((note: any) => (
                                     <div key={note._id} className="border-b last:border-0 pb-2 last:pb-0">
                                         <p className="text-xs text-gray-700">{note.note || '-'}</p>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                note.flag_type === 'bookmark_note' ? 'bg-indigo-100 text-indigo-700' :
                                                 note.flag_type === 'urgent' ? 'bg-red-100 text-red-700' :
                                                 note.flag_type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
                                                 note.flag_type === 'info' ? 'bg-blue-100 text-blue-700' :
@@ -423,22 +496,10 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         }),
         columnHelper.accessor('name', {
             id: 'name',
-            header: () => (
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setIsColumnModalOpen(true);
-                        }}
-                        className="p-0.5 hover:bg-gray-200 rounded"
-                        title="Column Settings"
-                    >
-                        <Settings className="w-3 h-3 text-gray-600" />
-                    </button>
-                    <span>Patient Name</span>
-                </div>
-            ),
+            header: 'Patient Name',
             enableSorting: true,
+            size: 180,
+            minSize: 100,
             cell: (info) => {
                 const name = info.getValue();
                 const caseId = info.row.original._id;
@@ -552,9 +613,10 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                 enableSorting: true,
                 cell: (props) => {
                 const attachedReport = (props.row.original as any).attached_report;
-                if (!attachedReport?.created_at) return <span className="text-gray-400">-</span>;
+                const reportingDateTime = attachedReport?.created_at || (props.row.original as any).reporting_date_time;
+                if (!reportingDateTime) return <span className="text-gray-400">-</span>;
 
-                const date = new Date(attachedReport.created_at);
+                const date = new Date(reportingDateTime);
                 const formatted = date.toLocaleString('en-GB', {
                     day: '2-digit',
                     month: '2-digit',

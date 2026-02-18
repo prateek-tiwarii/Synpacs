@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ChevronDown, ChevronRight, Image, Layers, X, Calendar } from "lucide-react";
 import {
   useViewerContext,
   type TemporaryMPRSeries,
 } from "@/components/ViewerLayout";
 import toast from "react-hot-toast";
+import { getCookie } from "@/lib/cookies";
+import { generateDicomInstanceThumbnail } from "@/lib/dicom/thumbnail";
 
 interface Series {
   _id: string;
@@ -15,6 +17,22 @@ interface Series {
   case_id: string;
   image_count: number;
 }
+
+const SERIES_DND_MIME = "application/x-sync-pacs-series";
+
+interface DragSeriesPayload {
+  seriesId: string;
+  kind: "regular" | "mpr";
+}
+
+const setSeriesDragData = (
+  event: DragEvent<HTMLDivElement>,
+  payload: DragSeriesPayload,
+) => {
+  event.dataTransfer.effectAllowed = "copyMove";
+  event.dataTransfer.setData(SERIES_DND_MIME, JSON.stringify(payload));
+  event.dataTransfer.setData("text/plain", payload.seriesId);
+};
 
 const formatCaseDate = (dateStr: string) => {
   if (!dateStr || dateStr.length !== 8) return dateStr;
@@ -52,7 +70,11 @@ interface SeriesItemProps {
   series: Series;
   isSelected: boolean;
   onClick: () => void;
+  thumbnailUrl?: string | null;
   loadProgress?: { fetched: number; total: number } | null;
+  isDownloaded?: boolean;
+  dragPayload?: DragSeriesPayload;
+  isDraggable?: boolean;
 }
 
 // Compact series item with image count
@@ -60,38 +82,71 @@ const SeriesItem = ({
   series,
   isSelected,
   onClick,
+  thumbnailUrl = null,
   loadProgress,
+  isDownloaded = false,
+  dragPayload,
+  isDraggable = true,
 }: SeriesItemProps) => (
   <div
+    draggable={isDraggable}
+    onDragStart={(event) => {
+      if (!dragPayload) return;
+      setSeriesDragData(event, dragPayload);
+    }}
     onClick={onClick}
-    className={`cursor-pointer rounded-lg overflow-hidden border transition-all ${
+    className={`rounded-lg overflow-hidden border transition-all ${
+      isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+    } ${
       isSelected
-        ? "border-blue-500 bg-blue-500/10"
-        : "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
+        ? "border-blue-500 bg-blue-500/10 shadow-[0_0_0_1px_rgba(59,130,246,0.45)]"
+        : "border-gray-700 bg-gray-900/70 hover:border-gray-500 hover:bg-gray-800/70"
     }`}
   >
-    <div className="flex items-center gap-2 p-2">
+    <div className="p-2">
       {/* Thumbnail */}
       <div
-        className="w-12 h-12 rounded flex items-center justify-center relative flex-shrink-0"
+        className="w-full aspect-[4/3] rounded-md flex items-center justify-center relative overflow-hidden"
         style={{ backgroundColor: getSeriesColor(series.description) }}
       >
-        <Image size={20} className="text-gray-500/50" />
+        {thumbnailUrl ? (
+          <img
+            src={thumbnailUrl}
+            alt={`${series.description} preview`}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <Image size={24} className="text-gray-500/60" />
+        )}
         <span className="absolute top-0.5 left-0.5 text-[8px] bg-black/60 px-0.5 rounded text-white font-mono">
           {series.modality}
         </span>
       </div>
 
       {/* Series info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-1">
-          <p className="text-xs text-white font-medium truncate">
-            S{series.series_number}: {series.description}
+      <div className="mt-2 min-w-0">
+        <p className="text-[10px] text-blue-300 font-semibold tracking-wide">
+          SERIES {series.series_number}
+        </p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="text-[11px] text-white font-medium leading-tight break-words h-8 overflow-hidden">
+            {series.description || "Untitled series"}
           </p>
         </div>
-        <p className="text-[11px] text-gray-400 mt-0.5">
-          {series.image_count} images
-        </p>
+        <div className="mt-1.5">
+          <p className="text-[11px] text-gray-400">
+            {series.image_count} images
+          </p>
+          {isDownloaded && !loadProgress && (
+            <div className="mt-1">
+              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/90">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Downloaded
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
 
@@ -115,6 +170,8 @@ interface MPRSeriesItemProps {
   isSelected: boolean;
   onClick: () => void;
   onRemove: () => void;
+  dragPayload?: DragSeriesPayload;
+  isDraggable?: boolean;
 }
 
 const MPRSeriesItem = ({
@@ -122,10 +179,19 @@ const MPRSeriesItem = ({
   isSelected,
   onClick,
   onRemove,
+  dragPayload,
+  isDraggable = true,
 }: MPRSeriesItemProps) => (
   <div
+    draggable={isDraggable}
+    onDragStart={(event) => {
+      if (!dragPayload) return;
+      setSeriesDragData(event, dragPayload);
+    }}
     onClick={onClick}
-    className={`cursor-pointer rounded-lg overflow-hidden border transition-all relative ${
+    className={`rounded-lg overflow-hidden border transition-all relative ${
+      isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+    } ${
       isSelected
         ? "border-purple-500 bg-purple-500/10"
         : "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
@@ -226,8 +292,15 @@ const ViewerSidebar = () => {
     selectedTemporarySeriesId,
     setSelectedTemporarySeriesId,
     seriesLoadProgress,
+    downloadedSeriesIds,
     isVRTActive,
   } = useViewerContext();
+  const API_BASE_URL =
+    import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+  const [seriesThumbnails, setSeriesThumbnails] = useState<
+    Record<string, string | null>
+  >({});
+  const seriesThumbnailsRef = useRef<Record<string, string | null>>({});
 
   // Handle selecting a regular series (deselect any temp series)
   const handleSelectSeries = (series: Series) => {
@@ -247,6 +320,110 @@ const ViewerSidebar = () => {
     }
     setSelectedTemporarySeriesId(tempSeries.id);
   };
+
+  useEffect(() => {
+    if (!caseData?.series?.length) {
+      seriesThumbnailsRef.current = {};
+      setSeriesThumbnails({});
+      return;
+    }
+
+    const activeSeries = caseData.series.filter((series) => series.image_count > 0);
+    const activeSeriesIds = new Set(activeSeries.map((series) => series._id));
+    const nextThumbnails: Record<string, string | null> = {};
+    for (const [seriesId, thumbnailUrl] of Object.entries(seriesThumbnailsRef.current)) {
+      if (activeSeriesIds.has(seriesId)) {
+        nextThumbnails[seriesId] = thumbnailUrl;
+      }
+    }
+    seriesThumbnailsRef.current = nextThumbnails;
+    setSeriesThumbnails(nextThumbnails);
+
+    const token = getCookie("jwt");
+    const missingSeries = activeSeries.filter(
+      (series) => !(series._id in nextThumbnails),
+    );
+    if (missingSeries.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const queue = [...missingSeries];
+    const workerCount = Math.min(2, queue.length);
+
+    const loadOneSeriesThumbnail = async (seriesId: string) => {
+      const middleResponse = await fetch(
+        `${API_BASE_URL}/api/v1/series/${seriesId}/middle-instance`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
+
+      if (!middleResponse.ok) {
+        throw new Error(`Middle instance lookup failed (${middleResponse.status})`);
+      }
+
+      const middlePayload = await middleResponse.json();
+      const middleInstanceUid = middlePayload?.data?.instance_uid as
+        | string
+        | undefined;
+
+      if (!middleInstanceUid) {
+        throw new Error("Middle instance UID missing");
+      }
+
+      return generateDicomInstanceThumbnail(middleInstanceUid, {
+        apiBaseUrl: API_BASE_URL,
+        authToken: token || undefined,
+        size: 96,
+      });
+    };
+
+    const runWorker = async () => {
+      while (!cancelled) {
+        const currentSeries = queue.shift();
+        if (!currentSeries) return;
+
+        try {
+          const thumbnailUrl = await loadOneSeriesThumbnail(currentSeries._id);
+          if (!cancelled) {
+            setSeriesThumbnails((prev) => {
+              const next = {
+                ...prev,
+                [currentSeries._id]: thumbnailUrl,
+              };
+              seriesThumbnailsRef.current = next;
+              return next;
+            });
+          }
+        } catch (error) {
+          console.error(
+            `Failed to generate thumbnail for series ${currentSeries._id}`,
+            error,
+          );
+          if (!cancelled) {
+            setSeriesThumbnails((prev) => {
+              const next = {
+                ...prev,
+                [currentSeries._id]: null,
+              };
+              seriesThumbnailsRef.current = next;
+              return next;
+            });
+          }
+        }
+      }
+    };
+
+    void Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [API_BASE_URL, caseData?.series]);
 
   if (!caseData) {
     return (
@@ -292,25 +469,31 @@ const ViewerSidebar = () => {
           defaultOpen={true}
           isCurrent={true}
         >
-          {caseData.series
-            .filter((series) => series.image_count > 0)
-            .sort((a, b) => a.series_number - b.series_number)
-            .map((series) => (
-              <SeriesItem
-                key={series._id}
-                series={series}
-                isSelected={
-                  selectedSeries?._id === series._id &&
-                  !selectedTemporarySeriesId
-                }
-                onClick={() => handleSelectSeries(series)}
-                loadProgress={
-                  seriesLoadProgress?.seriesId === series._id
-                    ? { fetched: seriesLoadProgress.fetched, total: seriesLoadProgress.total }
-                    : null
-                }
-              />
-            ))}
+          <div className="grid grid-cols-2 gap-2">
+            {caseData.series
+              .filter((series) => series.image_count > 0)
+              .sort((a, b) => a.series_number - b.series_number)
+              .map((series) => (
+                <SeriesItem
+                  key={series._id}
+                  series={series}
+                  isSelected={
+                    selectedSeries?._id === series._id &&
+                    !selectedTemporarySeriesId
+                  }
+                  onClick={() => handleSelectSeries(series)}
+                  thumbnailUrl={seriesThumbnails[series._id] ?? null}
+                  dragPayload={{ seriesId: series._id, kind: "regular" }}
+                  isDraggable={!isVRTActive}
+                  loadProgress={
+                    seriesLoadProgress?.seriesId === series._id
+                      ? { fetched: seriesLoadProgress.fetched, total: seriesLoadProgress.total }
+                      : null
+                  }
+                  isDownloaded={downloadedSeriesIds.has(series._id)}
+                />
+              ))}
+          </div>
         </StudyAccordion>
 
         {/* Placeholder for previous studies - would be populated from API */}
@@ -332,6 +515,8 @@ const ViewerSidebar = () => {
                     isSelected={selectedTemporarySeriesId === tempSeries.id}
                     onClick={() => handleSelectTempSeries(tempSeries)}
                     onRemove={() => removeTemporaryMPRSeries(tempSeries.id)}
+                    dragPayload={{ seriesId: tempSeries.id, kind: "mpr" }}
+                    isDraggable={!isVRTActive}
                   />
                 ))}
               </div>

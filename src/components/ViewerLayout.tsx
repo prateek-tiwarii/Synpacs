@@ -1,5 +1,5 @@
 import { Outlet, useParams } from "react-router-dom";
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import ViewerHeader from "./viewer/ViewerHeader";
 import ViewerSidebar from "./viewer/ViewerSidebar";
 import { apiService } from "@/lib/api";
@@ -62,6 +62,7 @@ export type ViewerTool =
   | "Zoom"
   | "Contrast"
   | "FreeRotate"
+  | "SpineLabeling"
   | "Length"
   | "Ellipse"
   | "Rectangle"
@@ -152,6 +153,7 @@ export interface Annotation {
   distanceMm?: number; // For length measurements
   imageIndex?: number; // Slice index where annotation was created
   textSize?: number; // Font size for text annotations (default 18)
+  sourceTool?: "SpineLabeling"; // Marks annotations created via spine auto-labeling
 }
 
 // Keyboard Shortcut interface
@@ -230,6 +232,9 @@ interface ViewerContextType {
   // Series load progress
   seriesLoadProgress: { seriesId: string; fetched: number; total: number } | null;
   setSeriesLoadProgress: (progress: { seriesId: string; fetched: number; total: number } | null) => void;
+  downloadedSeriesIds: Set<string>;
+  markSeriesAsDownloaded: (seriesId: string) => void;
+  clearDownloadedSeriesIds: () => void;
   // Shortcuts
   shortcuts: Shortcut[];
   updateShortcut: (id: string, newKey: string) => void;
@@ -282,7 +287,7 @@ export function ViewerLayout() {
   >([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [gridLayout, setGridLayout] = useState<GridLayout>("1x1");
+  const [gridLayout, setGridLayoutState] = useState<GridLayout>("1x1");
   const [paneStates, setPaneStates] = useState<PaneState[]>([]);
   const [activePaneIndex, setActivePaneIndex] = useState(0);
 
@@ -313,6 +318,9 @@ export function ViewerLayout() {
     fetched: number;
     total: number;
   } | null>(null);
+  const [downloadedSeriesIds, setDownloadedSeriesIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
@@ -333,6 +341,7 @@ export function ViewerLayout() {
     { id: "ToolCircle", label: "Circle", key: "", category: "Tools" },
     { id: "ToolFreehand", label: "Freehand", key: "", category: "Tools" },
     { id: "ToolHU", label: "HU Point", key: "", category: "Tools" },
+    { id: "ToolSpineLabeling", label: "Spine Labeling", key: "", category: "Tools" },
     { id: "NavZoom", label: "Zoom", key: "", category: "Navigation" },
     { id: "NavPan", label: "Pan", key: "", category: "Navigation" },
     { id: "NavScroll", label: "Scroll", key: "", category: "Navigation" },
@@ -401,6 +410,20 @@ export function ViewerLayout() {
     setPendingMPRGeneration(null);
   };
 
+  const markSeriesAsDownloaded = useCallback((seriesId: string) => {
+    if (!seriesId) return;
+    setDownloadedSeriesIds((prev) => {
+      if (prev.has(seriesId)) return prev;
+      const next = new Set(prev);
+      next.add(seriesId);
+      return next;
+    });
+  }, []);
+
+  const clearDownloadedSeriesIds = useCallback(() => {
+    setDownloadedSeriesIds(new Set());
+  }, []);
+
   // Grid layout configurations
   const GRID_LAYOUTS: GridLayoutConfig[] = [
     { id: "1x1", label: "1×1", rows: 1, cols: 1 },
@@ -408,10 +431,107 @@ export function ViewerLayout() {
     { id: "2x2", label: "2×2", rows: 2, cols: 2 },
   ];
 
+  const createDefaultPaneState = (seriesId: string | null): PaneState => ({
+    seriesId,
+    currentImageIndex: 0,
+    viewTransform: {
+      x: 0,
+      y: 0,
+      scale: 0.65,
+      rotation: 0,
+      flipH: false,
+      flipV: false,
+      invert: false,
+      windowWidth: null,
+      windowCenter: null,
+    },
+    annotations: [],
+    selectedAnnotationId: null,
+  });
+
   // Get number of panes for current layout
   const getLayoutPaneCount = (layout: GridLayout): number => {
     const config = GRID_LAYOUTS.find((l) => l.id === layout);
     return config ? config.rows * config.cols : 1;
+  };
+
+  const setGridLayout = (layout: GridLayout) => {
+    if (layout === gridLayout) return;
+
+    const previousPaneCount = getLayoutPaneCount(gridLayout);
+    const nextPaneCount = getLayoutPaneCount(layout);
+
+    if (nextPaneCount > previousPaneCount) {
+      setPaneStates((prev) => {
+        const nextStates = [...prev];
+        const primarySeriesId =
+          selectedTemporarySeriesId ??
+          selectedSeries?._id ??
+          nextStates[0]?.seriesId ??
+          null;
+
+        if (primarySeriesId) {
+          if (nextStates[0]) {
+            nextStates[0] = {
+              ...nextStates[0],
+              seriesId: primarySeriesId,
+              currentImageIndex: 0,
+            };
+          } else {
+            nextStates[0] = createDefaultPaneState(primarySeriesId);
+          }
+        }
+
+        const assignedIds = new Set(
+          nextStates
+            .slice(0, previousPaneCount)
+            .map((pane) => pane?.seriesId)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        const regularSeriesIds = (caseData?.series || [])
+          .filter((series) => series.image_count > 0)
+          .sort((a, b) => a.series_number - b.series_number)
+          .map((series) => series._id);
+        const temporarySeriesIds = temporaryMPRSeries.map((series) => series.id);
+        const candidateSeriesIds = [
+          selectedTemporarySeriesId,
+          selectedSeries?._id,
+          ...regularSeriesIds,
+          ...temporarySeriesIds,
+        ].filter((id): id is string => Boolean(id));
+
+        let candidateCursor = 0;
+        for (let i = previousPaneCount; i < nextPaneCount; i++) {
+          let selectedId: string | null = null;
+          while (candidateCursor < candidateSeriesIds.length && !selectedId) {
+            const candidateId = candidateSeriesIds[candidateCursor];
+            candidateCursor += 1;
+            if (!assignedIds.has(candidateId)) {
+              selectedId = candidateId;
+            }
+          }
+
+          if (nextStates[i]) {
+            nextStates[i] = {
+              ...nextStates[i],
+              seriesId: selectedId,
+              currentImageIndex: 0,
+            };
+          } else {
+            nextStates[i] = createDefaultPaneState(selectedId);
+          }
+
+          if (selectedId) {
+            assignedIds.add(selectedId);
+          }
+        }
+
+        return nextStates;
+      });
+    }
+
+    setGridLayoutState(layout);
   };
 
   // Auto-enable scout line when switching to multi-pane layout
@@ -435,23 +555,7 @@ export function ViewerLayout() {
         } else {
           // Create new pane state, auto-populate with series if available
           const seriesForPane = series[i] || null;
-          newStates.push({
-            seriesId: seriesForPane?._id || null,
-            currentImageIndex: 0,
-            viewTransform: {
-              x: 0,
-              y: 0,
-              scale: 1.2,
-              rotation: 0,
-              flipH: false,
-              flipV: false,
-              invert: false,
-              windowWidth: null,
-              windowCenter: null,
-            },
-            annotations: [],
-            selectedAnnotationId: null,
-          });
+          newStates.push(createDefaultPaneState(seriesForPane?._id || null));
         }
       }
       return newStates;
@@ -540,16 +644,19 @@ export function ViewerLayout() {
   // Wrapper to reset W/L and view state when switching series
   const handleSetSelectedSeries = (series: Series | null) => {
     setSelectedSeries(series);
-    // Also update active pane's series in multi-pane mode
-    if (series && gridLayout !== "1x1") {
+    // Keep pane assignment in sync with selected series.
+    if (series) {
       setPaneStates((prev) => {
         const newStates = [...prev];
-        if (newStates[activePaneIndex]) {
-          newStates[activePaneIndex] = {
-            ...newStates[activePaneIndex],
+        const targetPaneIndex = gridLayout === "1x1" ? 0 : activePaneIndex;
+        if (newStates[targetPaneIndex]) {
+          newStates[targetPaneIndex] = {
+            ...newStates[targetPaneIndex],
             seriesId: series._id,
             currentImageIndex: 0,
           };
+        } else if (targetPaneIndex === 0) {
+          newStates[0] = createDefaultPaneState(series._id);
         }
         return newStates;
       });
@@ -629,6 +736,8 @@ export function ViewerLayout() {
       try {
         setLoading(true);
         setError(null);
+        clearDownloadedSeriesIds();
+        setSeriesLoadProgress(null);
         console.log(`Fetching case data for ID: ${id}`);
         const response = (await apiService.getCaseById(id)) as {
           success: boolean;
@@ -665,7 +774,7 @@ export function ViewerLayout() {
     };
 
     fetchCaseData();
-  }, [id]);
+  }, [id, clearDownloadedSeriesIds]);
 
   const contextValue: ViewerContextType = {
     caseData,
@@ -714,6 +823,9 @@ export function ViewerLayout() {
     setShowOverlays,
     seriesLoadProgress,
     setSeriesLoadProgress,
+    downloadedSeriesIds,
+    markSeriesAsDownloaded,
+    clearDownloadedSeriesIds,
     shortcuts,
     updateShortcut,
     stackSpeed,

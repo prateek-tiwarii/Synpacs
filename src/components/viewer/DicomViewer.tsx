@@ -22,6 +22,7 @@ import {
   useViewerContext,
   type Annotation,
   type HUStats,
+  type ViewTransform,
 } from "../ViewerLayout";
 import { imageCache } from "@/lib/imageCache";
 import {
@@ -61,10 +62,17 @@ export interface ScoutLine {
 
 interface DicomViewerProps {
   instances: Instance[];
+  seriesId?: string | null;
   className?: string;
   paneIndex?: number;
   scoutLines?: ScoutLine[];
   onImageIndexChange?: (index: number) => void;
+  paneViewTransform?: ViewTransform;
+  onPaneViewTransformChange?: (
+    transform: ViewTransform | ((prev: ViewTransform) => ViewTransform),
+  ) => void;
+  isPaneFullscreen?: boolean;
+  onTogglePaneFullscreen?: () => void;
 }
 
 // Helper to format DICOM DA (YYYYMMDD) to readable date
@@ -190,19 +198,45 @@ const distanceToLineSegment = (
   return Math.sqrt(dx * dx + dy * dy);
 };
 
+const TEXT_RESIZE_HANDLE = -101;
+const TEXT_DELETE_HANDLE = -102;
+const MIN_TEXT_SIZE = 8;
+const MAX_TEXT_SIZE = 96;
+const CERVICAL_LABELS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7"] as const;
+const THORACIC_LABELS = [
+  "T1",
+  "T2",
+  "T3",
+  "T4",
+  "T5",
+  "T6",
+  "T7",
+  "T8",
+  "T9",
+  "T10",
+  "T11",
+  "T12",
+] as const;
+const LUMBAR_LABELS = ["L1", "L2", "L3", "L4", "L5"] as const;
+
 export function DicomViewer({
   instances,
+  seriesId = null,
   className = "",
   paneIndex,
   scoutLines,
   onImageIndexChange,
+  paneViewTransform,
+  onPaneViewTransformChange,
+  isPaneFullscreen,
+  onTogglePaneFullscreen,
 }: DicomViewerProps) {
   const {
     caseData,
     setCurrentImageIndex: setGlobalImageIndex,
     activeTool,
-    viewTransform,
-    setViewTransform,
+    viewTransform: globalViewTransform,
+    setViewTransform: setGlobalViewTransform,
     annotations,
     setAnnotations,
     selectedAnnotationId,
@@ -210,16 +244,21 @@ export function DicomViewer({
     deleteSelectedAnnotation,
     deleteAnnotationById,
     saveToHistory,
-    isFullscreen,
-    toggleFullscreen,
+    isFullscreen: globalIsFullscreen,
+    toggleFullscreen: toggleGlobalFullscreen,
     showOverlays,
-    selectedSeries,
     setSeriesLoadProgress,
+    markSeriesAsDownloaded,
     stackSpeed,
     setActiveTool,
     undo,
     canUndo,
   } = useViewerContext();
+  const viewTransform = paneViewTransform ?? globalViewTransform;
+  const setViewTransform =
+    onPaneViewTransformChange ?? setGlobalViewTransform;
+  const isFullscreen = isPaneFullscreen ?? globalIsFullscreen;
+  const toggleFullscreen = onTogglePaneFullscreen ?? toggleGlobalFullscreen;
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
@@ -244,6 +283,87 @@ export function DicomViewer({
     y: number;
   } | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
+  const [spineLabelingModalOpen, setSpineLabelingModalOpen] = useState(false);
+  const [spineStartLabel, setSpineStartLabel] = useState<string>("C1");
+  const [spineDirection, setSpineDirection] = useState<"Descend" | "Ascend">(
+    "Descend",
+  );
+  const [spineIncludeL6, setSpineIncludeL6] = useState(false);
+  const [spineSessionActive, setSpineSessionActive] = useState(false);
+  const [spineNextLabelIndex, setSpineNextLabelIndex] = useState<number | null>(
+    null,
+  );
+  const [spineInitialLabelIndex, setSpineInitialLabelIndex] = useState<
+    number | null
+  >(null);
+
+  const spineLabelSequence = useMemo(() => {
+    const lumbarAndSacral = spineIncludeL6
+      ? [...LUMBAR_LABELS, "L6", "S1"]
+      : [...LUMBAR_LABELS, "S1"];
+    return [...CERVICAL_LABELS, ...THORACIC_LABELS, ...lumbarAndSacral];
+  }, [spineIncludeL6]);
+
+  const spineLabelRows = useMemo(() => {
+    const sacralRow = spineIncludeL6 ? ["L6", "S1"] : ["S1"];
+    return [
+      [...CERVICAL_LABELS],
+      THORACIC_LABELS.slice(0, 7),
+      THORACIC_LABELS.slice(7),
+      [...LUMBAR_LABELS],
+      sacralRow,
+    ];
+  }, [spineIncludeL6]);
+
+  const nextSpineLabel = useMemo(() => {
+    if (spineNextLabelIndex === null) return null;
+    return spineLabelSequence[spineNextLabelIndex] ?? null;
+  }, [spineLabelSequence, spineNextLabelIndex]);
+
+  const canStartSpineLabeling = useMemo(
+    () => spineLabelSequence.includes(spineStartLabel),
+    [spineLabelSequence, spineStartLabel],
+  );
+
+  const spinePanelVisible = activeTool === "SpineLabeling" && !spineLabelingModalOpen;
+
+  useEffect(() => {
+    if (spineLabelSequence.includes(spineStartLabel)) return;
+    setSpineStartLabel("C1");
+  }, [spineLabelSequence, spineStartLabel]);
+
+  useEffect(() => {
+    if (activeTool === "SpineLabeling") {
+      setSpineLabelingModalOpen(true);
+      setSpineSessionActive(false);
+      setSpineNextLabelIndex(null);
+      setSpineInitialLabelIndex(null);
+      setSelectedAnnotationId(null);
+      return;
+    }
+
+    setSpineLabelingModalOpen(false);
+    setSpineSessionActive(false);
+    setSpineNextLabelIndex(null);
+    setSpineInitialLabelIndex(null);
+  }, [activeTool, setSelectedAnnotationId]);
+
+  const startSpineLabeling = useCallback(() => {
+    const startIndex = spineLabelSequence.indexOf(spineStartLabel);
+    if (startIndex < 0) return;
+    setSpineInitialLabelIndex(startIndex);
+    setSpineNextLabelIndex(startIndex);
+    setSpineSessionActive(true);
+    setSpineLabelingModalOpen(false);
+  }, [spineLabelSequence, spineStartLabel]);
+
+  const resetSpineToolState = useCallback(() => {
+    setSpineSessionActive(false);
+    setSpineLabelingModalOpen(false);
+    setSpineInitialLabelIndex(null);
+    setSpineNextLabelIndex(null);
+    setActiveTool("Stack");
+  }, [setActiveTool]);
 
   // Sync local index with global context for header display (single-pane only)
   useEffect(() => {
@@ -297,6 +417,7 @@ export function DicomViewer({
   // For smooth rotation
   const pendingRotation = useRef(0);
   const rotationAnimationFrame = useRef<number | null>(null);
+  const freeRotateLastAngle = useRef<number | null>(null);
 
   // Prefetch state (cache is now global singleton)
   const prefetchStarted = useRef(false);
@@ -324,6 +445,12 @@ export function DicomViewer({
     [instances],
   );
 
+  // Re-arm background prefetch each time series/stack changes.
+  useEffect(() => {
+    prefetchStarted.current = false;
+    setPrefetchProgress(null);
+  }, [seriesId, sortedInstances.length]);
+
   const screenToImage = useCallback(
     (screenX: number, screenY: number) => {
       const canvas = canvasRef.current;
@@ -350,6 +477,74 @@ export function DicomViewer({
       return { x, y };
     },
     [viewTransform],
+  );
+
+  const getPointerAngleFromCenter = useCallback(
+    (screenX: number, screenY: number): number => {
+      const canvas = canvasRef.current;
+      if (!canvas) return 0;
+
+      const rect = canvas.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2 + viewTransform.x;
+      const centerY = rect.top + rect.height / 2 + viewTransform.y;
+      const angleRad = Math.atan2(screenY - centerY, screenX - centerX);
+      return (angleRad * 180) / Math.PI;
+    },
+    [viewTransform.x, viewTransform.y],
+  );
+
+  const viewerCursorClass = useMemo(() => {
+    if (activeTool === "FreeRotate") return "cursor-grab";
+    if (activeTool === "Pan") return "cursor-move";
+    if (activeTool === "Stack") return "cursor-ns-resize";
+    if (activeTool === "Zoom") return "cursor-zoom-in";
+    return "cursor-crosshair";
+  }, [activeTool]);
+
+  const getTextInteractionGeometry = useCallback(
+    (ann: Annotation) => {
+      if (ann.type !== "Text" || ann.points.length !== 1) return null;
+      const anchor = ann.points[0];
+      const text = ann.text || "Text";
+      const textSize = ann.textSize || 18;
+      const fontSize = textSize / viewTransform.scale;
+      const textWidth = Math.max(
+        (24 / viewTransform.scale),
+        text.length * fontSize * 0.58,
+      );
+      const ascent = fontSize * 0.82;
+      const descent = fontSize * 0.28;
+      const textPadding = 4 / viewTransform.scale;
+
+      const left = anchor.x - textPadding;
+      const top = anchor.y - ascent - textPadding;
+      const right = anchor.x + textWidth + textPadding;
+      const bottom = anchor.y + descent + textPadding;
+
+      const deleteRadius = 7 / viewTransform.scale;
+      const deleteCenter = {
+        x: right + deleteRadius * 0.9,
+        y: top - deleteRadius * 0.5,
+      };
+
+      const resizeHalf = 5 / viewTransform.scale;
+      const resizeCenter = {
+        x: right + resizeHalf * 0.8,
+        y: bottom + resizeHalf * 0.8,
+      };
+
+      return {
+        left,
+        top,
+        right,
+        bottom,
+        deleteCenter,
+        deleteRadius,
+        resizeCenter,
+        resizeHalf,
+      };
+    },
+    [viewTransform.scale],
   );
 
   // Check if a point is within image bounds
@@ -593,6 +788,45 @@ export function DicomViewer({
       ann: Annotation,
       threshold: number = 10,
     ): { hit: boolean; handleIndex: number | null } => {
+      if (ann.type === "Text") {
+        const textGeometry = getTextInteractionGeometry(ann);
+        if (!textGeometry) return { hit: false, handleIndex: null };
+
+        if (ann.id === selectedAnnotationId) {
+          const deleteDist = Math.hypot(
+            point.x - textGeometry.deleteCenter.x,
+            point.y - textGeometry.deleteCenter.y,
+          );
+          if (deleteDist <= textGeometry.deleteRadius * 1.2) {
+            return { hit: true, handleIndex: TEXT_DELETE_HANDLE };
+          }
+
+          if (
+            Math.abs(point.x - textGeometry.resizeCenter.x) <=
+            textGeometry.resizeHalf * 1.4 &&
+            Math.abs(point.y - textGeometry.resizeCenter.y) <=
+            textGeometry.resizeHalf * 1.4
+          ) {
+            return { hit: true, handleIndex: TEXT_RESIZE_HANDLE };
+          }
+        }
+
+        if (
+          point.x >= textGeometry.left &&
+          point.x <= textGeometry.right &&
+          point.y >= textGeometry.top &&
+          point.y <= textGeometry.bottom
+        ) {
+          return { hit: true, handleIndex: null };
+        }
+
+        const distToAnchor = Math.hypot(
+          point.x - ann.points[0].x,
+          point.y - ann.points[0].y,
+        );
+        return { hit: distToAnchor <= threshold * 2, handleIndex: null };
+      }
+
       // First check handles
       for (let i = 0; i < ann.points.length; i++) {
         const p = ann.points[i];
@@ -716,16 +950,6 @@ export function DicomViewer({
           }
           break;
 
-        case "Text":
-          if (ann.points.length === 1) {
-            const dist = Math.sqrt(
-              Math.pow(point.x - ann.points[0].x, 2) +
-              Math.pow(point.y - ann.points[0].y, 2),
-            );
-            return { hit: dist <= threshold * 3, handleIndex: null };
-          }
-          break;
-
         case "HU":
           if (ann.points.length === 1) {
             const dist = Math.sqrt(
@@ -739,7 +963,7 @@ export function DicomViewer({
 
       return { hit: false, handleIndex: null };
     },
-    [],
+    [getTextInteractionGeometry, selectedAnnotationId],
   );
 
   // Render annotations with selection support
@@ -762,7 +986,19 @@ export function DicomViewer({
         if (!ann || !ann.points || ann.points.length < 1) return;
 
         const isSelected = ann.id === selectedAnnotationId;
-        const baseColor = isSelected ? "#00bfff" : "#00ff00";
+        const isSpineLabel = ann.sourceTool === "SpineLabeling";
+        const baseColor =
+          ann.type === "Text"
+            ? isSpineLabel
+              ? isSelected
+                ? "#fde68a"
+                : "#f59e0b"
+              : isSelected
+                ? "#93c5fd"
+                : "#e2e8f0"
+            : isSelected
+              ? "#00bfff"
+              : "#00ff00";
 
         ctx.strokeStyle = baseColor;
         ctx.fillStyle = baseColor;
@@ -897,11 +1133,11 @@ export function DicomViewer({
           // Draw text annotation with customizable size
           const baseFontSize = ann.textSize || 18;
           const fontSize = baseFontSize / viewTransform.scale;
-          ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+          ctx.font = `600 ${fontSize}px "Helvetica Neue", Arial, sans-serif`;
           ctx.fillStyle = baseColor;
           // Draw text shadow/outline for better visibility
-          ctx.strokeStyle = "#000000";
-          ctx.lineWidth = 3 / viewTransform.scale;
+          ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+          ctx.lineWidth = 2 / viewTransform.scale;
           ctx.strokeText(ann.text || "Text", ann.points[0].x, ann.points[0].y);
           ctx.fillText(ann.text || "Text", ann.points[0].x, ann.points[0].y);
         } else if (ann.type === "HU") {
@@ -964,8 +1200,24 @@ export function DicomViewer({
                 y: ann.points[2].y - ann.points[1].y,
               };
               const startAngle = Math.atan2(vec1.y, vec1.x);
-              const endAngle = Math.atan2(vec2.y, vec2.x);
+              const rawEndAngle = Math.atan2(vec2.y, vec2.x);
+              let delta = rawEndAngle - startAngle;
+              while (delta <= -Math.PI) delta += 2 * Math.PI;
+              while (delta > Math.PI) delta -= 2 * Math.PI;
+              const endAngle = startAngle + delta;
               const arcRadius = 25 / viewTransform.scale;
+
+              // Vertex marker for better angle readability
+              ctx.beginPath();
+              ctx.fillStyle = baseColor;
+              ctx.arc(
+                ann.points[1].x,
+                ann.points[1].y,
+                3 / viewTransform.scale,
+                0,
+                2 * Math.PI,
+              );
+              ctx.fill();
 
               ctx.beginPath();
               ctx.arc(
@@ -974,11 +1226,12 @@ export function DicomViewer({
                 arcRadius,
                 startAngle,
                 endAngle,
+                delta < 0,
               );
               ctx.stroke();
 
               // Display angle
-              const midAngle = (startAngle + endAngle) / 2;
+              const midAngle = startAngle + delta / 2;
               const labelX =
                 ann.points[1].x +
                 (arcRadius + 15 / viewTransform.scale) * Math.cos(midAngle);
@@ -1029,17 +1282,83 @@ export function DicomViewer({
 
         // Draw control handles for selected annotation
         if (isSelected) {
-          const handleRadius = 5 / viewTransform.scale;
-          ctx.fillStyle = "#ffffff";
-          ctx.strokeStyle = baseColor;
-          ctx.lineWidth = 2 / viewTransform.scale;
+          if (ann.type === "Text") {
+            const textGeometry = getTextInteractionGeometry(ann);
+            if (textGeometry) {
+              ctx.save();
+              ctx.setLineDash([4 / viewTransform.scale, 3 / viewTransform.scale]);
+              ctx.strokeStyle = "#93c5fd";
+              ctx.lineWidth = 1.5 / viewTransform.scale;
+              ctx.strokeRect(
+                textGeometry.left,
+                textGeometry.top,
+                textGeometry.right - textGeometry.left,
+                textGeometry.bottom - textGeometry.top,
+              );
+              ctx.restore();
 
-          ann.points.forEach((p) => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, handleRadius, 0, 2 * Math.PI);
-            ctx.fill();
-            ctx.stroke();
-          });
+              ctx.fillStyle = "#2563eb";
+              ctx.strokeStyle = "#bfdbfe";
+              ctx.lineWidth = 1.5 / viewTransform.scale;
+              ctx.fillRect(
+                textGeometry.resizeCenter.x - textGeometry.resizeHalf,
+                textGeometry.resizeCenter.y - textGeometry.resizeHalf,
+                textGeometry.resizeHalf * 2,
+                textGeometry.resizeHalf * 2,
+              );
+              ctx.strokeRect(
+                textGeometry.resizeCenter.x - textGeometry.resizeHalf,
+                textGeometry.resizeCenter.y - textGeometry.resizeHalf,
+                textGeometry.resizeHalf * 2,
+                textGeometry.resizeHalf * 2,
+              );
+
+              ctx.beginPath();
+              ctx.fillStyle = "#ef4444";
+              ctx.arc(
+                textGeometry.deleteCenter.x,
+                textGeometry.deleteCenter.y,
+                textGeometry.deleteRadius,
+                0,
+                2 * Math.PI,
+              );
+              ctx.fill();
+
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 1.8 / viewTransform.scale;
+              const xSize = textGeometry.deleteRadius * 0.55;
+              ctx.beginPath();
+              ctx.moveTo(
+                textGeometry.deleteCenter.x - xSize,
+                textGeometry.deleteCenter.y - xSize,
+              );
+              ctx.lineTo(
+                textGeometry.deleteCenter.x + xSize,
+                textGeometry.deleteCenter.y + xSize,
+              );
+              ctx.moveTo(
+                textGeometry.deleteCenter.x + xSize,
+                textGeometry.deleteCenter.y - xSize,
+              );
+              ctx.lineTo(
+                textGeometry.deleteCenter.x - xSize,
+                textGeometry.deleteCenter.y + xSize,
+              );
+              ctx.stroke();
+            }
+          } else {
+            const handleRadius = 5 / viewTransform.scale;
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth = 2 / viewTransform.scale;
+
+            ann.points.forEach((p) => {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, handleRadius, 0, 2 * Math.PI);
+              ctx.fill();
+              ctx.stroke();
+            });
+          }
         }
       });
     },
@@ -1049,6 +1368,7 @@ export function DicomViewer({
       viewTransform.scale,
       sortedInstances,
       currentImageIndex,
+      getTextInteractionGeometry,
     ],
   );
 
@@ -1137,6 +1457,10 @@ export function DicomViewer({
   }, [renderCanvas]);
 
   useEffect(() => {
+    renderCanvas();
+  }, [spinePanelVisible, renderCanvas]);
+
+  useEffect(() => {
     window.addEventListener("resize", renderCanvas);
     return () => window.removeEventListener("resize", renderCanvas);
   }, [renderCanvas]);
@@ -1174,6 +1498,19 @@ export function DicomViewer({
 
       // Escape to deselect
       if (e.key === "Escape") {
+        if (textInputVisible) {
+          setTextInputVisible(false);
+          setTextInputValue("");
+          setTextInputPosition(null);
+          setTextInputScreenPos(null);
+        }
+        if (activeTool === "Text" || activeTool === "SpineLabeling") {
+          setSpineLabelingModalOpen(false);
+          setSpineSessionActive(false);
+          setSpineNextLabelIndex(null);
+          setSpineInitialLabelIndex(null);
+          setActiveTool("Stack");
+        }
         setSelectedAnnotationId(null);
         angleClickCount.current = 0;
         currentAnnotation.current = null;
@@ -1186,8 +1523,15 @@ export function DicomViewer({
   }, [
     selectedAnnotationId,
     deleteSelectedAnnotation,
+    textInputVisible,
+    activeTool,
+    setActiveTool,
     setSelectedAnnotationId,
     renderCanvas,
+    setSpineLabelingModalOpen,
+    setSpineSessionActive,
+    setSpineNextLabelIndex,
+    setSpineInitialLabelIndex,
   ]);
 
   // Pre-fetch logic using global cache
@@ -1198,14 +1542,19 @@ export function DicomViewer({
       prefetchStarted.current = true;
 
       const queue = sortedInstances.filter(
-        (inst) => !imageCache.get(inst.instance_uid),
+        (inst) => !imageCache.has(inst.instance_uid),
       );
-      if (queue.length === 0) return;
+      if (queue.length === 0) {
+        if (seriesId) {
+          markSeriesAsDownloaded(seriesId);
+        }
+        return;
+      }
 
       setPrefetchProgress({ fetched: 0, total: queue.length });
-      if (selectedSeries) {
+      if (seriesId) {
         setSeriesLoadProgress({
-          seriesId: selectedSeries._id,
+          seriesId,
           fetched: 0,
           total: queue.length,
         });
@@ -1238,9 +1587,9 @@ export function DicomViewer({
                 fetched: currentFetched,
                 total: queue.length,
               });
-              if (selectedSeries) {
+              if (seriesId) {
                 setSeriesLoadProgress({
-                  seriesId: selectedSeries._id,
+                  seriesId,
                   fetched: currentFetched,
                   total: queue.length,
                 });
@@ -1255,6 +1604,9 @@ export function DicomViewer({
             .finally(() => {
               activeRequests.current--;
               if (currentFetched === queue.length) {
+                if (seriesId) {
+                  markSeriesAsDownloaded(seriesId);
+                }
                 setTimeout(() => {
                   setPrefetchProgress(null);
                   setSeriesLoadProgress(null);
@@ -1267,7 +1619,14 @@ export function DicomViewer({
 
       processQueue();
     }
-  }, [currentImageIndex, sortedInstances, API_BASE_URL]);
+  }, [
+    currentImageIndex,
+    sortedInstances,
+    API_BASE_URL,
+    seriesId,
+    setSeriesLoadProgress,
+    markSeriesAsDownloaded,
+  ]);
 
   // Load and Render Image
   useEffect(() => {
@@ -1580,17 +1939,55 @@ export function DicomViewer({
       const pos = screenToImage(e.clientX, e.clientY);
       lastMousePos.current = { x: e.clientX, y: e.clientY };
       accumulatedStackDelta.current = 0;
+      const annotationTools = [
+        "Length",
+        "Ellipse",
+        "Rectangle",
+        "Freehand",
+        "Angle",
+        "CobbsAngle",
+      ];
 
-      // Handle Text tool immediately - don't check for hit testing
-      if (activeTool === "Text") {
+      if (activeTool === "SpineLabeling") {
         e.preventDefault();
         e.stopPropagation();
-        setSelectedAnnotationId(null);
-        setTextInputPosition(pos);
-        setTextInputScreenPos({ x: e.clientX, y: e.clientY });
-        setTextInputValue("");
-        setTextInputVisible(true);
+
+        if (!spineSessionActive || spineNextLabelIndex === null) {
+          isDragging.current = false;
+          return;
+        }
+
+        const label = spineLabelSequence[spineNextLabelIndex];
+        if (!label || !isPointInImageBounds(pos)) {
+          isDragging.current = false;
+          return;
+        }
+
+        const newAnnotation: Annotation = {
+          id: Math.random().toString(36).substr(2, 9),
+          type: "Text",
+          points: [pos],
+          text: label,
+          color: "#f59e0b",
+          imageIndex: currentImageIndex,
+          textSize: 18,
+          sourceTool: "SpineLabeling",
+        };
+
+        setAnnotations((prev) => [...prev, newAnnotation]);
+        saveToHistory();
+
+        const step = spineDirection === "Descend" ? 1 : -1;
+        const targetIndex = spineNextLabelIndex + step;
+        if (targetIndex >= 0 && targetIndex < spineLabelSequence.length) {
+          setSpineNextLabelIndex(targetIndex);
+        } else {
+          setSpineSessionActive(false);
+          setSpineNextLabelIndex(null);
+        }
+
         isDragging.current = false;
+        renderCanvas();
         return;
       }
 
@@ -1615,6 +2012,17 @@ export function DicomViewer({
         return;
       }
 
+      if (activeTool === "FreeRotate") {
+        e.preventDefault();
+        e.stopPropagation();
+        freeRotateLastAngle.current = getPointerAngleFromCenter(
+          e.clientX,
+          e.clientY,
+        );
+        isDragging.current = true;
+        return;
+      }
+
       // Check if clicking on an existing annotation (for non-Text tools)
       const threshold = 10 / viewTransform.scale;
       for (let i = annotations.length - 1; i >= 0; i--) {
@@ -1625,8 +2033,22 @@ export function DicomViewer({
         );
         if (hit) {
           setSelectedAnnotationId(annotations[i].id);
+
+          if (handleIndex === TEXT_DELETE_HANDLE) {
+            deleteAnnotationById(annotations[i].id);
+            isDragging.current = false;
+            isModifyingAnnotation.current = false;
+            isDraggingWholeAnnotation.current = false;
+            draggedHandleIndex.current = null;
+            renderCanvas();
+            return;
+          }
+
           lastImagePos.current = pos;
-          if (handleIndex !== null) {
+          if (handleIndex === TEXT_RESIZE_HANDLE) {
+            draggedHandleIndex.current = handleIndex;
+            isModifyingAnnotation.current = true;
+          } else if (handleIndex !== null) {
             draggedHandleIndex.current = handleIndex;
             isModifyingAnnotation.current = true;
           } else {
@@ -1639,15 +2061,20 @@ export function DicomViewer({
         }
       }
 
+      // Text tool: if no existing annotation is hit, create a new text input
+      if (activeTool === "Text") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedAnnotationId(null);
+        setTextInputPosition(pos);
+        setTextInputScreenPos({ x: e.clientX, y: e.clientY });
+        setTextInputValue("");
+        setTextInputVisible(true);
+        isDragging.current = false;
+        return;
+      }
+
       // Deselect if clicking elsewhere (when not using an annotation tool)
-      const annotationTools = [
-        "Length",
-        "Ellipse",
-        "Rectangle",
-        "Freehand",
-        "Angle",
-        "CobbsAngle",
-      ];
       if (!annotationTools.includes(activeTool)) {
         setSelectedAnnotationId(null);
       }
@@ -1671,13 +2098,34 @@ export function DicomViewer({
             };
             angleClickCount.current = 1;
           } else if (angleClickCount.current === 1) {
-            // Second click - vertex
+            // Second click - set vertex and begin second arm preview
             if (currentAnnotation.current) {
-              currentAnnotation.current.points.push(pos);
+              currentAnnotation.current.points[1] = pos;
               angleClickCount.current = 2;
             }
+          } else if (angleClickCount.current === 2) {
+            // Third click - finalize angle at click position
+            if (currentAnnotation.current) {
+              currentAnnotation.current.points[2] = pos;
+
+              if (currentAnnotation.current.points.length >= 3) {
+                const finalAnn = finalizeAnnotation({
+                  ...currentAnnotation.current,
+                  index: annotations.length + 1,
+                });
+
+                if (!isAnnotationOutsideBounds(finalAnn)) {
+                  setAnnotations((prev) => [...prev, finalAnn]);
+                  saveToHistory();
+                }
+              }
+            }
+            currentAnnotation.current = null;
+            angleClickCount.current = 0;
+            isDragging.current = false;
+            renderCanvas();
+            return;
           }
-          // Third point is added on mouseUp
         } else if (activeTool === "CobbsAngle") {
           if (angleClickCount.current === 0) {
             // First click - start first line
@@ -1717,14 +2165,38 @@ export function DicomViewer({
       annotations,
       viewTransform.scale,
       hitTestAnnotation,
+      getPointerAngleFromCenter,
       setSelectedAnnotationId,
+      deleteAnnotationById,
       renderCanvas,
       currentImageIndex,
+      finalizeAnnotation,
+      isAnnotationOutsideBounds,
+      isPointInImageBounds,
+      spineDirection,
+      spineLabelSequence,
+      spineNextLabelIndex,
+      spineSessionActive,
     ],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      if (
+        activeTool === "Angle" &&
+        currentAnnotation.current &&
+        (angleClickCount.current === 1 || angleClickCount.current === 2)
+      ) {
+        const pos = screenToImage(e.clientX, e.clientY);
+        if (angleClickCount.current === 1) {
+          currentAnnotation.current.points[1] = pos;
+        } else {
+          // Keep first arm fixed after second click; preview only second arm
+          currentAnnotation.current.points[2] = pos;
+        }
+        renderCanvas();
+      }
+
       if (!isDragging.current) return;
 
       const deltaX = e.clientX - lastMousePos.current.x;
@@ -1736,17 +2208,44 @@ export function DicomViewer({
         const pos = screenToImage(e.clientX, e.clientY);
 
         if (draggedHandleIndex.current !== null) {
-          // Dragging a specific handle point
-          setAnnotations((prev) =>
-            prev.map((ann) => {
-              if (ann.id === selectedAnnotationId) {
-                const newPoints = [...ann.points];
-                newPoints[draggedHandleIndex.current!] = pos;
-                return { ...ann, points: newPoints };
-              }
-              return ann;
-            }),
-          );
+          if (draggedHandleIndex.current === TEXT_RESIZE_HANDLE) {
+            // Dragging text resize handle
+            setAnnotations((prev) =>
+              prev.map((ann) => {
+                if (ann.id !== selectedAnnotationId || ann.type !== "Text") {
+                  return ann;
+                }
+
+                const text = ann.text || "Text";
+                const anchor = ann.points[0];
+                const distance = Math.hypot(
+                  pos.x - anchor.x,
+                  pos.y - anchor.y,
+                ) * viewTransform.scale;
+                const normalization = Math.max(1.2, Math.sqrt(text.length));
+                const newSize = Math.max(
+                  MIN_TEXT_SIZE,
+                  Math.min(
+                    MAX_TEXT_SIZE,
+                    Math.round(distance / normalization),
+                  ),
+                );
+                return { ...ann, textSize: newSize };
+              }),
+            );
+          } else {
+            // Dragging a specific handle point
+            setAnnotations((prev) =>
+              prev.map((ann) => {
+                if (ann.id === selectedAnnotationId) {
+                  const newPoints = [...ann.points];
+                  newPoints[draggedHandleIndex.current!] = pos;
+                  return { ...ann, points: newPoints };
+                }
+                return ann;
+              }),
+            );
+          }
         } else if (isDraggingWholeAnnotation.current) {
           // Dragging the whole annotation - move all points
           const dx = pos.x - lastImagePos.current.x;
@@ -1809,8 +2308,21 @@ export function DicomViewer({
           });
         }
       } else if (activeTool === "FreeRotate") {
-        // Accumulate rotation delta for smooth animation
-        pendingRotation.current += deltaX * 0.3;
+        const currentAngle = getPointerAngleFromCenter(e.clientX, e.clientY);
+        const previousAngle = freeRotateLastAngle.current;
+
+        if (previousAngle === null) {
+          freeRotateLastAngle.current = currentAngle;
+          return;
+        }
+
+        let delta = currentAngle - previousAngle;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+
+        const fineTuneMultiplier = e.shiftKey ? 0.35 : 1;
+        pendingRotation.current += delta * fineTuneMultiplier;
+        freeRotateLastAngle.current = currentAngle;
 
         // Use requestAnimationFrame for smooth updates
         if (rotationAnimationFrame.current === null) {
@@ -1837,12 +2349,6 @@ export function DicomViewer({
           currentAnnotation.current.points.push(pos);
           renderCanvas();
         }
-      } else if (activeTool === "Angle") {
-        if (currentAnnotation.current && angleClickCount.current === 2) {
-          const pos = screenToImage(e.clientX, e.clientY);
-          currentAnnotation.current.points[2] = pos;
-          renderCanvas();
-        }
       } else if (activeTool === "CobbsAngle") {
         if (currentAnnotation.current) {
           const pos = screenToImage(e.clientX, e.clientY);
@@ -1861,15 +2367,19 @@ export function DicomViewer({
       activeTool,
       setViewTransform,
       sortedInstances.length,
+      getPointerAngleFromCenter,
       screenToImage,
       renderCanvas,
       selectedAnnotationId,
       setAnnotations,
       stackSpeed,
+      viewTransform.scale,
     ],
   );
 
   const handleMouseUp = useCallback(() => {
+    freeRotateLastAngle.current = null;
+
     // Handle modification completion
     if (isModifyingAnnotation.current && selectedAnnotationId) {
       // Recalculate HU stats and check bounds
@@ -1897,25 +2407,8 @@ export function DicomViewer({
       return;
     }
 
-    // Handle angle tool completion
+    // Angle tool finalizes on the third click (mouse down), not on mouse up
     if (activeTool === "Angle" && currentAnnotation.current) {
-      if (
-        angleClickCount.current === 2 &&
-        currentAnnotation.current.points.length >= 3
-      ) {
-        // Angle complete
-        const finalAnn = finalizeAnnotation({
-          ...currentAnnotation.current,
-          index: annotations.length + 1,
-        });
-
-        if (!isAnnotationOutsideBounds(finalAnn)) {
-          setAnnotations((prev) => [...prev, finalAnn]);
-          saveToHistory();
-        }
-        currentAnnotation.current = null;
-        angleClickCount.current = 0;
-      }
       isDragging.current = false;
       renderCanvas();
       return;
@@ -2055,7 +2548,7 @@ export function DicomViewer({
         type: "Text",
         points: [textInputPosition],
         text: textInputValue.trim(),
-        color: "#00ff00",
+        color: "#e2e8f0",
         index: annotations.length + 1,
         imageIndex: currentImageIndex,
         textSize: 18, // Default text size
@@ -2090,7 +2583,10 @@ export function DicomViewer({
         prev.map((ann) => {
           if (ann.id === annotationId && ann.type === "Text") {
             const currentSize = ann.textSize || 18;
-            const newSize = Math.max(8, Math.min(72, currentSize + delta));
+            const newSize = Math.max(
+              MIN_TEXT_SIZE,
+              Math.min(MAX_TEXT_SIZE, currentSize + delta),
+            );
             return { ...ann, textSize: newSize };
           }
           return ann;
@@ -2101,11 +2597,70 @@ export function DicomViewer({
     [setAnnotations, renderCanvas]
   );
 
+  const currentSliceSpineLabels = useMemo(
+    () =>
+      annotations.filter(
+        (ann) =>
+          ann.sourceTool === "SpineLabeling" &&
+          (ann.imageIndex === undefined || ann.imageIndex === currentImageIndex),
+      ),
+    [annotations, currentImageIndex],
+  );
+
+  const handleSpineUndo = useCallback(() => {
+    const lastSpineLabel = currentSliceSpineLabels[currentSliceSpineLabels.length - 1];
+    if (!lastSpineLabel) return;
+
+    setAnnotations((prev) => prev.filter((ann) => ann.id !== lastSpineLabel.id));
+
+    if (lastSpineLabel.type === "Text" && lastSpineLabel.text) {
+      const idx = spineLabelSequence.indexOf(lastSpineLabel.text);
+      if (idx >= 0) {
+        setSpineNextLabelIndex(idx);
+        setSpineSessionActive(true);
+      }
+    } else if (spineInitialLabelIndex !== null) {
+      setSpineNextLabelIndex(spineInitialLabelIndex);
+      setSpineSessionActive(true);
+    }
+    setSelectedAnnotationId(null);
+    saveToHistory();
+  }, [
+    currentSliceSpineLabels,
+    setAnnotations,
+    spineInitialLabelIndex,
+    spineLabelSequence,
+    setSelectedAnnotationId,
+    saveToHistory,
+  ]);
+
+  const handleSpineClearAll = useCallback(() => {
+    if (currentSliceSpineLabels.length === 0) return;
+    const idsToRemove = new Set(currentSliceSpineLabels.map((ann) => ann.id));
+    setAnnotations((prev) =>
+      prev.filter(
+        (ann) => !idsToRemove.has(ann.id),
+      ),
+    );
+    setSelectedAnnotationId(null);
+    setSpineNextLabelIndex(spineInitialLabelIndex);
+    setSpineSessionActive(true);
+    saveToHistory();
+  }, [
+    currentSliceSpineLabels,
+    setAnnotations,
+    setSelectedAnnotationId,
+    spineInitialLabelIndex,
+    saveToHistory,
+  ]);
+
   // Get annotations for current slice only
   const currentSliceAnnotations = useMemo(
     () =>
       annotations.filter(
-        (ann) => ann.imageIndex === undefined || ann.imageIndex === currentImageIndex
+        (ann) =>
+          ann.sourceTool !== "SpineLabeling" &&
+          (ann.imageIndex === undefined || ann.imageIndex === currentImageIndex),
       ),
     [annotations, currentImageIndex]
   );
@@ -2145,18 +2700,26 @@ export function DicomViewer({
       <ContextMenuTrigger asChild>
         <div
           ref={containerRef}
-          className={`relative bg-black flex items-center justify-center overflow-hidden cursor-crosshair ${className}`}
+          className={`relative bg-black flex items-center justify-center overflow-hidden ${viewerCursorClass} ${className}`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onDoubleClick={toggleFullscreen}
         >
-      <canvas ref={canvasRef} className="w-full h-full" />
+      <div className="h-full w-full">
+        <canvas ref={canvasRef} className="w-full h-full" />
+      </div>
 
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 px-4 text-center">
           <p className="text-red-400 text-sm">Error: {error}</p>
+        </div>
+      )}
+
+      {activeTool === "FreeRotate" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-md border border-blue-500/40 bg-black/70 text-[11px] text-blue-200 pointer-events-none z-20">
+          Drag around center to rotate • Hold Shift for fine control • {Math.round(viewTransform.rotation)}°
         </div>
       )}
 
@@ -2186,7 +2749,12 @@ export function DicomViewer({
 
       {/* Measurement List - Bottom Left (above image info) - Shows only current slice annotations */}
       {currentSliceAnnotations.length > 0 && (
-        <div className="absolute bottom-28 left-4 bg-black/70 p-2 rounded-lg border border-white/10 max-h-48 overflow-y-auto pointer-events-auto z-10">
+        <div
+          className="absolute bottom-28 left-4 bg-black/70 p-2 rounded-lg border border-white/10 max-h-48 overflow-y-auto pointer-events-auto z-10"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="text-[10px] text-gray-400 mb-1 font-semibold">
             Measurements (Slice {currentImageIndex + 1})
           </div>
@@ -2197,19 +2765,23 @@ export function DicomViewer({
                 e.stopPropagation();
                 setSelectedAnnotationId(ann.id);
               }}
-              className={`text-[10px] py-0.5 px-1 rounded cursor-pointer whitespace-nowrap flex items-center justify-between gap-2 ${ann.id === selectedAnnotationId
+            className={`text-[10px] py-0.5 px-1 rounded cursor-pointer whitespace-nowrap flex items-center justify-between gap-2 ${ann.id === selectedAnnotationId
                 ? "bg-blue-500/30 text-blue-300"
                 : "text-gray-300 hover:bg-white/10"
                 }`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
             >
               <span>
-                {ann.index ?? idx + 1} – {getMeasurementSummary(ann)}
+                {ann.index ?? idx + 1} : {getMeasurementSummary(ann)}
               </span>
               <div className="flex items-center gap-1">
                 {/* Text size controls for Text annotations */}
                 {ann.type === "Text" && ann.id === selectedAnnotationId && (
                   <>
                     <button
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onMouseUp={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
                         updateTextSize(ann.id, -2);
@@ -2223,6 +2795,8 @@ export function DicomViewer({
                       {ann.textSize || 18}
                     </span>
                     <button
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onMouseUp={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
                         updateTextSize(ann.id, 2);
@@ -2235,6 +2809,8 @@ export function DicomViewer({
                   </>
                 )}
                 <button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseUp={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     deleteAnnotationById(ann.id);
@@ -2279,11 +2855,150 @@ export function DicomViewer({
                 handleTextInputSubmit();
               } else if (e.key === "Escape") {
                 handleTextInputCancel();
+                setActiveTool("Stack");
+                setSelectedAnnotationId(null);
               }
             }}
-            className="bg-black/80 border border-green-500 rounded px-2 py-1 outline-none text-[#00ff00] font-bold text-sm min-w-[120px]"
+            className="bg-slate-950/95 border border-slate-500/70 rounded px-2.5 py-1.5 outline-none text-slate-100 font-medium text-xs min-w-[140px] shadow-lg shadow-black/50 focus:border-slate-300/70"
             placeholder="Type, Enter to save"
           />
+        </div>
+      )}
+
+      {spinePanelVisible && (
+        <div
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-col gap-2">
+            <div className="rounded-md border border-blue-500/40 bg-gray-900/90 px-2 py-1.5 text-[10px] text-blue-200 shadow-lg shadow-black/40 whitespace-nowrap">
+              Next: {nextSpineLabel ?? "Completed"}
+            </div>
+            <button
+              onClick={handleSpineUndo}
+              disabled={currentSliceSpineLabels.length === 0}
+              title="Undo last spine label"
+              className="rounded-md border border-gray-600 bg-gray-900/90 px-2 py-1.5 text-xs text-gray-100 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-black/40"
+            >
+              Undo
+            </button>
+            <button
+              onClick={handleSpineClearAll}
+              disabled={currentSliceSpineLabels.length === 0}
+              title="Clear all spine labels on this slice"
+              className="rounded-md border border-red-500/50 bg-red-950/70 px-2 py-1.5 text-xs text-red-100 hover:bg-red-900/80 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-black/40"
+            >
+              Clear All
+            </button>
+            <button
+              onClick={() => setSpineLabelingModalOpen(true)}
+              title="Restart spine labeling setup"
+              className="rounded-md border border-blue-500/50 bg-blue-950/60 px-2 py-1.5 text-xs text-blue-100 hover:bg-blue-900/70 shadow-lg shadow-black/40"
+            >
+              Restart
+            </button>
+            <button
+              onClick={resetSpineToolState}
+              title="Exit spine labeling"
+              className="rounded-md border border-gray-500/70 bg-gray-800/95 px-2 py-1.5 text-xs text-gray-100 hover:bg-gray-700 shadow-lg shadow-black/40"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {spineLabelingModalOpen && activeTool === "SpineLabeling" && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-4"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-[500px] max-w-full rounded-lg border border-gray-700 bg-gray-900 text-gray-100 shadow-2xl">
+            <div className="border-b border-gray-700 px-4 py-3 bg-gray-900">
+              <div className="text-[13px] font-semibold tracking-wide text-gray-100">
+                Auto Spine Labelling
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="rounded-md border border-gray-700 overflow-hidden bg-gray-950/40">
+                <div className="bg-gray-800 px-3 py-2 text-[11px] font-semibold text-gray-200 uppercase tracking-wider">
+                  Select Label
+                </div>
+                <div className="p-3 space-y-2">
+                  {spineLabelRows.map((row, rowIndex) => (
+                    <div key={`spine-row-${rowIndex}`} className="flex flex-wrap gap-2">
+                      {row.map((label) => (
+                        <label
+                          key={label}
+                          className="inline-flex items-center gap-1.5 text-[13px] cursor-pointer text-gray-200"
+                        >
+                          <input
+                            type="radio"
+                            name="spine-start-label"
+                            checked={spineStartLabel === label}
+                            onChange={() => setSpineStartLabel(label)}
+                            className="accent-blue-500"
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+
+                  <label className="mt-1 inline-flex items-center gap-2 text-[13px] cursor-pointer text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={spineIncludeL6}
+                      onChange={(e) => setSpineIncludeL6(e.target.checked)}
+                      className="accent-blue-500"
+                    />
+                    <span>Add L6 between L5 and S1</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-gray-700 overflow-hidden bg-gray-950/40">
+                <div className="bg-gray-800 px-3 py-2 text-[11px] font-semibold text-gray-200 uppercase tracking-wider">
+                  Direction
+                </div>
+                <div className="p-3 flex items-center gap-5">
+                  {(["Descend", "Ascend"] as const).map((dir) => (
+                    <label key={dir} className="inline-flex items-center gap-1.5 text-[13px] cursor-pointer text-gray-200">
+                      <input
+                        type="radio"
+                        name="spine-direction"
+                        checked={spineDirection === dir}
+                        onChange={() => setSpineDirection(dir)}
+                        className="accent-blue-500"
+                      />
+                      <span>{dir}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={resetSpineToolState}
+                  className="rounded-md border border-gray-600 bg-gray-800 px-4 py-2 text-[13px] text-gray-200 hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={startSpineLabeling}
+                  disabled={!canStartSpineLabeling}
+                  className="rounded-md border border-blue-500 bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Start
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2404,7 +3119,7 @@ export function DicomViewer({
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <RotateCw size={16} />
-          <span className="flex-1">Rotate</span>
+          <span className="flex-1">Free Rotate</span>
           {activeTool === "FreeRotate" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuSeparator className="bg-gray-700" />
@@ -2423,6 +3138,14 @@ export function DicomViewer({
           <Circle size={16} />
           <span className="flex-1">Elliptical (HU)</span>
           {activeTool === "Ellipse" && <span className="ml-auto text-blue-400 text-xs">●</span>}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => setActiveTool("SpineLabeling")}
+          className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
+        >
+          <Ruler size={16} />
+          <span className="flex-1">Spine Labeling</span>
+          {activeTool === "SpineLabeling" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuSeparator className="bg-gray-700" />
         <ContextMenuItem

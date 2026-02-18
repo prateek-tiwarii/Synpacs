@@ -8,7 +8,6 @@ import {
   Ruler,
   RotateCw,
   RotateCcw,
-  RefreshCcw,
   FlipHorizontal,
   FlipVertical,
   Maximize2,
@@ -156,6 +155,35 @@ const MPR_MODES: {
     { id: "MiniMIP", label: "MiniMIP", description: "Thin-slab Max Intensity Projection" },
   ];
 
+const LayoutPreview = ({
+  rows,
+  cols,
+  isSelected,
+}: {
+  rows: number;
+  cols: number;
+  isSelected: boolean;
+}) => (
+  <div className="grid grid-cols-2 gap-1 p-1 rounded border border-gray-700 bg-gray-950/60">
+    {Array.from({ length: 4 }).map((_, index) => {
+      const r = Math.floor(index / 2);
+      const c = index % 2;
+      const isFilled = r < rows && c < cols;
+      return (
+        <div
+          key={`${r}-${c}`}
+          className={`h-3 w-3 rounded-[2px] ${isFilled
+            ? isSelected
+              ? "bg-amber-300"
+              : "bg-amber-500/80"
+            : "bg-gray-700"
+            }`}
+        />
+      );
+    })}
+  </div>
+);
+
 const ViewerHeader = () => {
   const {
     caseData,
@@ -164,6 +192,7 @@ const ViewerHeader = () => {
     viewTransform,
     setViewTransform,
     setAnnotations,
+    setSelectedAnnotationId,
     undo,
     redo,
     canUndo,
@@ -171,6 +200,7 @@ const ViewerHeader = () => {
     saveToHistory,
     gridLayout,
     setGridLayout,
+    setPaneStates,
     temporaryMPRSeries,
     selectedTemporarySeriesId,
     setSelectedTemporarySeriesId,
@@ -259,6 +289,30 @@ const ViewerHeader = () => {
       windowCenter: null,
     });
     setAnnotations([]);
+    setSelectedAnnotationId(null);
+    setActiveTool("Stack");
+    setSelectedTemporarySeriesId(null);
+    setGridLayout("1x1");
+    setShowScoutLine(false);
+    setPaneStates((prev) =>
+      prev.map((pane) => ({
+        ...pane,
+        currentImageIndex: 0,
+        viewTransform: {
+          x: 0,
+          y: 0,
+          scale: 0.65,
+          rotation: 0,
+          flipH: false,
+          flipV: false,
+          invert: false,
+          windowWidth: null,
+          windowCenter: null,
+        },
+        annotations: [],
+        selectedAnnotationId: null,
+      })),
+    );
     saveToHistory();
   };
 
@@ -304,6 +358,7 @@ const ViewerHeader = () => {
           case "ToolCircle": setActiveTool("Ellipse"); break;
           case "ToolFreehand": setActiveTool("Freehand"); break;
           case "ToolHU": setActiveTool("HU"); break;
+          case "ToolSpineLabeling": setActiveTool("SpineLabeling"); break;
           case "NavZoom": setActiveTool("Zoom"); break;
           case "NavPan": setActiveTool("Pan"); break;
           case "NavScroll": setActiveTool("Stack"); break;
@@ -427,6 +482,15 @@ const ViewerHeader = () => {
         description: "Generate Multi-Planar Reconstruction views",
       },
       {
+        id: "SpineLabeling",
+        label: "Spine Labeling",
+        icon: <Pencil size={18} />,
+        category: "Tools",
+        type: "tool",
+        active: activeTool === "SpineLabeling",
+        description: "Auto-sequentially place vertebra labels from a selected start point",
+      },
+      {
         id: "RotateCw",
         label: "Rotate CW",
         icon: <RotateCw size={18} />,
@@ -447,11 +511,11 @@ const ViewerHeader = () => {
       {
         id: "FreeRotate",
         label: "Free Rotate",
-        icon: <RefreshCcw size={18} />,
+        icon: <RotateCcw size={18} />,
         category: "Tools",
         type: "tool",
         active: activeTool === "FreeRotate",
-        description: "Freely rotate the image by dragging",
+        description: "Drag around image center to rotate (Shift for fine control)",
       },
       {
         id: "FlipH",
@@ -612,6 +676,44 @@ const ViewerHeader = () => {
     );
   };
 
+  const renderLayoutDropdownContent = () => (
+    <DropdownMenuContent
+      align="start"
+      className="w-48 bg-gray-900 border-gray-700 text-gray-200 p-2"
+    >
+      <DropdownMenuLabel className="text-gray-400 text-xs px-1">
+        Grid Layout
+      </DropdownMenuLabel>
+      <div className="grid grid-cols-3 gap-2 mt-1">
+        {GRID_LAYOUTS.map((layout) => {
+          const isSelected = gridLayout === layout.id;
+          return (
+            <DropdownMenuItem
+              key={layout.id}
+              onClick={() => setGridLayout(layout.id)}
+              className="p-0 focus:bg-transparent"
+            >
+              <button
+                type="button"
+                className={`w-full rounded-md border px-1.5 py-2 flex flex-col items-center gap-1 transition-colors ${isSelected
+                  ? "border-amber-400 bg-amber-500/15"
+                  : "border-gray-700 bg-gray-800/40 hover:border-gray-500"
+                  }`}
+              >
+                <LayoutPreview
+                  rows={layout.rows}
+                  cols={layout.cols}
+                  isSelected={isSelected}
+                />
+                <span className="text-[10px] text-gray-300">{layout.label}</span>
+              </button>
+            </DropdownMenuItem>
+          );
+        })}
+      </div>
+    </DropdownMenuContent>
+  );
+
   // VRT mode: show minimal header with exit button only
   if (isVRTActive) {
     return (
@@ -654,11 +756,23 @@ const ViewerHeader = () => {
               </button>
             ))}
           </div>
-          <div
-            className="cursor-pointer text-gray-400 hover:text-white transition-colors"
-            onClick={() => setIsSettingsOpen(true)}
-          >
-            <Settings size={20} />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              <RefreshCw size={14} />
+              <span>Reset</span>
+            </button>
+            <button
+              type="button"
+              className="cursor-pointer text-gray-400 hover:text-white transition-colors"
+              onClick={() => setIsSettingsOpen(true)}
+              aria-label="Open settings"
+            >
+              <Settings size={20} />
+            </button>
           </div>
         </div>
 
@@ -676,7 +790,11 @@ const ViewerHeader = () => {
                   tool.type === "dropdown" && tool.id === "Stack" ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          onOpenChange={(open) => {
+                            if (open) setActiveTool("Stack");
+                          }}
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               onClick={() => setActiveTool("Stack")}
@@ -787,41 +905,7 @@ const ViewerHeader = () => {
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="start"
-                            className="w-40 bg-gray-900 border-gray-700 text-gray-200"
-                          >
-                            <DropdownMenuLabel className="text-gray-400 text-xs">
-                              Grid Layout
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator className="bg-gray-800" />
-                            {GRID_LAYOUTS.map((layout) => (
-                              <DropdownMenuItem
-                                key={layout.id}
-                                onClick={() => setGridLayout(layout.id)}
-                                className="focus:bg-gray-800 focus:text-white cursor-pointer"
-                              >
-                                <div className="flex items-center justify-between w-full">
-                                  <div className="flex items-center gap-2">
-                                    {gridLayout === layout.id && (
-                                      <Check size={14} className="text-blue-500" />
-                                    )}
-                                    <span
-                                      className={
-                                        gridLayout !== layout.id ? "ml-5" : ""
-                                      }
-                                    >
-                                      {layout.label}
-                                    </span>
-                                  </div>
-                                  <span className="text-gray-500 text-xs">
-                                    {layout.rows * layout.cols} pane
-                                    {layout.rows * layout.cols > 1 ? "s" : ""}
-                                  </span>
-                                </div>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
+                          {renderLayoutDropdownContent()}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (
@@ -979,7 +1063,11 @@ const ViewerHeader = () => {
                   return (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          onOpenChange={(open) => {
+                            if (open) setActiveTool("Stack");
+                          }}
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               onClick={() => setActiveTool("Stack")}
@@ -1096,41 +1184,7 @@ const ViewerHeader = () => {
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="start"
-                            className="w-40 bg-gray-900 border-gray-700 text-gray-200"
-                          >
-                            <DropdownMenuLabel className="text-gray-400 text-xs">
-                              Grid Layout
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator className="bg-gray-800" />
-                            {GRID_LAYOUTS.map((layout) => (
-                              <DropdownMenuItem
-                                key={layout.id}
-                                onClick={() => setGridLayout(layout.id)}
-                                className="focus:bg-gray-800 focus:text-white cursor-pointer"
-                              >
-                                <div className="flex items-center justify-between w-full">
-                                  <div className="flex items-center gap-2">
-                                    {gridLayout === layout.id && (
-                                      <Check size={14} className="text-blue-500" />
-                                    )}
-                                    <span
-                                      className={
-                                        gridLayout !== layout.id ? "ml-5" : ""
-                                      }
-                                    >
-                                      {layout.label}
-                                    </span>
-                                  </div>
-                                  <span className="text-gray-500 text-xs">
-                                    {layout.rows * layout.cols} pane
-                                    {layout.rows * layout.cols > 1 ? "s" : ""}
-                                  </span>
-                                </div>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
+                          {renderLayoutDropdownContent()}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (

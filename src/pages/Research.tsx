@@ -130,8 +130,9 @@ const Research = () => {
 
               const apiPayload: Parameters<typeof apiService.exportData>[0] = {
                 exportType: payload.exportType,
-                fileFormat: payload.fileFormat as 'excel' | 'csv' | 'word',
+                fileFormat: payload.fileFormat as 'excel' | 'csv',
                 columns: selectedColumns,
+                active_hospital: localStorage.getItem('active_hospital') || undefined,
               };
 
               // Add type-specific filters
@@ -150,6 +151,8 @@ const Research = () => {
                 apiPayload.bookmarkOptions = {
                   caseIds: payload.bookmarkedCases.map((c: any) => c._id),
                   includeNotes: payload.includeBookmarkNotes,
+                  startDate: payload.startDate,
+                  endDate: payload.endDate,
                 };
               } else if (payload.exportType === 'audit' && payload.auditParams) {
                 apiPayload.auditFilters = {
@@ -163,7 +166,7 @@ const Research = () => {
               const blob = await apiService.exportData(apiPayload);
 
               // Generate filename
-              const fileExtension = payload.fileFormat === 'excel' ? 'xlsx' : payload.fileFormat === 'word' ? 'docx' : 'csv';
+              const fileExtension = payload.fileFormat === 'excel' ? 'xlsx' : 'csv';
               const timestamp = new Date().toISOString().split('T')[0];
               const filename = `export_${payload.exportType}_${timestamp}.${fileExtension}`;
 

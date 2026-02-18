@@ -54,6 +54,37 @@ const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'All Cases': 'all',
 };
 
+const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
+    if (!dateStr || dateStr.length !== 8) return null;
+
+    const year = Number(dateStr.substring(0, 4));
+    const month = Number(dateStr.substring(4, 6));
+    const day = Number(dateStr.substring(6, 8));
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
+    const hour = Number(safeTime.substring(0, 2) || '0');
+    const minute = Number(safeTime.substring(2, 4) || '0');
+    const second = Number(safeTime.substring(4, 6) || '0');
+
+    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const parseDateTimeValue = (value?: string | null): number | null => {
+    if (!value) return null;
+    const timestamp = new Date(value).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+};
+
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
     setMessageDialogOpen: (open: boolean) => void;
@@ -472,11 +503,11 @@ const AssignedPatientsTable = ({
                                                                 (typeof note.user_id === 'object' ? note.user_id.full_name : 'Unknown User')}
                                                         </span>
                                                         <span>
-                                                            {new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
+                                                            {new Date(note.createdAt || note.created_at || Date.now()).toLocaleDateString('en-US', {
                                                                 month: 'short',
                                                                 day: 'numeric',
                                                                 year: 'numeric'
-                                                            })} at {new Date(note.createdAt || note.created_at).toLocaleTimeString('en-US', {
+                                                            })} at {new Date(note.createdAt || note.created_at || Date.now()).toLocaleTimeString('en-US', {
                                                                 hour: '2-digit',
                                                                 minute: '2-digit'
                                                             })}
