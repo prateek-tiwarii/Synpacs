@@ -298,7 +298,7 @@ const PaneViewer = ({
 
   return (
     <div
-      className={`relative flex flex-col overflow-hidden ${
+      className={`relative flex min-h-0 flex-col overflow-hidden ${isFullscreen ? "h-full" : ""} ${
         isDragOver
           ? "ring-2 ring-amber-400 ring-inset"
           : isActive
@@ -328,7 +328,7 @@ const PaneViewer = ({
       {selectedTempMPR ? (
         <TemporaryMPRSeriesViewer
           series={selectedTempMPR}
-          className="flex-1"
+          className="flex-1 min-h-0"
           scoutLines={scoutLines}
           onImageIndexChange={handleMPRImageIndexChange}
           viewTransformOverride={paneTransform}
@@ -342,7 +342,7 @@ const PaneViewer = ({
           paneIndex={paneIndex}
           scoutLines={scoutLines}
           onImageIndexChange={handleImageIndexChange}
-          className="flex-1"
+          className="flex-1 min-h-0"
           paneViewTransform={paneTransform}
           onPaneViewTransformChange={handlePaneTransformChange}
           isPaneFullscreen={isFullscreen}
@@ -1200,7 +1200,7 @@ const CaseViewer = () => {
     if (fullscreenPaneIndex !== null) {
       const paneIdx = fullscreenPaneIndex;
       return (
-        <div className="flex-1 flex flex-col bg-black h-full">
+        <div className="flex-1 flex flex-col bg-black h-full min-h-0">
           <PaneViewer
             paneIndex={paneIdx}
             seriesId={paneStates[paneIdx]?.seriesId || null}
@@ -1216,7 +1216,7 @@ const CaseViewer = () => {
     }
 
     return (
-      <div className="flex-1 flex flex-col bg-black h-full">
+      <div className="flex-1 flex flex-col bg-black h-full min-h-0">
         <div
           className="flex-1 grid gap-0.5"
           style={{
@@ -1246,7 +1246,7 @@ const CaseViewer = () => {
 
   // Single-pane (1x1) layout
   return (
-    <div className="flex-1 flex flex-col bg-black h-full">
+    <div className="flex-1 flex flex-col bg-black h-full min-h-0">
       {/* Series info header */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-900/50 border-b border-gray-800">
         <div className="flex items-center gap-4">
@@ -1270,15 +1270,15 @@ const CaseViewer = () => {
       {selectedTempSeries ? (
         <TemporaryMPRSeriesViewer
           series={selectedTempSeries}
-          className="flex-1"
+          className="flex-1 min-h-0"
         />
       ) : selectedSeries.modality === "SR" ? (
-        <SRViewer instances={instances || []} className="flex-1" />
+        <SRViewer instances={instances || []} className="flex-1 min-h-0" />
       ) : (
         <DicomViewer
           instances={instances || []}
           seriesId={selectedSeries._id}
-          className="flex-1"
+          className="flex-1 min-h-0"
         />
       )}
     </div>

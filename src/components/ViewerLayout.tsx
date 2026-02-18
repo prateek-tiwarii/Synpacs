@@ -153,6 +153,7 @@ export interface Annotation {
   distanceMm?: number; // For length measurements
   imageIndex?: number; // Slice index where annotation was created
   textSize?: number; // Font size for text annotations (default 18)
+  textRotation?: number; // Rotation angle in degrees for text annotations
   sourceTool?: "SpineLabeling"; // Marks annotations created via spine auto-labeling
 }
 
@@ -863,8 +864,8 @@ export function ViewerLayout() {
       <div className="min-h-screen w-full bg-black text-white flex flex-col h-screen overflow-hidden">
         <ViewerHeader />
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {!isFullscreen && <ViewerSidebar />}
-          <main className="flex-1 min-w-0">
+          <ViewerSidebar />
+          <main className="flex-1 min-w-0 min-h-0">
             <Outlet />
           </main>
         </div>

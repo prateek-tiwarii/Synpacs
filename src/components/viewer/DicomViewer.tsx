@@ -257,8 +257,7 @@ export function DicomViewer({
   const viewTransform = paneViewTransform ?? globalViewTransform;
   const setViewTransform =
     onPaneViewTransformChange ?? setGlobalViewTransform;
-  const isFullscreen = isPaneFullscreen ?? globalIsFullscreen;
-  const toggleFullscreen = onTogglePaneFullscreen ?? toggleGlobalFullscreen;
+  const isFullscreen = Boolean(isPaneFullscreen || globalIsFullscreen);
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
@@ -326,6 +325,30 @@ export function DicomViewer({
   );
 
   const spinePanelVisible = activeTool === "SpineLabeling" && !spineLabelingModalOpen;
+
+  const toggleFullscreen = useCallback(() => {
+    const isDocumentFullscreen = !!document.fullscreenElement;
+
+    // In multi-pane mode, first focus this pane before entering browser fullscreen.
+    if (!isDocumentFullscreen) {
+      if (onTogglePaneFullscreen && !isPaneFullscreen) {
+        onTogglePaneFullscreen();
+      }
+      toggleGlobalFullscreen();
+      return;
+    }
+
+    toggleGlobalFullscreen();
+
+    // If this pane was expanded for fullscreen, restore grid on exit.
+    if (onTogglePaneFullscreen && isPaneFullscreen) {
+      onTogglePaneFullscreen();
+    }
+  }, [
+    isPaneFullscreen,
+    onTogglePaneFullscreen,
+    toggleGlobalFullscreen,
+  ]);
 
   useEffect(() => {
     if (spineLabelSequence.includes(spineStartLabel)) return;
@@ -1463,6 +1486,18 @@ export function DicomViewer({
   useEffect(() => {
     window.addEventListener("resize", renderCanvas);
     return () => window.removeEventListener("resize", renderCanvas);
+  }, [renderCanvas]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      renderCanvas();
+    });
+    observer.observe(container);
+
+    return () => observer.disconnect();
   }, [renderCanvas]);
 
   // Cleanup animation frames on unmount
@@ -2700,14 +2735,17 @@ export function DicomViewer({
       <ContextMenuTrigger asChild>
         <div
           ref={containerRef}
-          className={`relative bg-black flex items-center justify-center overflow-hidden ${viewerCursorClass} ${className}`}
+          className={`relative bg-black overflow-hidden ${viewerCursorClass} ${className}`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onDoubleClick={toggleFullscreen}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            toggleFullscreen();
+          }}
         >
-      <div className="h-full w-full">
+      <div className="absolute inset-0">
         <canvas ref={canvasRef} className="w-full h-full" />
       </div>
 
