@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
-import type { VisibilityState, RowSelectionState, ColumnSizingState } from '@tanstack/react-table';
+import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Bookmark as BookmarkIcon, ChevronDown, ChevronUp, ClipboardCheck, Download, FileText, FolderOpen, ImageIcon, MessageSquare, Settings } from "lucide-react";
+import { Bookmark as BookmarkIcon, BookmarkPlus, ChevronDown, ChevronUp, ClipboardCheck, Download, FileText, FolderOpen, ImageIcon, MessageSquare, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -13,6 +13,7 @@ import DownloadModal from "@/components/common/DownloadModal";
 import PatientHistoryModal from "@/components/dashboard/doctorDashboard/molecules/PatientHistoryModal";
 import MessageDialog from "@/components/dashboard/doctorDashboard/molecules/MessageDialog";
 import DocumentDialog from "@/components/dashboard/doctorDashboard/molecules/DocumentDialog";
+import BookmarkDialog from "@/components/dashboard/doctorDashboard/molecules/BookmarkDialog";
 import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
@@ -24,7 +25,6 @@ type BookmarkedCase = Patient & {
 };
 
 const COLUMN_VISIBILITY_KEY = 'research_bookmarks_columns';
-const COLUMN_SIZING_KEY = 'research_bookmarks_column_sizing';
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     select: true,
@@ -47,36 +47,6 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
     reported: true,
 };
 
-const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
-    if (!dateStr || dateStr.length !== 8) return null;
-
-    const year = Number(dateStr.substring(0, 4));
-    const month = Number(dateStr.substring(4, 6));
-    const day = Number(dateStr.substring(6, 8));
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-
-    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
-    const hour = Number(safeTime.substring(0, 2) || '0');
-    const minute = Number(safeTime.substring(2, 4) || '0');
-    const second = Number(safeTime.substring(4, 6) || '0');
-
-    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const parseDateTimeValue = (value?: string | null): number | null => {
-    if (!value) return null;
-    const timestamp = new Date(value).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a - b;
-};
-
 interface BookmarksSectionProps {
     onExportBookmarks: (selectedCases: BookmarkedCase[]) => void;
 }
@@ -90,13 +60,12 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
     const [selectedCaseForDownload, setSelectedCaseForDownload] = useState<{ id: string; name: string } | null>(null);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
 
     // Dialog states for actions aligned with PACS List
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
     const [messageDialogOpen, setMessageDialogOpen] = useState(false);
     const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+    const [bookmarkNoteDialogOpen, setBookmarkNoteDialogOpen] = useState(false);
     const [selectedPatient, setSelectedPatient] = useState<BookmarkedCase | null>(null);
 
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -120,38 +89,11 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
         }
     }, [columnVisibility]);
 
-    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
-        try {
-            const stored = localStorage.getItem(COLUMN_SIZING_KEY);
-            if (stored) return JSON.parse(stored);
-        } catch (error) {
-            console.error('Failed to load column sizing:', error);
-        }
-        return {};
-    });
-
-    useEffect(() => {
-        try {
-            localStorage.setItem(COLUMN_SIZING_KEY, JSON.stringify(columnSizing));
-        } catch (error) {
-            console.error('Failed to save column sizing:', error);
-        }
-    }, [columnSizing]);
-
     useEffect(() => {
         if (!isCollapsed) {
             fetchBookmarks();
         }
     }, [isCollapsed]);
-
-    // Paginated bookmarks
-    const paginatedBookmarks = useMemo(() => {
-        const startIndex = (currentPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        return bookmarks.slice(startIndex, endIndex);
-    }, [bookmarks, currentPage, pageSize]);
-
-    const totalPages = Math.ceil(bookmarks.length / pageSize);
 
     const fetchBookmarks = async () => {
         try {
@@ -203,8 +145,8 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                         pac_images_count: caseItem.instance_count || 0,
                         updatedAt: caseItem.updatedAt || '',
                         attached_report: caseItem.attached_report || null,
-                        notes: caseItem.notes || [],
-                        bookmark_notes: caseItem.bookmark_notes || [],
+                        notes: (caseItem.notes || []).filter((n: any) => n.flag_type !== 'bookmark_note'),
+                        bookmark_notes: (caseItem.notes || []).filter((n: any) => n.flag_type === 'bookmark_note'),
                         patient: caseItem.patient,
                         patient_history: caseItem.patient_history || [],
                     } as Patient;
@@ -372,7 +314,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                                                         </span>
                                                         <span>
                                                             {(note.createdAt || note.created_at) ? 
-                                                                new Date(note.createdAt || note.created_at).toLocaleDateString('en-US', {
+                                                                new Date(note.createdAt! || note.created_at!).toLocaleDateString('en-US', {
                                                                     month: 'short',
                                                                     day: 'numeric',
                                                                     year: 'numeric'
@@ -429,6 +371,22 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                                 </button>
                             </TooltipTrigger>
                             <TooltipContent>View Report</TooltipContent>
+                        </Tooltip>
+
+                        {/* Add Bookmark Note */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    className="p-0.5 hover:bg-indigo-50 rounded cursor-pointer"
+                                    onClick={() => {
+                                        setSelectedPatient(props.row.original);
+                                        setBookmarkNoteDialogOpen(true);
+                                    }}
+                                >
+                                    <BookmarkPlus className="w-3.5 h-3.5 text-indigo-500" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Add Bookmark Note</TooltipContent>
                         </Tooltip>
 
                         {/* Remove Bookmark */}
@@ -755,7 +713,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                         ) : (
                             <>
                                 <DataTable
-                                    data={paginatedBookmarks}
+                                    data={bookmarks}
                                     columns={columns}
                                     isLoading={isLoading}
                                     error={error}
@@ -770,53 +728,8 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                                     onColumnVisibilityChange={setColumnVisibility}
                                     isColumnModalOpen={isColumnModalOpen}
                                     onColumnModalOpenChange={setIsColumnModalOpen}
+                                    defaultPageSize={20}
                                 />
-                                {/* Pagination Footer */}
-                                {bookmarks.length > 0 && (
-                                    <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-t border-slate-100 mt-2">
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-xs text-slate-600">
-                                                Showing <span className="font-semibold">{Math.min((currentPage - 1) * pageSize + 1, bookmarks.length)}</span> to{' '}
-                                                <span className="font-semibold">{Math.min(currentPage * pageSize, bookmarks.length)}</span> of{' '}
-                                                <span className="font-semibold">{bookmarks.length}</span> bookmarks
-                                            </span>
-                                            <select
-                                                value={pageSize}
-                                                onChange={(e) => {
-                                                    setPageSize(Number(e.target.value));
-                                                    setCurrentPage(1);
-                                                }}
-                                                className="text-xs border border-slate-200 rounded px-2 py-1"
-                                            >
-                                                <option value={10}>10 per page</option>
-                                                <option value={20}>20 per page</option>
-                                                <option value={50}>50 per page</option>
-                                                <option value={100}>100 per page</option>
-                                            </select>
-                                        </div>
-                                        {totalPages > 1 && (
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                                    disabled={currentPage === 1}
-                                                    className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    Previous
-                                                </button>
-                                                <span className="text-xs text-slate-600 font-medium">
-                                                    Page {currentPage} of {totalPages}
-                                                </span>
-                                                <button
-                                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                                    disabled={currentPage === totalPages}
-                                                    className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
                             </>
                         )}
                     </CardContent>
@@ -859,6 +772,17 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                 open={documentDialogOpen}
                 onOpenChange={setDocumentDialogOpen}
                 patient={selectedPatient as Patient | null}
+            />
+
+            {/* Bookmark Note Dialog */}
+            <BookmarkDialog
+                open={bookmarkNoteDialogOpen}
+                onOpenChange={setBookmarkNoteDialogOpen}
+                patient={selectedPatient as Patient | null}
+                onSuccess={() => {
+                    toast.success('Bookmark note added successfully');
+                    fetchBookmarks();
+                }}
             />
         </>
     );

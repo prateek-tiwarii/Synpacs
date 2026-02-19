@@ -67,9 +67,6 @@ export const VRT_PRESETS: Record<string, TransferFunctionPreset> = {
 const HU_MIN = -1024;
 const TF_SIZE = 4096;
 
-function huToIndex(hu: number): number {
-  return Math.max(0, Math.min(TF_SIZE - 1, Math.round(hu - HU_MIN)));
-}
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;

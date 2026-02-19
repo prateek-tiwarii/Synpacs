@@ -40,36 +40,7 @@ const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
 const STORAGE_KEY_PACS_LIST = 'pacs_list_table_columns';
 const STORAGE_KEY_PACS_LIST_SIZING = 'pacs_list_table_column_sizing';
 
-const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
-    if (!dateStr || dateStr.length !== 8) return null;
 
-    const year = Number(dateStr.substring(0, 4));
-    const month = Number(dateStr.substring(4, 6));
-    const day = Number(dateStr.substring(6, 8));
-
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-
-    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
-    const hour = Number(safeTime.substring(0, 2) || '0');
-    const minute = Number(safeTime.substring(2, 4) || '0');
-    const second = Number(safeTime.substring(4, 6) || '0');
-
-    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const parseDateTimeValue = (value?: string | null): number | null => {
-    if (!value) return null;
-    const timestamp = new Date(value).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a - b;
-};
 
 const PacsList = () => {
     const [patients, setPatients] = useState<Patient[]>([]);
