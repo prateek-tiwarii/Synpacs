@@ -246,6 +246,9 @@ interface ViewerContextType {
   // Stack speed (1-10, default 4)
   stackSpeed: number;
   setStackSpeed: (speed: number) => void;
+  // MiniMIP intensity (controls slab half-size)
+  miniMIPIntensity: number;
+  setMiniMIPIntensity: (intensity: number) => void;
   // Scout line
   showScoutLine: boolean;
   setShowScoutLine: (show: boolean) => void;
@@ -328,6 +331,7 @@ export function ViewerLayout() {
     new Set(),
   );
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
+  const [miniMIPIntensity, setMiniMIPIntensity] = useState(5); // slab half-size (0-20)
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
 
@@ -900,6 +904,8 @@ export function ViewerLayout() {
     updateShortcut,
     stackSpeed,
     setStackSpeed,
+    miniMIPIntensity,
+    setMiniMIPIntensity,
     showScoutLine,
     setShowScoutLine,
     isVRTActive,
@@ -933,7 +939,7 @@ export function ViewerLayout() {
       <div className="min-h-screen w-full bg-black text-white flex flex-col h-screen overflow-hidden">
         <ViewerHeader />
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          <ViewerSidebar />
+          {!isVRTActive && <ViewerSidebar />}
           <main className="flex-1 min-w-0 min-h-0">
             <Outlet />
           </main>

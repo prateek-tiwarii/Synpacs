@@ -152,7 +152,6 @@ const MPR_MODES: {
     { id: "Sagittal", label: "Sagittal", description: "Side view" },
     { id: "2D-MPR", label: "2D MPR", description: "Three linked views" },
     { id: "3D-MPR", label: "3D MPR", description: "Oblique plane" },
-    { id: "MiniMIP", label: "MiniMIP", description: "Thin-slab Max Intensity Projection" },
   ];
 
 const LayoutPreview = ({
@@ -211,6 +210,8 @@ const ViewerHeader = () => {
     shortcuts,
     stackSpeed,
     setStackSpeed,
+    miniMIPIntensity,
+    setMiniMIPIntensity,
     showScoutLine,
     setShowScoutLine,
     isVRTActive,
@@ -241,9 +242,6 @@ const ViewerHeader = () => {
     }));
     saveToHistory();
   };
-
-
-  if (!caseData) return null;
 
   const handleRotateCw = () => {
     setViewTransform((prev) => ({
@@ -482,6 +480,14 @@ const ViewerHeader = () => {
         description: "Generate Multi-Planar Reconstruction views",
       },
       {
+        id: "MiniMIP",
+        label: "MiniMIP",
+        icon: <Layers size={18} />,
+        category: "Tools",
+        type: "dropdown",
+        description: "Thin-slab MIP with adjustable intensity",
+      },
+      {
         id: "SpineLabeling",
         label: "Spine Labeling",
         icon: <Pencil size={18} />,
@@ -659,7 +665,7 @@ const ViewerHeader = () => {
     ],
   );
 
-  const handleToolClick = (tool: any) => {
+  const handleToolClick = (tool: ViewerToolConfig) => {
     if (tool.disabled) return;
     if (tool.type === "tool") {
       setActiveTool(tool.id);
@@ -674,6 +680,35 @@ const ViewerHeader = () => {
         ? prev.filter((id) => id !== toolId)
         : [...prev, toolId],
     );
+  };
+
+  const existingMiniMIPSeries = selectedSeries
+    ? temporaryMPRSeries.find(
+        (ts) =>
+          ts.sourceSeriesId === selectedSeries._id && ts.mprMode === "MiniMIP",
+      ) ?? null
+    : null;
+  const isMiniMIPSelected =
+    !!existingMiniMIPSeries &&
+    existingMiniMIPSeries.id === selectedTemporarySeriesId;
+  const miniMIPSliceCount = miniMIPIntensity * 2 + 1;
+
+  const openOrGenerateMiniMIP = () => {
+    if (existingMiniMIPSeries) {
+      setSelectedTemporarySeriesId(existingMiniMIPSeries.id);
+      return;
+    }
+    requestMPRGeneration("MiniMIP");
+  };
+
+  const regenerateMiniMIP = () => {
+    requestMPRGeneration("MiniMIP");
+  };
+
+  const commitMiniMIPIntensity = () => {
+    if (isMiniMIPSelected) {
+      requestMPRGeneration("MiniMIP");
+    }
   };
 
   const renderLayoutDropdownContent = () => (
@@ -714,7 +749,56 @@ const ViewerHeader = () => {
     </DropdownMenuContent>
   );
 
-  // VRT mode: show minimal header with exit button only
+  const renderMiniMIPDropdownContent = () => (
+    <DropdownMenuContent
+      align="start"
+      className="w-64 bg-gray-900 border-gray-700 text-gray-200 p-3"
+    >
+      <DropdownMenuLabel className="text-gray-400 text-xs px-0">
+        MiniMIP
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator className="bg-gray-800 my-2" />
+
+      <button
+        type="button"
+        onClick={openOrGenerateMiniMIP}
+        className="w-full mb-2 px-3 py-2 rounded bg-gray-800 hover:bg-gray-700 text-left text-sm transition-colors"
+      >
+        {existingMiniMIPSeries ? "Open MiniMIP" : "Generate MiniMIP"}
+      </button>
+
+      <button
+        type="button"
+        onClick={regenerateMiniMIP}
+        className="w-full mb-3 px-3 py-2 rounded border border-gray-700 hover:border-gray-500 text-left text-sm transition-colors"
+      >
+        Apply Intensity
+      </button>
+
+      <div className="text-xs text-gray-400 mb-1">Intensity</div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">Low</span>
+        <input
+          type="range"
+          min="1"
+          max="20"
+          value={miniMIPIntensity}
+          onChange={(e) => setMiniMIPIntensity(Number(e.target.value))}
+          onMouseUp={commitMiniMIPIntensity}
+          onTouchEnd={commitMiniMIPIntensity}
+          className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
+        />
+        <span className="text-xs text-gray-500">High</span>
+      </div>
+      <div className="mt-2 text-xs text-gray-300 font-mono">
+        {miniMIPSliceCount} slices
+      </div>
+    </DropdownMenuContent>
+  );
+
+  if (!caseData) return null;
+
+  // 3D MPR mode: show minimal header with exit button only
   if (isVRTActive) {
     return (
       <TooltipProvider>
@@ -722,14 +806,14 @@ const ViewerHeader = () => {
           <div className="flex items-center justify-between px-4 py-2.5">
             <div className="flex items-center gap-3">
               <Box size={18} className="text-purple-400" />
-              <span className="text-sm font-medium text-white">3D Volume Rendering</span>
+              <span className="text-sm font-medium text-white">3D MPR View</span>
               <span className="text-xs text-gray-500">Press Escape or click Exit to return</span>
             </div>
             <button
               onClick={() => setIsVRTActive(false)}
               className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors font-medium"
             >
-              Exit VRT
+              Exit 3D MPR
             </button>
           </div>
         </header>
@@ -1019,6 +1103,36 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
+                  ) : tool.type === "dropdown" && tool.id === "MiniMIP" ? (
+                    <Tooltip key={tool.id}>
+                      <TooltipTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
+                                isMiniMIPSelected
+                                  ? "bg-blue-600 text-white"
+                                  : "text-gray-300 hover:bg-gray-700"
+                              }`}
+                            >
+                              {tool.icon}
+                              <span className="text-[10px] mt-1 whitespace-nowrap">
+                                {tool.label}
+                              </span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          {renderMiniMIPDropdownContent()}
+                        </DropdownMenu>
+                      </TooltipTrigger>
+                      {tool.description && (
+                        <TooltipContent
+                          side="bottom"
+                          className="bg-gray-800 border-gray-700 text-gray-200"
+                        >
+                          <p>{tool.description}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   ) : (
                     <ToolButton
                       key={tool.id}
@@ -1290,6 +1404,39 @@ const ViewerHeader = () => {
                               );
                             })}
                           </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TooltipTrigger>
+                      {tool.description && (
+                        <TooltipContent
+                          side="bottom"
+                          className="bg-gray-800 border-gray-700 text-gray-200"
+                        >
+                          <p>{tool.description}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  );
+                }
+                if (tool.type === "dropdown" && tool.id === "MiniMIP") {
+                  return (
+                    <Tooltip key={tool.id}>
+                      <TooltipTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
+                                isMiniMIPSelected
+                                  ? "bg-blue-600 text-white"
+                                  : "text-gray-300 hover:bg-gray-700"
+                              }`}
+                            >
+                              {tool.icon}
+                              <span className="text-[10px] mt-1 whitespace-nowrap">
+                                {tool.label}
+                              </span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          {renderMiniMIPDropdownContent()}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (

@@ -34,6 +34,7 @@ interface VRTViewerProps {
   volume: VolumeData;
   onExit: () => void;
   className?: string;
+  hideTools?: boolean;
 }
 
 // Helper to format DICOM date
@@ -45,7 +46,12 @@ const formatDicomDate = (dateStr: string) => {
   return `${day}/${month}/${year}`;
 };
 
-export function VRTViewer({ volume, onExit, className = "" }: VRTViewerProps) {
+export function VRTViewer({
+  volume,
+  onExit,
+  className = "",
+  hideTools = false,
+}: VRTViewerProps) {
   const { caseData, isFullscreen, toggleFullscreen } = useViewerContext();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -230,7 +236,7 @@ export function VRTViewer({ volume, onExit, className = "" }: VRTViewerProps) {
           onClick={onExit}
           className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
         >
-          Exit VRT
+          Exit 3D MPR
         </button>
       </div>
     );
@@ -238,64 +244,75 @@ export function VRTViewer({ volume, onExit, className = "" }: VRTViewerProps) {
 
   return (
     <div className={`flex-1 flex flex-col bg-black ${className}`}>
-      {/* VRT Toolbar Overlay */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm rounded-lg border border-gray-700 px-3 py-1.5">
-        {/* Preset selector */}
-        <div className="relative">
+      {/* 3D controls toolbar (hidden in focused 3D MPR mode) */}
+      {hideTools ? (
+        <div className="absolute top-3 right-3 z-20">
           <button
-            onClick={() => setShowPresets(!showPresets)}
-            className="flex items-center gap-1 text-xs text-gray-300 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+            onClick={onExit}
+            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors font-medium"
           >
-            {VRT_PRESETS[presetKey].name}
-            <ChevronDown size={12} />
+            Exit 3D MPR
           </button>
-          {showPresets && (
-            <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[140px] z-30">
-              {Object.entries(VRT_PRESETS).map(([key, preset]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setPresetKey(key);
-                    setShowPresets(false);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                    key === presetKey
-                      ? "bg-purple-600 text-white"
-                      : "text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  {preset.name}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
+      ) : (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-gray-900/90 backdrop-blur-sm rounded-lg border border-gray-700 px-3 py-1.5">
+          {/* Preset selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowPresets(!showPresets)}
+              className="flex items-center gap-1 text-xs text-gray-300 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors"
+            >
+              {VRT_PRESETS[presetKey].name}
+              <ChevronDown size={12} />
+            </button>
+            {showPresets && (
+              <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[140px] z-30">
+                {Object.entries(VRT_PRESETS).map(([key, preset]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setPresetKey(key);
+                      setShowPresets(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                      key === presetKey
+                        ? "bg-purple-600 text-white"
+                        : "text-gray-300 hover:bg-gray-700"
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* Opacity slider */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-gray-500">Opacity</span>
-          <input
-            type="range"
-            min="0.1"
-            max="5"
-            step="0.1"
-            value={opacityScale}
-            onChange={(e) => setOpacityScale(parseFloat(e.target.value))}
-            className="w-20 h-1 accent-purple-500"
-          />
+          {/* Opacity slider */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-500">Opacity</span>
+            <input
+              type="range"
+              min="0.1"
+              max="5"
+              step="0.1"
+              value={opacityScale}
+              onChange={(e) => setOpacityScale(parseFloat(e.target.value))}
+              className="w-20 h-1 accent-purple-500"
+            />
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-gray-600" />
+
+          {/* Exit button */}
+          <button
+            onClick={onExit}
+            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors font-medium"
+          >
+            Exit 3D MPR
+          </button>
         </div>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-gray-600" />
-
-        {/* Exit button */}
-        <button
-          onClick={onExit}
-          className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors font-medium"
-        >
-          Exit VRT
-        </button>
-      </div>
+      )}
 
       {/* WebGL Canvas */}
       <div
@@ -358,17 +375,19 @@ export function VRTViewer({ volume, onExit, className = "" }: VRTViewerProps) {
         </div>
 
         {/* Fullscreen Button - Bottom Right */}
-        <button
-          onClick={toggleFullscreen}
-          className="absolute bottom-2 right-2 bg-black/70 hover:bg-gray-800 p-2 rounded transition-colors z-10"
-          title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen (F)"}
-        >
-          {isFullscreen ? (
-            <Minimize size={18} className="text-white" />
-          ) : (
-            <Maximize size={18} className="text-white" />
-          )}
-        </button>
+        {!hideTools && (
+          <button
+            onClick={toggleFullscreen}
+            className="absolute bottom-2 right-2 bg-black/70 hover:bg-gray-800 p-2 rounded transition-colors z-10"
+            title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen (F)"}
+          >
+            {isFullscreen ? (
+              <Minimize size={18} className="text-white" />
+            ) : (
+              <Maximize size={18} className="text-white" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

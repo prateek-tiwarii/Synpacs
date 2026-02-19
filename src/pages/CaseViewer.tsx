@@ -98,6 +98,55 @@ const parseDroppedSeriesId = (event: DragEvent<HTMLDivElement>): string | null =
   return fallback?.trim() || null;
 };
 
+interface WindowLevelPreset {
+  windowWidth: number;
+  windowCenter: number;
+}
+
+const estimateWindowLevelFromSlices = (
+  slices: MPRSliceData[],
+  fallback: WindowLevelPreset,
+): WindowLevelPreset => {
+  const sampledValues: number[] = [];
+  const MAX_SAMPLES = 120000;
+  const TARGET_SAMPLES_PER_SLICE = 1024;
+
+  for (const slice of slices) {
+    const rawData = slice.rawData;
+    if (!rawData || rawData.length === 0) continue;
+    if (sampledValues.length >= MAX_SAMPLES) break;
+
+    const stride = Math.max(
+      1,
+      Math.floor(rawData.length / TARGET_SAMPLES_PER_SLICE),
+    );
+    for (
+      let i = 0;
+      i < rawData.length && sampledValues.length < MAX_SAMPLES;
+      i += stride
+    ) {
+      sampledValues.push(rawData[i]);
+    }
+  }
+
+  if (sampledValues.length < 64) {
+    return fallback;
+  }
+
+  sampledValues.sort((a, b) => a - b);
+  const lastIndex = sampledValues.length - 1;
+  const lower = sampledValues[Math.floor(lastIndex * 0.02)];
+  const upper = sampledValues[Math.ceil(lastIndex * 0.98)];
+
+  if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) {
+    return fallback;
+  }
+
+  const windowWidth = Math.max(1, upper - lower);
+  const windowCenter = lower + windowWidth / 2;
+  return { windowWidth, windowCenter };
+};
+
 // Self-contained pane viewer for multi-pane grid layout
 type PlaneOrientation = "Axial" | "Coronal" | "Sagittal";
 
@@ -393,6 +442,7 @@ const CaseViewer = () => {
     showScoutLine,
     isVRTActive,
     setIsVRTActive,
+    miniMIPIntensity,
   } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -400,6 +450,13 @@ const CaseViewer = () => {
 
   // VRT volume reference (kept across renders, not in context to avoid re-renders)
   const vrtVolumeRef = useRef<VolumeData | null>(null);
+
+  // Free the volume reference whenever 3D mode exits.
+  useEffect(() => {
+    if (!isVRTActive) {
+      vrtVolumeRef.current = null;
+    }
+  }, [isVRTActive]);
 
   // Track series IDs known to have no instances so we can skip them
   const emptySeriesIds = useRef<Set<string>>(new Set());
@@ -965,10 +1022,14 @@ const CaseViewer = () => {
         else if (mode === "MiniMIP") {
           const plane: PlaneType = "Axial";
           const totalSlices = getMaxIndex(volume, plane) + 1;
-          const slabHalfSize = 5; // ~11 slices per slab
+          const slabHalfSize = Math.max(0, Math.round(miniMIPIntensity));
           const slices = await generateSlices(totalSlices, "slices", (index) =>
             extractMiniMIPSlice(volume, plane, index, slabHalfSize),
           );
+          const miniMIPWindow = estimateWindowLevelFromSlices(slices, {
+            windowWidth,
+            windowCenter,
+          });
 
           const geoMiniMIP = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
@@ -979,8 +1040,8 @@ const CaseViewer = () => {
             slices,
             sliceCount: slices.length,
             createdAt: Date.now(),
-            windowCenter,
-            windowWidth,
+            windowCenter: miniMIPWindow.windowCenter,
+            windowWidth: miniMIPWindow.windowWidth,
             physicalAspectRatio: geoMiniMIP.aspectRatio,
           };
 
@@ -1031,6 +1092,7 @@ const CaseViewer = () => {
     addTemporaryMPRSeries,
     viewTransform.windowWidth,
     viewTransform.windowCenter,
+    miniMIPIntensity,
     setCrosshairIndices,
   ]);
 
@@ -1047,7 +1109,6 @@ const CaseViewer = () => {
   // VRT exit handler
   const handleExitVRT = useCallback(() => {
     setIsVRTActive(false);
-    vrtVolumeRef.current = null;
   }, [setIsVRTActive]);
 
   // Show VRT viewer when active
@@ -1057,6 +1118,7 @@ const CaseViewer = () => {
         <VRTViewer
           volume={vrtVolumeRef.current}
           onExit={handleExitVRT}
+          hideTools
           className="flex-1"
         />
       </div>

@@ -19,6 +19,69 @@ export interface VRTRendererState {
   volumeSpacing: [number, number, number];
 }
 
+function getNumericGLParameter(
+  gl: WebGL2RenderingContext,
+  pname: number,
+): number | null {
+  const value = gl.getParameter(pname);
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function exceedsLimit(
+  dims: [number, number, number],
+  limit: number,
+): boolean {
+  return dims[0] > limit || dims[1] > limit || dims[2] > limit;
+}
+
+function downsampleVolumeToLimit(
+  volume: VolumeData,
+  limit: number,
+): VolumeData {
+  if (limit <= 0) return volume;
+
+  const [cols, rows, slices] = volume.dimensions;
+  const stepX = Math.max(1, Math.ceil(cols / limit));
+  const stepY = Math.max(1, Math.ceil(rows / limit));
+  const stepZ = Math.max(1, Math.ceil(slices / limit));
+
+  if (stepX === 1 && stepY === 1 && stepZ === 1) {
+    return volume;
+  }
+
+  const nextCols = Math.ceil(cols / stepX);
+  const nextRows = Math.ceil(rows / stepY);
+  const nextSlices = Math.ceil(slices / stepZ);
+  const nextData = new Int16Array(nextCols * nextRows * nextSlices);
+
+  for (let z = 0; z < nextSlices; z++) {
+    const srcZ = Math.min(z * stepZ, slices - 1);
+    for (let y = 0; y < nextRows; y++) {
+      const srcY = Math.min(y * stepY, rows - 1);
+      for (let x = 0; x < nextCols; x++) {
+        const srcX = Math.min(x * stepX, cols - 1);
+        const srcIndex = srcZ * cols * rows + srcY * cols + srcX;
+        const dstIndex = z * nextCols * nextRows + y * nextCols + x;
+        nextData[dstIndex] = volume.data[srcIndex];
+      }
+    }
+  }
+
+  return {
+    ...volume,
+    data: nextData,
+    dimensions: [nextCols, nextRows, nextSlices],
+    // Preserve physical proportions after voxel decimation.
+    spacing: [
+      volume.spacing[0] * stepX,
+      volume.spacing[1] * stepY,
+      volume.spacing[2] * stepZ,
+    ],
+  };
+}
+
 function compileShader(
   gl: WebGL2RenderingContext,
   type: number,
@@ -91,6 +154,12 @@ function uploadVolumeTexture(
     gl.SHORT,
     volume.data,
   );
+
+  const error = gl.getError();
+  if (error !== gl.NO_ERROR) {
+    gl.deleteTexture(tex);
+    throw new Error(`Failed to upload 3D texture (WebGL error 0x${error.toString(16)})`);
+  }
 
   return tex;
 }
@@ -173,19 +242,50 @@ export function initRenderer(
     preserveDrawingBuffer: false,
   });
   if (!gl) throw new Error("WebGL2 not available");
+  if (gl.isContextLost()) {
+    throw new Error("WebGL context was lost while initializing 3D rendering");
+  }
 
-  // Check max 3D texture size
-  const maxSize = gl.getParameter(gl.MAX_3D_TEXTURE_SIZE);
-  const [cols, rows, slices] = volume.dimensions;
-  if (cols > maxSize || rows > maxSize || slices > maxSize) {
-    throw new Error(
-      `Volume dimensions (${cols}x${rows}x${slices}) exceed GPU limit (${maxSize})`,
+  // Check max 3D texture size and pre-fit large volumes when capability is known.
+  const max3DSize = getNumericGLParameter(gl, gl.MAX_3D_TEXTURE_SIZE);
+  let renderVolume = volume;
+  if (max3DSize !== null && exceedsLimit(volume.dimensions, max3DSize)) {
+    const fitted = downsampleVolumeToLimit(volume, max3DSize);
+    console.warn(
+      `[VRT] Downsampled volume to fit GPU limit ${max3DSize}: ${volume.dimensions.join("x")} -> ${fitted.dimensions.join("x")}`,
     );
+    renderVolume = fitted;
   }
 
   const program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);
   const uniforms = getUniformLocations(gl, program);
-  const volumeTexture = uploadVolumeTexture(gl, volume);
+  let volumeTexture: WebGLTexture;
+  try {
+    volumeTexture = uploadVolumeTexture(gl, renderVolume);
+  } catch (initialUploadError) {
+    // If upload still fails (or capability is unknown), retry once with extra decimation.
+    const largestDim = Math.max(
+      renderVolume.dimensions[0],
+      renderVolume.dimensions[1],
+      renderVolume.dimensions[2],
+    );
+    const retryLimit = Math.max(64, Math.floor(largestDim / 2));
+    const retryVolume = downsampleVolumeToLimit(renderVolume, retryLimit);
+    const didDownsample =
+      retryVolume.dimensions[0] !== renderVolume.dimensions[0] ||
+      retryVolume.dimensions[1] !== renderVolume.dimensions[1] ||
+      retryVolume.dimensions[2] !== renderVolume.dimensions[2];
+
+    if (!didDownsample) {
+      throw initialUploadError;
+    }
+
+    console.warn(
+      `[VRT] Retrying texture upload with additional downsampling: ${renderVolume.dimensions.join("x")} -> ${retryVolume.dimensions.join("x")}`,
+    );
+    renderVolume = retryVolume;
+    volumeTexture = uploadVolumeTexture(gl, renderVolume);
+  }
   const tfTexture = createTransferFunctionTexture(gl, tfData);
 
   // Create an empty VAO (required for WebGL2 drawArrays)
@@ -203,8 +303,16 @@ export function initRenderer(
     tfTexture,
     vao,
     uniforms,
-    volumeDim: [cols, rows, slices],
-    volumeSpacing: [...volume.spacing],
+    volumeDim: [
+      renderVolume.dimensions[0],
+      renderVolume.dimensions[1],
+      renderVolume.dimensions[2],
+    ],
+    volumeSpacing: [
+      renderVolume.spacing[0],
+      renderVolume.spacing[1],
+      renderVolume.spacing[2],
+    ],
   };
 }
 

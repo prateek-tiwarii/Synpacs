@@ -77,8 +77,19 @@ export function TemporaryMPRSeriesViewer({
   const bitmapCacheRef = useRef<Map<number, ImageBitmap>>(new Map());
   const imageDataCacheRef = useRef<Map<number, ImageData>>(new Map());
   const pendingBitmapGenerationRef = useRef<Set<number>>(new Set());
+  const bitmapGenerationEpochRef = useRef(0);
   const wheelAccumulator = useRef(0);
   const wheelRAF = useRef<number | null>(null);
+  const effectiveWindowWidth = viewTransform.windowWidth ?? series.windowWidth;
+  const effectiveWindowCenter = viewTransform.windowCenter ?? series.windowCenter;
+
+  const clearRenderedCaches = useCallback(() => {
+    bitmapGenerationEpochRef.current += 1;
+    imageDataCacheRef.current.clear();
+    pendingBitmapGenerationRef.current.clear();
+    bitmapCacheRef.current.forEach((bitmap) => bitmap.close());
+    bitmapCacheRef.current.clear();
+  }, []);
 
   const updateIndexBySteps = useCallback(
     (steps: number) => {
@@ -104,8 +115,8 @@ export function TemporaryMPRSeriesViewer({
         slice.rawData,
         slice.width,
         slice.height,
-        series.windowCenter,
-        series.windowWidth,
+        effectiveWindowCenter,
+        effectiveWindowWidth,
       );
       imageDataCacheRef.current.set(index, generated);
       if (imageDataCacheRef.current.size > MAX_IMAGE_DATA_CACHE) {
@@ -116,7 +127,7 @@ export function TemporaryMPRSeriesViewer({
       }
       return generated;
     },
-    [series.slices, series.windowCenter, series.windowWidth],
+    [series.slices, effectiveWindowCenter, effectiveWindowWidth],
   );
 
   const ensureBitmapForIndex = useCallback(
@@ -129,9 +140,14 @@ export function TemporaryMPRSeriesViewer({
       const imageData = getSliceImageData(index);
       if (!imageData) return;
 
+      const generationEpoch = bitmapGenerationEpochRef.current;
       pendingBitmapGenerationRef.current.add(index);
       createImageBitmap(imageData)
         .then((bitmap) => {
+          if (bitmapGenerationEpochRef.current !== generationEpoch) {
+            bitmap.close();
+            return;
+          }
           const existing = bitmapCacheRef.current.get(index);
           if (existing) {
             existing.close();
@@ -164,11 +180,12 @@ export function TemporaryMPRSeriesViewer({
       wheelRAF.current = null;
     }
 
-    imageDataCacheRef.current.clear();
-    pendingBitmapGenerationRef.current.clear();
-    bitmapCacheRef.current.forEach((bitmap) => bitmap.close());
-    bitmapCacheRef.current.clear();
-  }, [series.id, series.windowCenter, series.windowWidth]);
+    clearRenderedCaches();
+  }, [series.id, series.createdAt, clearRenderedCaches]);
+
+  useEffect(() => {
+    clearRenderedCaches();
+  }, [effectiveWindowCenter, effectiveWindowWidth, clearRenderedCaches]);
 
   useEffect(() => {
     const bitmapCache = bitmapCacheRef.current;
@@ -352,12 +369,28 @@ export function TemporaryMPRSeriesViewer({
         return;
       }
 
+      if (activeTool === "Contrast") {
+        setViewTransform((prev) => {
+          const currentWidth = prev.windowWidth ?? series.windowWidth;
+          const currentCenter = prev.windowCenter ?? series.windowCenter;
+          const widthDelta = deltaX * 0.5;
+          const centerDelta = deltaY * 0.5;
+
+          return {
+            ...prev,
+            windowWidth: Math.max(1, currentWidth + widthDelta),
+            windowCenter: currentCenter - centerDelta,
+          };
+        });
+        return;
+      }
+
       if (Math.abs(deltaY) >= 2) {
         const step = deltaY > 0 ? 1 : -1;
         updateIndexBySteps(step);
       }
     },
-    [activeTool, setViewTransform, updateIndexBySteps],
+    [activeTool, setViewTransform, updateIndexBySteps, series.windowWidth, series.windowCenter],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -425,6 +458,8 @@ export function TemporaryMPRSeriesViewer({
               ? "cursor-zoom-in"
               : activeTool === "Pan"
               ? "cursor-grab active:cursor-grabbing"
+              : activeTool === "Contrast"
+              ? "cursor-crosshair"
               : "cursor-ns-resize"
           }
           style={{
@@ -478,8 +513,8 @@ export function TemporaryMPRSeriesViewer({
                 <span className="font-bold">Generated MPR Series</span>
                 <span>Slices: {series.sliceCount}</span>
                 <span>
-                  W/L: {series.windowWidth.toFixed(0)} /{" "}
-                  {series.windowCenter.toFixed(0)}
+                  W/L: {effectiveWindowWidth.toFixed(0)} /{" "}
+                  {effectiveWindowCenter.toFixed(0)}
                 </span>
               </div>
 
