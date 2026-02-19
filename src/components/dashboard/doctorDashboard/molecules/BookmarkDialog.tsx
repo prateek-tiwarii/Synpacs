@@ -38,7 +38,23 @@ const BookmarkDialog = ({
         setError(null);
 
         try {
-            await apiService.bookmarkCase(patient._id, note.trim() || undefined);
+            // Bookmark the case — ignore "already bookmarked" since we may just be adding a note
+            try {
+                await apiService.bookmarkCase(patient._id);
+            } catch (bookmarkErr: any) {
+                const msg: string = bookmarkErr?.message || '';
+                if (!msg.toLowerCase().includes('already bookmarked')) {
+                    throw bookmarkErr;
+                }
+            }
+
+            // If a note was entered, save it as a bookmark note
+            if (note.trim()) {
+                await apiService.createCaseNote(patient._id, {
+                    note: note.trim(),
+                    flag_type: 'bookmark_note',
+                });
+            }
 
             setNote('');
             onOpenChange(false);

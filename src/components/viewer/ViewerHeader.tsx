@@ -127,7 +127,7 @@ const ToolButton = ({
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
 import { useViewerContext } from "../ViewerLayout";
-import type { GridLayout, MPRMode } from "../ViewerLayout";
+import type { GridLayout, MPRMode, ViewerTool } from "../ViewerLayout";
 
 // Grid layout options
 const GRID_LAYOUTS: {
@@ -385,18 +385,31 @@ const ViewerHeader = () => {
     setIsVRTActive,
   ]);
 
-  interface ViewerToolConfig {
-    id: string;
-    label: string;
-    icon: React.ReactNode;
-    category: string;
-    type: "tool" | "action" | "dropdown";
-    active?: boolean;
-    onClick?: () => void;
-    disabled?: boolean;
-    description?: string;
-    isToggle?: boolean;
-  }
+  type ViewerToolConfig =
+    | {
+        id: ViewerTool;
+        label: string;
+        icon: React.ReactNode;
+        category: string;
+        type: "tool";
+        active?: boolean;
+        onClick?: () => void;
+        disabled?: boolean;
+        description?: string;
+        isToggle?: boolean;
+      }
+    | {
+        id: string;
+        label: string;
+        icon: React.ReactNode;
+        category: string;
+        type: "action" | "dropdown";
+        active?: boolean;
+        onClick?: () => void;
+        disabled?: boolean;
+        description?: string;
+        isToggle?: boolean;
+      };
 
   const AVAILABLE_TOOLS: ViewerToolConfig[] = useMemo(
     () => [

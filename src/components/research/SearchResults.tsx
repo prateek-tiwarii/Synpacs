@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Download, FileOutput, X, ImageIcon, ClipboardCheck, FolderOpen, MessageSquare, Bookmark, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { apiService } from '@/lib/api';
@@ -80,100 +80,89 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
     }
   }, [columnVisibility]);
 
-  const fetchPatients = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const calculateAge = (dob: string): string => {
+    if (!dob || dob.length !== 8) return '';
+    const year = parseInt(dob.substring(0, 4));
+    const month = parseInt(dob.substring(4, 6)) - 1;
+    const day = parseInt(dob.substring(6, 8));
+    const birthDate = new Date(year, month, day);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age.toString();
+  };
 
-      // Build API filters from SearchFilters
-      const apiFilters: any = {};
+  // Fetch patients whenever filters or pagination change
+  useEffect(() => {
+    let cancelled = false;
 
-      // Date range
-      if (filters.startDate) apiFilters.start_date = filters.startDate;
-      if (filters.endDate) apiFilters.end_date = filters.endDate;
+    const fetchPatients = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-      // Age range
-      if (filters.minAge) apiFilters.min_age = filters.minAge;
-      if (filters.maxAge) apiFilters.max_age = filters.maxAge;
+        const apiFilters: any = {};
+        if (filters.startDate) apiFilters.start_date = filters.startDate;
+        if (filters.endDate) apiFilters.end_date = filters.endDate;
+        // Note: min_age, max_age, keyword are handled client-side (backend does not support them)
+        if (filters.sex === 'M') apiFilters.gender = 'M';
+        if (filters.sex === 'F') apiFilters.gender = 'F';
+        if (filters.modality) apiFilters.modality = filters.modality.toUpperCase();
 
-      // Gender
-      if (filters.sex === 'M') apiFilters.gender = 'M';
-      if (filters.sex === 'F') apiFilters.gender = 'F';
+        const response = await apiService.getAllCasesWithFilters(currentPage, pageSize, apiFilters) as any;
+        if (cancelled) return;
 
-      // Modality
-      if (filters.modality) {
-        apiFilters.modality = filters.modality.toUpperCase();
-      }
-
-      // Keyword search
-      if (filters.keyword && filters.keyword.trim()) {
-        apiFilters.keyword = filters.keyword.trim();
-      }
-
-      const response = await apiService.getAllCasesWithFilters(currentPage, pageSize, apiFilters) as any;
-
-      if (response.success && response.data?.cases) {
-        // Update pagination info
-        if (response.pagination) {
-          setTotalCases(response.pagination.totalCases || 0);
-          setTotalPages(response.pagination.totalPages || 1);
-        }
-        // Reported-only rule: include only cases with non-draft report
-        let filteredData = [...response.data.cases].filter((caseItem: any) => {
-          const report = caseItem.attached_report;
-          return Boolean(report) && !Boolean(report?.is_draft);
-        });
-
-        // Center filter (client-side) – aligns with selectable centers
-        if (filters.centerId && filters.centerId !== 'all') {
-          filteredData = filteredData.filter((caseItem: any) => caseItem.hospital_id === filters.centerId);
-        }
-
-        const calculateAge = (dob: string): string => {
-          if (!dob || dob.length !== 8) return '';
-          const year = parseInt(dob.substring(0, 4));
-          const month = parseInt(dob.substring(4, 6)) - 1;
-          const day = parseInt(dob.substring(6, 8));
-          const birthDate = new Date(year, month, day);
-          const today = new Date();
-          let age = today.getFullYear() - birthDate.getFullYear();
-          const monthDiff = today.getMonth() - birthDate.getMonth();
-          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
+        if (response.success && response.data?.cases) {
+          if (response.pagination) {
+            setTotalCases(response.pagination.totalCases || 0);
+            setTotalPages(response.pagination.totalPages || 1);
           }
-          return age.toString();
-        };
 
-        // Age range filter (client-side, based on calculated age)
-        const minAge = filters.minAge ? Number(filters.minAge) : undefined;
-        const maxAge = filters.maxAge ? Number(filters.maxAge) : undefined;
-        if (minAge !== undefined || maxAge !== undefined) {
-          filteredData = filteredData.filter((caseItem: any) => {
-            const age = Number(calculateAge(caseItem.patient?.dob || ''));
-            if (Number.isNaN(age)) return false;
-            if (minAge !== undefined && age < minAge) return false;
-            if (maxAge !== undefined && age > maxAge) return false;
-            return true;
-          });
-        }
+          // Start from all cases returned by the API.
+          // (PACS list shows all cases; restricting to only non-draft reports can hide all results.)
+          let filteredData = [...response.data.cases];
 
-        const mappedPatients: Patient[] = filteredData.map((caseItem: any) => {
-          const calculateAge = (dob: string): string => {
-            if (!dob || dob.length !== 8) return '';
-            const year = parseInt(dob.substring(0, 4));
-            const month = parseInt(dob.substring(4, 6)) - 1;
-            const day = parseInt(dob.substring(6, 8));
-            const birthDate = new Date(year, month, day);
-            const today = new Date();
-            let age = today.getFullYear() - birthDate.getFullYear();
-            const monthDiff = today.getMonth() - birthDate.getMonth();
-            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-              age--;
-            }
-            return age.toString();
-          };
+          // Center filter (client-side)
+          if (filters.centerId && filters.centerId !== 'all') {
+            filteredData = filteredData.filter((caseItem: any) => caseItem.hospital_id === filters.centerId);
+          }
 
-          return {
+          // Age range filter (client-side — backend does not support min_age/max_age)
+          const minAge = filters.minAge ? Number(filters.minAge) : undefined;
+          const maxAge = filters.maxAge ? Number(filters.maxAge) : undefined;
+          if (minAge !== undefined || maxAge !== undefined) {
+            filteredData = filteredData.filter((caseItem: any) => {
+              const age = Number(calculateAge(caseItem.patient?.dob || ''));
+              if (Number.isNaN(age)) return false;
+              if (minAge !== undefined && age < minAge) return false;
+              if (maxAge !== undefined && age > maxAge) return false;
+              return true;
+            });
+          }
+
+          // Keyword filter (client-side — backend does not support keyword search)
+          if (filters.keyword && filters.keyword.trim()) {
+            const kw = filters.keyword.trim().toLowerCase();
+            filteredData = filteredData.filter((caseItem: any) => {
+              const name = (caseItem.patient?.name || '').toLowerCase();
+              const accession = (caseItem.accession_number || '').toLowerCase();
+              const description = (caseItem.description || '').toLowerCase();
+              const caseUid = (caseItem.case_uid || '').toLowerCase();
+              const patientId = (caseItem.patient?.patient_id || '').toLowerCase();
+              return (
+                name.includes(kw) ||
+                accession.includes(kw) ||
+                description.includes(kw) ||
+                caseUid.includes(kw) ||
+                patientId.includes(kw)
+              );
+            });
+          }
+
+          const mappedPatients: Patient[] = filteredData.map((caseItem: any) => ({
             _id: caseItem._id,
             name: caseItem.patient?.name || 'N/A',
             pac_patinet_id: caseItem.patient?.patient_id || '',
@@ -199,26 +188,26 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
             updatedAt: caseItem.updatedAt || '',
             attached_report: caseItem.attached_report || null,
             patient: caseItem.patient,
-          } as Patient;
-        });
-        setPatients(mappedPatients);
-      } else {
-        setError(response.message || 'Failed to fetch patients');
+          } as Patient));
+          setPatients(mappedPatients);
+        } else {
+          setError(response.message || 'Failed to fetch patients');
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error('Error fetching patients:', err);
+          setError(err.message || 'Failed to fetch patients');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (err: any) {
-      console.error('Error fetching patients:', err);
-      setError(err.message || 'Failed to fetch patients');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters]);
+    };
 
-  // Fetch patients on mount and when filters or pagination change
-  useEffect(() => {
     fetchPatients();
-  }, [fetchPatients, currentPage, pageSize]);
+    return () => { cancelled = true; };
+  }, [filters, currentPage, pageSize]);
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 whenever filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [filters]);

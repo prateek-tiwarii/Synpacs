@@ -54,36 +54,7 @@ const TAB_TO_REPORTING_STATUS_MAP: Record<TabType, string> = {
     'All Cases': 'all',
 };
 
-const parseDicomDateTime = (dateStr?: string, timeStr?: string): number | null => {
-    if (!dateStr || dateStr.length !== 8) return null;
 
-    const year = Number(dateStr.substring(0, 4));
-    const month = Number(dateStr.substring(4, 6));
-    const day = Number(dateStr.substring(6, 8));
-
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-
-    const safeTime = (timeStr || '').split('.')[0].padEnd(6, '0');
-    const hour = Number(safeTime.substring(0, 2) || '0');
-    const minute = Number(safeTime.substring(2, 4) || '0');
-    const second = Number(safeTime.substring(4, 6) || '0');
-
-    const timestamp = new Date(year, month - 1, day, hour, minute, second).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const parseDateTimeValue = (value?: string | null): number | null => {
-    if (!value) return null;
-    const timestamp = new Date(value).getTime();
-    return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-const sortNullableTimestampValues = (a: number | null, b: number | null): number => {
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a - b;
-};
 
 interface AssignedPatientsTableProps {
     setSelectedPatient: (patient: Patient | null) => void;
@@ -111,8 +82,6 @@ const AssignedPatientsTable = ({
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
     const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<Patient | null>(null);
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
 
     // Initialize column visibility from localStorage or use default
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
@@ -324,20 +293,6 @@ const AssignedPatientsTable = ({
     useEffect(() => {
         fetchAssignedPatients();
     }, [fetchAssignedPatients]);
-
-    // Paginated patients
-    const paginatedPatients = useMemo(() => {
-        const startIndex = (currentPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        return patients.slice(startIndex, endIndex);
-    }, [patients, currentPage, pageSize]);
-
-    const totalPages = Math.ceil(patients.length / pageSize);
-
-    // Reset to page 1 when filters or tab change
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [filters, activeTab]);
 
     const handleZipDownload = (case_id: string, patient_name?: string) => {
         setSelectedCaseForDownload({
@@ -944,7 +899,7 @@ const AssignedPatientsTable = ({
                 </div>
             )}
             <DataTable
-                data={paginatedPatients}
+                data={patients}
                 columns={columns}
                 isLoading={isLoading}
                 error={error}
@@ -961,53 +916,8 @@ const AssignedPatientsTable = ({
                 enableColumnResizing={true}
                 columnSizing={columnSizing}
                 onColumnSizingChange={setColumnSizing}
+                defaultPageSize={20}
             />
-            {/* Pagination Footer */}
-            {!isLoading && !error && patients.length > 0 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-linear-to-r from-slate-50 to-white border-t border-slate-100 mt-2">
-                    <div className="flex items-center gap-4">
-                        <span className="text-xs text-slate-600">
-                            Showing <span className="font-semibold">{Math.min((currentPage - 1) * pageSize + 1, patients.length)}</span> to{' '}
-                            <span className="font-semibold">{Math.min(currentPage * pageSize, patients.length)}</span> of{' '}
-                            <span className="font-semibold">{patients.length}</span> patients
-                        </span>
-                        <select
-                            value={pageSize}
-                            onChange={(e) => {
-                                setPageSize(Number(e.target.value));
-                                setCurrentPage(1);
-                            }}
-                            className="text-xs border border-slate-200 rounded px-2 py-1"
-                        >
-                            <option value={10}>10 per page</option>
-                            <option value={20}>20 per page</option>
-                            <option value={50}>50 per page</option>
-                            <option value={100}>100 per page</option>
-                        </select>
-                    </div>
-                    {totalPages > 1 && (
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                disabled={currentPage === 1}
-                                className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Previous
-                            </button>
-                            <span className="text-xs text-slate-600 font-medium">
-                                Page {currentPage} of {totalPages}
-                            </span>
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                disabled={currentPage === totalPages}
-                                className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
             <BookmarkDialog
                 open={bookmarkDialogOpen}
                 onOpenChange={setBookmarkDialogOpen}

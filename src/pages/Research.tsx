@@ -20,7 +20,7 @@ interface SearchFilters {
 
 const Research = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(true);
   const [exportType, setExportType] = useState<'search' | 'bookmarks' | 'audit'>('search');
   const [selectedBookmarkedCases, setSelectedBookmarkedCases] = useState<any[]>([]);
   const [auditExportParams, setAuditExportParams] = useState<{
