@@ -27,6 +27,8 @@ interface TemporaryMPRSeriesViewerProps {
   ) => void;
   isFullscreenOverride?: boolean;
   onToggleFullscreenOverride?: () => void;
+  /** Lazy slice provider for on-demand MIP computation via Web Worker */
+  onSliceNeeded?: (index: number) => Promise<Int16Array | null>;
 }
 
 // Helper to format DICOM date (YYYYMMDD) to readable format
@@ -48,6 +50,7 @@ export function TemporaryMPRSeriesViewer({
   onViewTransformChangeOverride,
   isFullscreenOverride,
   onToggleFullscreenOverride,
+  onSliceNeeded,
 }: TemporaryMPRSeriesViewerProps) {
   const {
     activeTool,
@@ -80,6 +83,12 @@ export function TemporaryMPRSeriesViewer({
   const bitmapGenerationEpochRef = useRef(0);
   const wheelAccumulator = useRef(0);
   const wheelRAF = useRef<number | null>(null);
+  // Lazy MIP slice cache: stores rawData computed on-demand via onSliceNeeded
+  const lazyCacheRef = useRef<Map<number, Int16Array>>(new Map());
+  const pendingLazyRequestsRef = useRef<Set<number>>(new Set());
+  const [lazyCacheVersion, setLazyCacheVersion] = useState(0);
+  const prevSlabRef = useRef(series.projectionSlabHalfSize);
+
   const effectiveWindowWidth = viewTransform.windowWidth ?? series.windowWidth;
   const effectiveWindowCenter = viewTransform.windowCenter ?? series.windowCenter;
 
@@ -90,6 +99,15 @@ export function TemporaryMPRSeriesViewer({
     bitmapCacheRef.current.forEach((bitmap) => bitmap.close());
     bitmapCacheRef.current.clear();
   }, []);
+
+  // Clear lazy MIP cache when slab size changes
+  useEffect(() => {
+    if (series.projectionSlabHalfSize !== prevSlabRef.current) {
+      prevSlabRef.current = series.projectionSlabHalfSize;
+      lazyCacheRef.current.clear();
+      pendingLazyRequestsRef.current.clear();
+    }
+  }, [series.projectionSlabHalfSize]);
 
   const updateIndexBySteps = useCallback(
     (steps: number) => {
@@ -109,10 +127,26 @@ export function TemporaryMPRSeriesViewer({
 
       const cached = imageDataCacheRef.current.get(index);
       if (cached) return cached;
-      if (!slice.rawData) return null;
+
+      // Check series rawData first, fall back to lazy MIP cache
+      let rawData = slice.rawData ?? lazyCacheRef.current.get(index);
+      if (!rawData) {
+        // Request lazy computation via Web Worker if provider exists
+        if (onSliceNeeded && !pendingLazyRequestsRef.current.has(index)) {
+          pendingLazyRequestsRef.current.add(index);
+          onSliceNeeded(index).then((data) => {
+            pendingLazyRequestsRef.current.delete(index);
+            if (data) {
+              lazyCacheRef.current.set(index, data);
+              setLazyCacheVersion((v) => v + 1);
+            }
+          });
+        }
+        return null;
+      }
 
       const generated = applyWindowLevel(
-        slice.rawData,
+        rawData,
         slice.width,
         slice.height,
         effectiveWindowCenter,
@@ -127,7 +161,8 @@ export function TemporaryMPRSeriesViewer({
       }
       return generated;
     },
-    [series.slices, effectiveWindowCenter, effectiveWindowWidth],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [series.slices, effectiveWindowCenter, effectiveWindowWidth, onSliceNeeded, lazyCacheVersion],
   );
 
   const ensureBitmapForIndex = useCallback(
@@ -181,11 +216,21 @@ export function TemporaryMPRSeriesViewer({
     }
 
     clearRenderedCaches();
-  }, [series.id, series.createdAt, clearRenderedCaches]);
+    lazyCacheRef.current.clear();
+    pendingLazyRequestsRef.current.clear();
+  }, [series.id, clearRenderedCaches]);
+
+  useEffect(() => {
+    clearRenderedCaches();
+  }, [series.createdAt, clearRenderedCaches]);
 
   useEffect(() => {
     clearRenderedCaches();
   }, [effectiveWindowCenter, effectiveWindowWidth, clearRenderedCaches]);
+
+  useEffect(() => {
+    setCurrentIndex((prev) => Math.max(0, Math.min(prev, series.sliceCount - 1)));
+  }, [series.sliceCount]);
 
   useEffect(() => {
     const bitmapCache = bitmapCacheRef.current;
@@ -239,16 +284,34 @@ export function TemporaryMPRSeriesViewer({
       if (imageData) {
         ctx.putImageData(imageData, 0, 0);
         ensureBitmapForIndex(currentIndex);
-      } else {
+      } else if (!onSliceNeeded) {
+        // Only clear if not using lazy loading — with lazy loading we keep the
+        // last rendered frame visible while the worker computes the next slice.
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
+      // When onSliceNeeded is active and data isn't ready yet, the previous
+      // frame stays visible (~20ms until worker delivers the new slice).
     }
 
     // Pre-warm nearby slices so wheel scrolling feels smooth.
-    const nearby = [currentIndex + 1, currentIndex - 1, currentIndex + 2, currentIndex - 2];
+    const nearby = [currentIndex + 1, currentIndex - 1, currentIndex + 2, currentIndex - 2, currentIndex + 3, currentIndex - 3];
     nearby.forEach((idx) => {
       if (idx >= 0 && idx < series.sliceCount) {
         ensureBitmapForIndex(idx);
+        // Also trigger lazy MIP prefetch if provider exists
+        if (
+          onSliceNeeded &&
+          !series.slices[idx]?.rawData &&
+          !lazyCacheRef.current.has(idx) &&
+          !pendingLazyRequestsRef.current.has(idx)
+        ) {
+          pendingLazyRequestsRef.current.add(idx);
+          onSliceNeeded(idx).then((data) => {
+            pendingLazyRequestsRef.current.delete(idx);
+            if (data) lazyCacheRef.current.set(idx, data);
+            // No version bump for prefetch — avoids unnecessary re-renders
+          });
+        }
       }
     });
 
@@ -272,7 +335,8 @@ export function TemporaryMPRSeriesViewer({
       canvas.style.width = `${displayWidth}px`;
       canvas.style.height = `${displayHeight}px`;
     }
-  }, [series, currentIndex, getSliceImageData, ensureBitmapForIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series, currentIndex, getSliceImageData, ensureBitmapForIndex, onSliceNeeded, lazyCacheVersion]);
 
   // Render scout lines on overlay canvas (CSS-display-sized to avoid scaling issues)
   useEffect(() => {

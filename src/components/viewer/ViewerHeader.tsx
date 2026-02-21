@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, memo, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   ZoomIn,
@@ -126,20 +126,60 @@ const ToolButton = ({
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
+<<<<<<< HEAD
 import { useViewerContext } from "../ViewerLayout";
 import type { GridLayout, MPRMode, ViewerTool } from "../ViewerLayout";
+=======
+const MOUSE_BUTTON_LABELS: { button: MouseButton; label: string; color: string }[] = [
+  { button: 0, label: "L", color: "bg-blue-400" },
+  { button: 1, label: "M", color: "bg-green-400" },
+  { button: 2, label: "R", color: "bg-amber-400" },
+];
+>>>>>>> 2a77d65 (feat: Implement MIP projection via Web Worker and enhance viewer functionality)
 
-// Grid layout options
-const GRID_LAYOUTS: {
-  id: GridLayout;
-  label: string;
-  rows: number;
-  cols: number;
-}[] = [
-    { id: "1x1", label: "1×1", rows: 1, cols: 1 },
-    { id: "1x2", label: "1×2", rows: 1, cols: 2 },
-    { id: "2x2", label: "2×2", rows: 2, cols: 2 },
-  ];
+const VIEWER_TOOL_IDS = new Set<string>([
+  "Stack", "Pan", "Zoom", "Contrast", "FreeRotate", "SpineLabeling",
+  "Length", "Ellipse", "Rectangle", "Freehand", "Text", "Angle", "CobbsAngle", "HU",
+]);
+
+const isBindableTool = (toolId: string): toolId is ViewerTool =>
+  VIEWER_TOOL_IDS.has(toolId);
+
+const MouseBindingBar = memo(({ toolId, mouseBindings, onToggle }: {
+  toolId: ViewerTool;
+  mouseBindings: MouseButtonBindings;
+  onToggle: (button: MouseButton, tool: ViewerTool) => void;
+}) => (
+  <div className="flex w-full justify-center gap-[2px] px-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
+    {MOUSE_BUTTON_LABELS.map(({ button, label, color }) => {
+      const isActive = mouseBindings[button] === toolId;
+      return (
+        <button
+          key={button}
+          type="button"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onToggle(button, toolId);
+          }}
+          className={`h-[10px] flex-1 rounded-sm transition-colors cursor-pointer text-[6px] leading-[10px] font-bold select-none ${
+            isActive ? `${color} text-gray-900` : "bg-gray-700/60 hover:bg-gray-500 text-gray-500"
+          }`}
+          title={`Assign ${label === "L" ? "Left" : label === "M" ? "Middle" : "Right"} click → ${toolId}`}
+        >
+          {label}
+        </button>
+      );
+    })}
+  </div>
+));
+
+import { useViewerContext } from "../ViewerLayout";
+import type { MPRMode, ViewerTool, MouseButton, MouseButtonBindings } from "../ViewerLayout";
+import { buildGridLayoutId, parseGridLayout } from "@/lib/gridLayout";
+
+const LAYOUT_PICKER_MAX_ROWS = 5;
+const LAYOUT_PICKER_MAX_COLS = 5;
 
 // MPR mode options
 const MPR_MODES: {
@@ -153,35 +193,6 @@ const MPR_MODES: {
     { id: "2D-MPR", label: "2D MPR", description: "Three linked views" },
     { id: "3D-MPR", label: "3D MPR", description: "Oblique plane" },
   ];
-
-const LayoutPreview = ({
-  rows,
-  cols,
-  isSelected,
-}: {
-  rows: number;
-  cols: number;
-  isSelected: boolean;
-}) => (
-  <div className="grid grid-cols-2 gap-1 p-1 rounded border border-gray-700 bg-gray-950/60">
-    {Array.from({ length: 4 }).map((_, index) => {
-      const r = Math.floor(index / 2);
-      const c = index % 2;
-      const isFilled = r < rows && c < cols;
-      return (
-        <div
-          key={`${r}-${c}`}
-          className={`h-3 w-3 rounded-[2px] ${isFilled
-            ? isSelected
-              ? "bg-amber-300"
-              : "bg-amber-500/80"
-            : "bg-gray-700"
-            }`}
-        />
-      );
-    })}
-  </div>
-);
 
 const ViewerHeader = () => {
   const {
@@ -212,17 +223,36 @@ const ViewerHeader = () => {
     setStackSpeed,
     miniMIPIntensity,
     setMiniMIPIntensity,
+    mipIntensity,
+    setMIPIntensity,
     showScoutLine,
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    mouseBindings,
+    setMouseBinding,
   } = useViewerContext();
+
+  const toggleMouseBinding = useCallback((button: MouseButton, tool: ViewerTool) => {
+    if (mouseBindings[button] === tool) {
+      setMouseBinding(button, null);
+    } else {
+      setMouseBinding(button, tool);
+    }
+  }, [mouseBindings, setMouseBinding]);
 
   const [activeTab, setActiveTab] = useState<
     "Favourites" | "Tools" | "Measurement"
   >("Favourites");
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
+  const [isMiniMIPMenuOpen, setIsMiniMIPMenuOpen] = useState(false);
+  const [isMIPMenuOpen, setIsMIPMenuOpen] = useState(false);
+  const [layoutHover, setLayoutHover] = useState<{
+    rows: number;
+    cols: number;
+  } | null>(null);
 
   const [favourites, setFavourites] = useState<string[]>(() => {
     const saved = localStorage.getItem("viewer_favourites");
@@ -232,6 +262,18 @@ const ViewerHeader = () => {
   useEffect(() => {
     localStorage.setItem("viewer_favourites", JSON.stringify(favourites));
   }, [favourites]);
+
+  const selectedLayout = useMemo(
+    () => parseGridLayout(gridLayout) ?? { rows: 1, cols: 1 },
+    [gridLayout],
+  );
+  const previewLayout = layoutHover ?? selectedLayout;
+
+  const handleLayoutSelect = (rows: number, cols: number) => {
+    setGridLayout(buildGridLayoutId(rows, cols));
+    setLayoutHover(null);
+    setIsLayoutMenuOpen(false);
+  };
 
   // Apply CT preset
   const applyPreset = (preset: (typeof CT_PRESETS)[number]) => {
@@ -385,6 +427,7 @@ const ViewerHeader = () => {
     setIsVRTActive,
   ]);
 
+<<<<<<< HEAD
   type ViewerToolConfig =
     | {
         id: ViewerTool;
@@ -410,8 +453,41 @@ const ViewerHeader = () => {
         description?: string;
         isToggle?: boolean;
       };
+=======
+  interface ViewerToolBaseConfig {
+    label: string;
+    icon: React.ReactNode;
+    category: string;
+    active?: boolean;
+    disabled?: boolean;
+    description?: string;
+    isToggle?: boolean;
+  }
+>>>>>>> 2a77d65 (feat: Implement MIP projection via Web Worker and enhance viewer functionality)
 
-  const AVAILABLE_TOOLS: ViewerToolConfig[] = useMemo(
+  interface ViewerToolConfig extends ViewerToolBaseConfig {
+    id: ViewerTool;
+    type: "tool";
+  }
+
+  interface ViewerActionConfig extends ViewerToolBaseConfig {
+    id: string;
+    type: "action";
+    onClick?: () => void;
+  }
+
+  interface ViewerDropdownConfig extends ViewerToolBaseConfig {
+    id: string;
+    type: "dropdown";
+    onClick?: () => void;
+  }
+
+  type ViewerToolConfigItem =
+    | ViewerToolConfig
+    | ViewerActionConfig
+    | ViewerDropdownConfig;
+
+  const AVAILABLE_TOOLS: ViewerToolConfigItem[] = useMemo(
     () => [
       {
         id: "Stack",
@@ -482,7 +558,7 @@ const ViewerHeader = () => {
         icon: <LayoutGrid size={18} />,
         category: "Tools",
         type: "dropdown",
-        description: "Change the grid layout (e.g., 1x1, 2x2)",
+        description: "Change the grid layout (e.g., 2x3, 4x4)",
       },
       {
         id: "MPR",
@@ -499,6 +575,14 @@ const ViewerHeader = () => {
         category: "Tools",
         type: "dropdown",
         description: "Thin-slab MIP with adjustable intensity",
+      },
+      {
+        id: "MIP",
+        label: "MIP",
+        icon: <ScanLine size={18} />,
+        category: "Tools",
+        type: "dropdown",
+        description: "Thick-slab MIP with adjustable intensity",
       },
       {
         id: "SpineLabeling",
@@ -678,7 +762,7 @@ const ViewerHeader = () => {
     ],
   );
 
-  const handleToolClick = (tool: ViewerToolConfig) => {
+  const handleToolClick = (tool: ViewerToolConfigItem) => {
     if (tool.disabled) return;
     if (tool.type === "tool") {
       setActiveTool(tool.id);
@@ -695,119 +779,206 @@ const ViewerHeader = () => {
     );
   };
 
-  const existingMiniMIPSeries = selectedSeries
-    ? temporaryMPRSeries.find(
-        (ts) =>
-          ts.sourceSeriesId === selectedSeries._id && ts.mprMode === "MiniMIP",
-      ) ?? null
-    : null;
-  const isMiniMIPSelected =
-    !!existingMiniMIPSeries &&
-    existingMiniMIPSeries.id === selectedTemporarySeriesId;
-  const miniMIPSliceCount = miniMIPIntensity * 2 + 1;
+  type ProjectionMode = "MiniMIP" | "MIP";
 
-  const openOrGenerateMiniMIP = () => {
-    if (existingMiniMIPSeries) {
-      setSelectedTemporarySeriesId(existingMiniMIPSeries.id);
+  const getProjectionIntensity = (mode: ProjectionMode) =>
+    mode === "MiniMIP" ? miniMIPIntensity : mipIntensity;
+
+  const setProjectionIntensity = (mode: ProjectionMode, value: number) => {
+    if (mode === "MiniMIP") {
+      setMiniMIPIntensity(value);
       return;
     }
-    requestMPRGeneration("MiniMIP");
+    setMIPIntensity(value);
   };
 
-  const regenerateMiniMIP = () => {
-    requestMPRGeneration("MiniMIP");
+  const getProjectionRange = (mode: ProjectionMode) =>
+    mode === "MiniMIP"
+      ? { min: 1, max: 20, hint: "Thin slab for local vessel emphasis" }
+      : { min: 8, max: 80, hint: "Thick slab for angiographic overview" };
+
+  const getProjectionSeries = (mode: ProjectionMode) =>
+    selectedSeries
+      ? temporaryMPRSeries.find(
+          (ts) =>
+            ts.sourceSeriesId === selectedSeries._id && ts.mprMode === mode,
+        ) ?? null
+      : null;
+
+  const getProjectionSelected = (mode: ProjectionMode) => {
+    const series = getProjectionSeries(mode);
+    return !!series && series.id === selectedTemporarySeriesId;
   };
 
-  const commitMiniMIPIntensity = () => {
-    if (isMiniMIPSelected) {
-      requestMPRGeneration("MiniMIP");
+  const getProjectionMenuOpen = (mode: ProjectionMode) =>
+    mode === "MiniMIP" ? isMiniMIPMenuOpen : isMIPMenuOpen;
+
+  const setProjectionMenuOpen = (mode: ProjectionMode, open: boolean) => {
+    if (mode === "MiniMIP") {
+      setIsMiniMIPMenuOpen(open);
+      return;
     }
+    setIsMIPMenuOpen(open);
+  };
+
+  const handleProjectionMenuOpenChange = (
+    mode: ProjectionMode,
+    open: boolean,
+  ) => {
+    setProjectionMenuOpen(mode, open);
+    if (!open) return;
+
+    const projectionSeries = getProjectionSeries(mode);
+    if (projectionSeries) {
+      setSelectedTemporarySeriesId(projectionSeries.id);
+      return;
+    }
+
+    requestMPRGeneration(mode);
   };
 
   const renderLayoutDropdownContent = () => (
     <DropdownMenuContent
       align="start"
-      className="w-48 bg-gray-900 border-gray-700 text-gray-200 p-2"
+      className="w-64 bg-gray-900/95 border-gray-700 text-gray-200 p-3 shadow-2xl"
     >
-      <DropdownMenuLabel className="text-gray-400 text-xs px-1">
-        Grid Layout
-      </DropdownMenuLabel>
-      <div className="grid grid-cols-3 gap-2 mt-1">
-        {GRID_LAYOUTS.map((layout) => {
-          const isSelected = gridLayout === layout.id;
-          return (
-            <DropdownMenuItem
-              key={layout.id}
-              onClick={() => setGridLayout(layout.id)}
-              className="p-0 focus:bg-transparent"
-            >
-              <button
-                type="button"
-                className={`w-full rounded-md border px-1.5 py-2 flex flex-col items-center gap-1 transition-colors ${isSelected
-                  ? "border-amber-400 bg-amber-500/15"
-                  : "border-gray-700 bg-gray-800/40 hover:border-gray-500"
-                  }`}
-              >
-                <LayoutPreview
-                  rows={layout.rows}
-                  cols={layout.cols}
-                  isSelected={isSelected}
-                />
-                <span className="text-[10px] text-gray-300">{layout.label}</span>
-              </button>
-            </DropdownMenuItem>
-          );
-        })}
+      <div className="flex items-center justify-between px-0.5">
+        <DropdownMenuLabel className="text-gray-400 text-[11px] uppercase tracking-wider px-0 py-0">
+          Grid Layout
+        </DropdownMenuLabel>
+        <span className="text-[11px] font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded px-1.5 py-0.5">
+          {selectedLayout.rows} × {selectedLayout.cols}
+        </span>
       </div>
+
+      <div className="mt-2 rounded-lg border border-gray-700/70 bg-gradient-to-b from-gray-800/70 to-gray-900/80 p-2">
+        <div className="flex items-center justify-between text-[11px] mb-2 px-0.5">
+          <span className="text-gray-200">
+            {previewLayout.rows} × {previewLayout.cols}
+          </span>
+          <span className="text-gray-500">
+            {previewLayout.rows * previewLayout.cols} panes
+          </span>
+        </div>
+
+        <div
+          className="grid gap-1.5"
+          style={{
+            gridTemplateColumns: `repeat(${LAYOUT_PICKER_MAX_COLS}, minmax(0, 1fr))`,
+          }}
+          onMouseLeave={() => setLayoutHover(null)}
+        >
+          {Array.from({ length: LAYOUT_PICKER_MAX_ROWS }).map((_, rowIndex) =>
+            Array.from({ length: LAYOUT_PICKER_MAX_COLS }).map((__, colIndex) => {
+              const rows = rowIndex + 1;
+              const cols = colIndex + 1;
+              const isHighlighted =
+                rowIndex < previewLayout.rows && colIndex < previewLayout.cols;
+              const isSelected =
+                rows === selectedLayout.rows && cols === selectedLayout.cols;
+
+              return (
+                <button
+                  key={`${rows}x${cols}`}
+                  type="button"
+                  onMouseEnter={() => setLayoutHover({ rows, cols })}
+                  onFocus={() => setLayoutHover({ rows, cols })}
+                  onClick={() => handleLayoutSelect(rows, cols)}
+                  className={`relative h-6 w-6 rounded border transition-all duration-150 ${isHighlighted
+                    ? "bg-amber-400/85 border-amber-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+                    : "bg-gray-800/80 border-gray-700 hover:border-gray-500 hover:bg-gray-700/80"
+                    } ${isSelected ? "ring-2 ring-amber-200/80 ring-offset-1 ring-offset-gray-900" : ""}`}
+                  aria-label={`Set layout ${rows} by ${cols}`}
+                >
+                  {isSelected && (
+                    <Check size={11} className="absolute inset-0 m-auto text-gray-900" />
+                  )}
+                </button>
+              );
+            }),
+          )}
+        </div>
+      </div>
+
+      <p className="mt-2 px-0.5 text-[10px] text-gray-500">
+        Hover to preview, click to apply
+      </p>
     </DropdownMenuContent>
   );
 
-  const renderMiniMIPDropdownContent = () => (
-    <DropdownMenuContent
-      align="start"
-      className="w-64 bg-gray-900 border-gray-700 text-gray-200 p-3"
-    >
-      <DropdownMenuLabel className="text-gray-400 text-xs px-0">
-        MiniMIP
-      </DropdownMenuLabel>
-      <DropdownMenuSeparator className="bg-gray-800 my-2" />
+  const renderProjectionDropdownContent = (mode: ProjectionMode) => {
+    const config = getProjectionRange(mode);
+    const intensity = getProjectionIntensity(mode);
+    const existingSeries = getProjectionSeries(mode);
+    const isSelected = getProjectionSelected(mode);
+    const projectedSliceCount = intensity * 2 + 1;
+    const fillPercent =
+      ((intensity - config.min) / (config.max - config.min)) * 100;
 
-      <button
-        type="button"
-        onClick={openOrGenerateMiniMIP}
-        className="w-full mb-2 px-3 py-2 rounded bg-gray-800 hover:bg-gray-700 text-left text-sm transition-colors"
+    return (
+      <DropdownMenuContent
+        align="start"
+        className="w-72 bg-gray-900 border-gray-700 text-gray-200 p-3"
       >
-        {existingMiniMIPSeries ? "Open MiniMIP" : "Generate MiniMIP"}
-      </button>
+        <div className="flex items-center justify-between">
+          <DropdownMenuLabel className="text-gray-400 text-xs px-0">
+            {mode}
+          </DropdownMenuLabel>
+          <span className="text-[11px] px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-500/10 text-amber-200 font-medium">
+            {intensity}
+          </span>
+        </div>
+        <DropdownMenuSeparator className="bg-gray-800 my-2" />
 
-      <button
-        type="button"
-        onClick={regenerateMiniMIP}
-        className="w-full mb-3 px-3 py-2 rounded border border-gray-700 hover:border-gray-500 text-left text-sm transition-colors"
-      >
-        Apply Intensity
-      </button>
+        <div className="mb-2 text-[11px] text-gray-500">
+          {existingSeries
+            ? `${mode} is open and updates live`
+            : `Opening this menu auto-starts ${mode}`}
+        </div>
 
-      <div className="text-xs text-gray-400 mb-1">Intensity</div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-500">Low</span>
-        <input
-          type="range"
-          min="1"
-          max="20"
-          value={miniMIPIntensity}
-          onChange={(e) => setMiniMIPIntensity(Number(e.target.value))}
-          onMouseUp={commitMiniMIPIntensity}
-          onTouchEnd={commitMiniMIPIntensity}
-          className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
-        />
-        <span className="text-xs text-gray-500">High</span>
-      </div>
-      <div className="mt-2 text-xs text-gray-300 font-mono">
-        {miniMIPSliceCount} slices
-      </div>
-    </DropdownMenuContent>
-  );
+        <div className="text-xs text-gray-400 mb-1">Intensity</div>
+        <div className="rounded-md border border-gray-700/80 bg-gray-800/70 px-2 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-500">Low</span>
+            <input
+              type="range"
+              min={config.min}
+              max={config.max}
+              step={1}
+              value={intensity}
+              onInput={(e) =>
+                setProjectionIntensity(
+                  mode,
+                  Number((e.target as HTMLInputElement).value),
+                )
+              }
+              onChange={(e) =>
+                setProjectionIntensity(
+                  mode,
+                  Number((e.target as HTMLInputElement).value),
+                )
+              }
+              style={{
+                background: `linear-gradient(90deg, #f59e0b 0%, #f59e0b ${fillPercent}%, #374151 ${fillPercent}%, #374151 100%)`,
+              }}
+              className="h-2 w-full appearance-none rounded-full outline-none cursor-pointer transition-[filter] duration-150 hover:brightness-110 active:brightness-125 [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-300 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-amber-100 [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.35)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-amber-100 [&::-moz-range-thumb]:bg-amber-300"
+            />
+            <span className="text-[11px] text-gray-500">High</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px]">
+            <span className="text-gray-400 font-mono">
+              {projectedSliceCount} slices
+            </span>
+            <span className="text-gray-500">{config.hint}</span>
+          </div>
+        </div>
+
+        <div className="mt-2 text-[11px] text-gray-500">
+          {isSelected ? "Live update enabled" : `Open ${mode} to preview updates`}
+        </div>
+      </DropdownMenuContent>
+    );
+  };
 
   if (!caseData) return null;
 
@@ -885,7 +1056,8 @@ const ViewerHeader = () => {
               {AVAILABLE_TOOLS.filter((t) => t.category === "Tools").map(
                 (tool) =>
                   tool.type === "dropdown" && tool.id === "Stack" ? (
-                    <Tooltip key={tool.id}>
+                    <div key={tool.id} className="flex flex-col items-center">
+                    <Tooltip>
                       <TooltipTrigger asChild>
                         <DropdownMenu
                           onOpenChange={(open) => {
@@ -940,6 +1112,8 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
+                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    </div>
                   ) : tool.type === "dropdown" && tool.id === "Presets" ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
@@ -991,7 +1165,15 @@ const ViewerHeader = () => {
                   ) : tool.type === "dropdown" && tool.id === "Layout" ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={isLayoutMenuOpen}
+                          onOpenChange={(open) => {
+                            setIsLayoutMenuOpen(open);
+                            if (!open) {
+                              setLayoutHover(null);
+                            }
+                          }}
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               className="flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] text-gray-300 hover:bg-gray-700"
@@ -1116,14 +1298,23 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
-                  ) : tool.type === "dropdown" && tool.id === "MiniMIP" ? (
+                  ) : tool.type === "dropdown" &&
+                    (tool.id === "MiniMIP" || tool.id === "MIP") ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={getProjectionMenuOpen(tool.id as ProjectionMode)}
+                          onOpenChange={(open) =>
+                            handleProjectionMenuOpenChange(
+                              tool.id as ProjectionMode,
+                              open,
+                            )
+                          }
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
-                                isMiniMIPSelected
+                                getProjectionSelected(tool.id as ProjectionMode)
                                   ? "bg-blue-600 text-white"
                                   : "text-gray-300 hover:bg-gray-700"
                               }`}
@@ -1134,7 +1325,9 @@ const ViewerHeader = () => {
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          {renderMiniMIPDropdownContent()}
+                          {renderProjectionDropdownContent(
+                            tool.id as ProjectionMode,
+                          )}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (
@@ -1146,6 +1339,19 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
+                  ) : isBindableTool(tool.id) ? (
+                    <div key={tool.id} className="flex flex-col items-center">
+                      <ToolButton
+                        icon={tool.icon}
+                        label={tool.label}
+                        active={tool.active}
+                        disabled={tool.disabled}
+                        description={tool.description}
+                        onClick={() => handleToolClick(tool)}
+                        isToggle={tool.isToggle}
+                      />
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    </div>
                   ) : (
                     <ToolButton
                       key={tool.id}
@@ -1166,16 +1372,20 @@ const ViewerHeader = () => {
             <div className="flex items-center gap-1">
               {AVAILABLE_TOOLS.filter((t) => t.category === "Measurement").map(
                 (tool) => (
-                  <ToolButton
-                    key={tool.id}
-                    icon={tool.icon}
-                    label={tool.label}
-                    active={tool.active}
-                    disabled={!!tool.disabled}
-                    description={tool.description}
-                    onClick={() => handleToolClick(tool)}
-                    isToggle={tool.isToggle}
-                  />
+                  <div key={tool.id} className="flex flex-col items-center">
+                    <ToolButton
+                      icon={tool.icon}
+                      label={tool.label}
+                      active={tool.active}
+                      disabled={!!tool.disabled}
+                      description={tool.description}
+                      onClick={() => handleToolClick(tool)}
+                      isToggle={tool.isToggle}
+                    />
+                    {isBindableTool(tool.id) && (
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    )}
+                  </div>
                 ),
               )}
             </div>
@@ -1188,7 +1398,8 @@ const ViewerHeader = () => {
                 if (!tool) return null;
                 if (tool.type === "dropdown" && tool.id === "Stack") {
                   return (
-                    <Tooltip key={tool.id}>
+                    <div key={tool.id} className="flex flex-col items-center">
+                    <Tooltip>
                       <TooltipTrigger asChild>
                         <DropdownMenu
                           onOpenChange={(open) => {
@@ -1243,6 +1454,8 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
+                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    </div>
                   );
                 }
                 if (tool.type === "dropdown" && tool.id === "Presets") {
@@ -1300,7 +1513,15 @@ const ViewerHeader = () => {
                   return (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={isLayoutMenuOpen}
+                          onOpenChange={(open) => {
+                            setIsLayoutMenuOpen(open);
+                            if (!open) {
+                              setLayoutHover(null);
+                            }
+                          }}
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               className="flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] text-gray-300 hover:bg-gray-700"
@@ -1430,15 +1651,24 @@ const ViewerHeader = () => {
                     </Tooltip>
                   );
                 }
-                if (tool.type === "dropdown" && tool.id === "MiniMIP") {
+                if (
+                  tool.type === "dropdown" &&
+                  (tool.id === "MiniMIP" || tool.id === "MIP")
+                ) {
+                  const projectionMode = tool.id as ProjectionMode;
                   return (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={getProjectionMenuOpen(projectionMode)}
+                          onOpenChange={(open) =>
+                            handleProjectionMenuOpenChange(projectionMode, open)
+                          }
+                        >
                           <DropdownMenuTrigger asChild>
                             <button
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
-                                isMiniMIPSelected
+                                getProjectionSelected(projectionMode)
                                   ? "bg-blue-600 text-white"
                                   : "text-gray-300 hover:bg-gray-700"
                               }`}
@@ -1449,7 +1679,7 @@ const ViewerHeader = () => {
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          {renderMiniMIPDropdownContent()}
+                          {renderProjectionDropdownContent(projectionMode)}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (
@@ -1461,6 +1691,22 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
+                  );
+                }
+                if (isBindableTool(tool.id)) {
+                  return (
+                    <div key={tool.id} className="flex flex-col items-center">
+                      <ToolButton
+                        icon={tool.icon}
+                        label={tool.label}
+                        active={tool.active}
+                        disabled={!!tool.disabled}
+                        description={tool.description}
+                        onClick={() => handleToolClick(tool)}
+                        isToggle={tool.isToggle}
+                      />
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    </div>
                   );
                 }
                 return (

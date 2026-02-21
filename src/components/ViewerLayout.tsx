@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import ViewerHeader from "./viewer/ViewerHeader";
 import ViewerSidebar from "./viewer/ViewerSidebar";
 import { apiService } from "@/lib/api";
+import { getGridLayoutPaneCount, parseGridLayout } from "@/lib/gridLayout";
 import { Loader2 } from "lucide-react";
 
 interface Series {
@@ -73,7 +74,14 @@ export type ViewerTool =
   | "HU";
 
 // MPR Mode types
-export type MPRMode = "Axial" | "Coronal" | "Sagittal" | "2D-MPR" | "3D-MPR" | "MiniMIP";
+export type MPRMode =
+  | "Axial"
+  | "Coronal"
+  | "Sagittal"
+  | "2D-MPR"
+  | "3D-MPR"
+  | "MiniMIP"
+  | "MIP";
 
 // Crosshair indices for MPR views
 export interface CrosshairIndices {
@@ -102,16 +110,14 @@ export interface TemporaryMPRSeries {
   windowCenter: number;
   windowWidth: number;
   physicalAspectRatio?: number; // Physical width/height ratio accounting for spacing
+  projectionSlabHalfSize?: number; // Used for live projection updates
 }
 
-export type GridLayout = "1x1" | "1x2" | "2x2";
+export type GridLayout = `${number}x${number}`;
 
-export interface GridLayoutConfig {
-  id: GridLayout;
-  label: string;
-  rows: number;
-  cols: number;
-}
+// Mouse button binding types
+export type MouseButton = 0 | 1 | 2; // 0=Left, 1=Middle, 2=Right
+export type MouseButtonBindings = Partial<Record<MouseButton, ViewerTool>>;
 
 export interface ViewTransform {
   x: number;
@@ -249,12 +255,18 @@ interface ViewerContextType {
   // MiniMIP intensity (controls slab half-size)
   miniMIPIntensity: number;
   setMiniMIPIntensity: (intensity: number) => void;
+  // MIP intensity (controls slab half-size)
+  mipIntensity: number;
+  setMIPIntensity: (intensity: number) => void;
   // Scout line
   showScoutLine: boolean;
   setShowScoutLine: (show: boolean) => void;
   // VRT (3D Volume Rendering) mode
   isVRTActive: boolean;
   setIsVRTActive: (active: boolean) => void;
+  // Mouse button → tool bindings
+  mouseBindings: MouseButtonBindings;
+  setMouseBinding: (button: MouseButton, tool: ViewerTool | null) => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -332,8 +344,28 @@ export function ViewerLayout() {
   );
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
   const [miniMIPIntensity, setMiniMIPIntensity] = useState(5); // slab half-size (0-20)
+  const [mipIntensity, setMIPIntensity] = useState(20); // slab half-size (0-80)
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
+
+  // Mouse button → tool bindings (persisted in localStorage)
+  const [mouseBindings, setMouseBindingsState] = useState<MouseButtonBindings>(() => {
+    const saved = localStorage.getItem("viewer_mouse_bindings");
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const setMouseBinding = useCallback((button: MouseButton, tool: ViewerTool | null) => {
+    setMouseBindingsState((prev) => {
+      const next = { ...prev };
+      if (tool !== null) {
+        next[button] = tool;
+      } else {
+        delete next[button];
+      }
+      localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   // Window presets have fixed keys (1-7), other shortcuts start empty for user to assign
   const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -498,13 +530,6 @@ export function ViewerLayout() {
     setDownloadedSeriesIds(new Set());
   }, []);
 
-  // Grid layout configurations
-  const GRID_LAYOUTS: GridLayoutConfig[] = [
-    { id: "1x1", label: "1×1", rows: 1, cols: 1 },
-    { id: "1x2", label: "1×2", rows: 1, cols: 2 },
-    { id: "2x2", label: "2×2", rows: 2, cols: 2 },
-  ];
-
   const createDefaultPaneState = (seriesId: string | null): PaneState => ({
     seriesId,
     currentImageIndex: 0,
@@ -524,16 +549,15 @@ export function ViewerLayout() {
   });
 
   // Get number of panes for current layout
-  const getLayoutPaneCount = (layout: GridLayout): number => {
-    const config = GRID_LAYOUTS.find((l) => l.id === layout);
-    return config ? config.rows * config.cols : 1;
-  };
+  const getLayoutPaneCount = (layout: GridLayout): number =>
+    getGridLayoutPaneCount(layout);
 
   const setGridLayout = (layout: GridLayout) => {
-    if (layout === gridLayout) return;
+    const normalizedLayout = parseGridLayout(layout) ? layout : "1x1";
+    if (normalizedLayout === gridLayout) return;
 
     const previousPaneCount = getLayoutPaneCount(gridLayout);
-    const nextPaneCount = getLayoutPaneCount(layout);
+    const nextPaneCount = getLayoutPaneCount(normalizedLayout);
 
     if (nextPaneCount > previousPaneCount) {
       setPaneStates((prev) => {
@@ -605,7 +629,7 @@ export function ViewerLayout() {
       });
     }
 
-    setGridLayoutState(layout);
+    setGridLayoutState(normalizedLayout);
   };
 
   // Auto-enable scout line when switching to multi-pane layout
@@ -906,10 +930,14 @@ export function ViewerLayout() {
     setStackSpeed,
     miniMIPIntensity,
     setMiniMIPIntensity,
+    mipIntensity,
+    setMIPIntensity,
     showScoutLine,
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    mouseBindings,
+    setMouseBinding,
   };
 
   if (loading) {

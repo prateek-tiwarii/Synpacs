@@ -19,6 +19,8 @@ interface Series {
   image_count: number;
 }
 
+const NON_PREVIEW_MODALITIES = new Set(["SR"]);
+
 const SERIES_DND_MIME = "application/x-sync-pacs-series";
 
 interface DragSeriesPayload {
@@ -404,7 +406,11 @@ const ViewerSidebar = () => {
       return;
     }
 
-    const activeSeries = caseData.series.filter((series) => series.image_count > 0);
+    const activeSeries = caseData.series.filter((series) => {
+      if (series.image_count <= 0) return false;
+      const modality = (series.modality || "").toUpperCase();
+      return !NON_PREVIEW_MODALITIES.has(modality);
+    });
     const activeSeriesIds = new Set(activeSeries.map((series) => series._id));
     const nextThumbnails: Record<string, string | null> = {};
     for (const [seriesId, thumbnailUrl] of Object.entries(seriesThumbnailsRef.current)) {
@@ -427,7 +433,7 @@ const ViewerSidebar = () => {
     const queue = [...missingSeries];
     const workerCount = Math.min(2, queue.length);
 
-    const loadOneSeriesThumbnail = async (seriesId: string) => {
+    const loadOneSeriesThumbnail = async (seriesId: string): Promise<string | null> => {
       const middleResponse = await fetch(
         `${API_BASE_URL}/api/v1/series/${seriesId}/middle-instance`,
         {
@@ -437,6 +443,11 @@ const ViewerSidebar = () => {
           },
         },
       );
+
+      // 404 is expected for series that have no renderable instances.
+      if (middleResponse.status === 404) {
+        return null;
+      }
 
       if (!middleResponse.ok) {
         throw new Error(`Middle instance lookup failed (${middleResponse.status})`);
@@ -448,7 +459,7 @@ const ViewerSidebar = () => {
         | undefined;
 
       if (!middleInstanceUid) {
-        throw new Error("Middle instance UID missing");
+        return null;
       }
 
       return generateDicomInstanceThumbnail(middleInstanceUid, {

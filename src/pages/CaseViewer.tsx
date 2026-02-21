@@ -31,10 +31,11 @@ import {
   getMaxIndex,
   calculateSliceNormal,
   getSliceGeometry,
-  extractMiniMIPSlice,
+  useMIPWorker,
 } from "@/lib/mpr";
 import toast from "react-hot-toast";
 import { imageCache } from "@/lib/imageCache";
+import { getGridLayoutPaneCount, parseGridLayout } from "@/lib/gridLayout";
 
 // Instance interface matching the ACTUAL API response
 interface Instance {
@@ -159,6 +160,7 @@ interface PaneViewerProps {
   onToggleFullscreen: () => void;
   onImageIndexChange: (paneIndex: number, index: number, total: number, plane: PlaneOrientation | null, sourceSeriesId: string | null) => void;
   scoutLines: ScoutLine[];
+  onSliceNeeded?: (index: number) => Promise<Int16Array | null>;
 }
 
 const PaneViewer = ({
@@ -170,6 +172,7 @@ const PaneViewer = ({
   onToggleFullscreen,
   onImageIndexChange,
   scoutLines,
+  onSliceNeeded,
 }: PaneViewerProps) => {
   const { caseData, paneStates, setPaneStates, temporaryMPRSeries } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -383,6 +386,11 @@ const PaneViewer = ({
           onViewTransformChangeOverride={handlePaneTransformChange}
           isFullscreenOverride={isFullscreen}
           onToggleFullscreenOverride={onToggleFullscreen}
+          onSliceNeeded={
+            selectedTempMPR.mprMode === "MiniMIP" || selectedTempMPR.mprMode === "MIP"
+              ? onSliceNeeded
+              : undefined
+          }
         />
       ) : instances.length > 0 ? (
         <DicomViewer
@@ -443,6 +451,7 @@ const CaseViewer = () => {
     isVRTActive,
     setIsVRTActive,
     miniMIPIntensity,
+    mipIntensity,
   } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -586,6 +595,7 @@ const CaseViewer = () => {
 
   // MPR generation state
   const [isGeneratingMPR, setIsGeneratingMPR] = useState(false);
+  const [isGeneratingProjection, setIsGeneratingProjection] = useState(false);
   const [mprGenerationProgress, setMprGenerationProgress] = useState({
     phase: "" as string,
     current: 0,
@@ -593,6 +603,7 @@ const CaseViewer = () => {
   });
   // Volume cache (in-memory, cleared on page refresh)
   const volumeCache = useRef<Map<string, VolumeData>>(new Map());
+
   // imageCache is now global singleton from imageCache.ts
 
   // Create a Map wrapper for imageCache to work with buildVolume API
@@ -610,6 +621,9 @@ const CaseViewer = () => {
     [Symbol.toStringTag]: "Map",
     size: 0,
   } as unknown as Map<string, ArrayBuffer>);
+
+  // MIP Web Worker for on-demand slice computation
+  const mipWorker = useMIPWorker();
 
   // Find selected temporary series if any
   const selectedTempSeries = selectedTemporarySeriesId
@@ -759,12 +773,7 @@ const CaseViewer = () => {
       setFullscreenPaneIndex(null);
       return;
     }
-    const layoutConfig: Record<string, { rows: number; cols: number }> = {
-      "1x2": { rows: 1, cols: 2 },
-      "2x2": { rows: 2, cols: 2 },
-    };
-    const config = layoutConfig[gridLayout] || { rows: 1, cols: 1 };
-    const paneCount = config.rows * config.cols;
+    const paneCount = getGridLayoutPaneCount(gridLayout);
     if (fullscreenPaneIndex !== null && fullscreenPaneIndex >= paneCount) {
       setFullscreenPaneIndex(null);
     }
@@ -798,6 +807,16 @@ const CaseViewer = () => {
       return;
     }
 
+    const requestedMode = pendingMPRGeneration.mode;
+    const isProjectionMode =
+      requestedMode === "MiniMIP" || requestedMode === "MIP";
+    if (
+      (isProjectionMode && isGeneratingProjection) ||
+      (!isProjectionMode && isGeneratingMPR)
+    ) {
+      return;
+    }
+
     // Check if this request is for the current series
     if (pendingMPRGeneration.seriesId !== selectedSeries._id) {
       clearPendingMPRGeneration();
@@ -805,7 +824,6 @@ const CaseViewer = () => {
     }
 
     // Detect current series orientation and block redundant MPR generation
-    const requestedMode = pendingMPRGeneration.mode;
     if (
       (requestedMode === "Axial" || requestedMode === "Coronal" || requestedMode === "Sagittal") &&
       instances.length > 0 &&
@@ -829,20 +847,24 @@ const CaseViewer = () => {
     }
 
     const generateMPR = async () => {
-      setIsGeneratingMPR(true);
       const mode = pendingMPRGeneration.mode;
+      const isProjectionMode = mode === "MiniMIP" || mode === "MIP";
+      if (isProjectionMode) {
+        setIsGeneratingProjection(true);
+      } else {
+        setIsGeneratingMPR(true);
+      }
 
       try {
         // Check if we have a cached volume for this series
         let volume = volumeCache.current.get(selectedSeries._id);
+        const trackProgress = !isProjectionMode;
 
         if (!volume) {
           // Validate stackability
           const validation = validateStackability(instances as MPRInstance[]);
           if (!validation.valid) {
             console.error("Series not stackable:", validation.errors);
-            clearPendingMPRGeneration();
-            setIsGeneratingMPR(false);
             return;
           }
 
@@ -851,36 +873,38 @@ const CaseViewer = () => {
             instances as MPRInstance[],
           );
 
-          // Build volume
-          setMprGenerationProgress({
-            phase: "volume",
-            current: 0,
-            total: instances.length,
-          });
-          const volumeProgressStep = Math.max(
-            8,
-            Math.floor(instances.length / 50),
-          );
+          if (trackProgress) {
+            setMprGenerationProgress({
+              phase: "volume",
+              current: 0,
+              total: instances.length,
+            });
+          }
+          const volumeProgressStep = trackProgress
+            ? Math.max(8, Math.floor(instances.length / 50))
+            : 0;
           let lastVolumeProgress = 0;
           volume = await buildVolume(
             sortedInstances,
             imageCacheMap.current,
             API_BASE_URL,
             getCookie("jwt") || "",
-            (loaded, total) => {
-              if (
-                loaded !== total &&
-                loaded - lastVolumeProgress < volumeProgressStep
-              ) {
-                return;
-              }
-              lastVolumeProgress = loaded;
-              setMprGenerationProgress({
-                phase: "volume",
-                current: loaded,
-                total,
-              });
-            },
+            trackProgress
+              ? (loaded, total) => {
+                  if (
+                    loaded !== total &&
+                    loaded - lastVolumeProgress < volumeProgressStep
+                  ) {
+                    return;
+                  }
+                  lastVolumeProgress = loaded;
+                  setMprGenerationProgress({
+                    phase: "volume",
+                    current: loaded,
+                    total,
+                  });
+                }
+              : undefined,
           );
 
           // Cache the volume
@@ -907,16 +931,19 @@ const CaseViewer = () => {
             width: number;
             height: number;
           },
+          showProgress: boolean = true,
         ): Promise<MPRSliceData[]> => {
           const slices: MPRSliceData[] = new Array(totalSlices);
           const progressUpdateEvery = Math.max(8, Math.floor(totalSlices / 40));
           const yieldEvery = Math.max(6, Math.floor(totalSlices / 100));
 
-          setMprGenerationProgress({
-            phase,
-            current: 0,
-            total: totalSlices,
-          });
+          if (showProgress) {
+            setMprGenerationProgress({
+              phase,
+              current: 0,
+              total: totalSlices,
+            });
+          }
 
           for (let i = 0; i < totalSlices; i++) {
             const sliceResult = extractor(i);
@@ -929,7 +956,10 @@ const CaseViewer = () => {
             };
 
             const completed = i + 1;
-            if (completed === totalSlices || completed % progressUpdateEvery === 0) {
+            if (
+              showProgress &&
+              (completed === totalSlices || completed % progressUpdateEvery === 0)
+            ) {
               setMprGenerationProgress({
                 phase,
                 current: completed,
@@ -1008,9 +1038,6 @@ const CaseViewer = () => {
         else if (mode === "3D-MPR") {
           if (gridLayout !== "1x1") {
             toast("3D VRT is only available in 1x1 layout");
-            clearPendingMPRGeneration();
-            setIsGeneratingMPR(false);
-            setMprGenerationProgress({ phase: "", current: 0, total: 0 });
             return;
           }
           // Store volume reference and activate VRT mode
@@ -1018,31 +1045,63 @@ const CaseViewer = () => {
           setIsVRTActive(true);
           setSelectedTemporarySeriesId(null);
         }
-        // Handle MiniMIP: thin-slab Maximum Intensity Projection along axial plane
-        else if (mode === "MiniMIP") {
+        // Handle MiniMIP/MIP: on-demand axial slab Maximum Intensity Projection via Web Worker
+        else if (mode === "MiniMIP" || mode === "MIP") {
           const plane: PlaneType = "Axial";
-          const totalSlices = getMaxIndex(volume, plane) + 1;
-          const slabHalfSize = Math.max(0, Math.round(miniMIPIntensity));
-          const slices = await generateSlices(totalSlices, "slices", (index) =>
-            extractMiniMIPSlice(volume, plane, index, slabHalfSize),
+          const [cols, rows, totalSlices] = volume.dimensions;
+          const slabHalfSize = Math.max(
+            0,
+            Math.round(mode === "MiniMIP" ? miniMIPIntensity : mipIntensity),
           );
-          const miniMIPWindow = estimateWindowLevelFromSlices(slices, {
+
+          // Initialize the MIP worker with the volume data
+          await mipWorker.initVolume(volume, selectedSeries._id);
+
+          // Compute a few sample slices for W/L estimation (~100ms total)
+          const sampleIndices = [
+            0,
+            Math.floor(totalSlices / 4),
+            Math.floor(totalSlices / 2),
+            Math.floor((3 * totalSlices) / 4),
+            totalSlices - 1,
+          ].filter((v, i, a) => a.indexOf(v) === i); // dedupe for small volumes
+
+          const sampleSlices: MPRSliceData[] = [];
+          for (const z of sampleIndices) {
+            const rawData = await mipWorker.computeSlice(z, slabHalfSize);
+            sampleSlices.push({ index: z, rawData, width: cols, height: rows });
+          }
+
+          const mipWindow = estimateWindowLevelFromSlices(sampleSlices, {
             windowWidth,
             windowCenter,
           });
 
-          const geoMiniMIP = getSliceGeometry(volume, plane);
+          // Create placeholder slices (rawData will be loaded on demand by the viewer)
+          const slices: MPRSliceData[] = new Array(totalSlices);
+          for (let z = 0; z < totalSlices; z++) {
+            const sample = sampleSlices.find((s) => s.index === z);
+            slices[z] = {
+              index: z,
+              rawData: sample?.rawData,
+              width: cols,
+              height: rows,
+            };
+          }
+
+          const geometry = getSliceGeometry(volume, plane);
           const tempSeries: TemporaryMPRSeries = {
-            id: `mpr-${selectedSeries._id}-MiniMIP-${Date.now()}`,
+            id: `mpr-${selectedSeries._id}-${mode}-${Date.now()}`,
             sourceSeriesId: selectedSeries._id,
-            mprMode: "MiniMIP" as MPRMode,
-            description: `MiniMIP from ${selectedSeries.description || "Series " + selectedSeries.series_number}`,
+            mprMode: mode as MPRMode,
+            description: `${mode} from ${selectedSeries.description || "Series " + selectedSeries.series_number}`,
             slices,
             sliceCount: slices.length,
             createdAt: Date.now(),
-            windowCenter: miniMIPWindow.windowCenter,
-            windowWidth: miniMIPWindow.windowWidth,
-            physicalAspectRatio: geoMiniMIP.aspectRatio,
+            windowCenter: mipWindow.windowCenter,
+            windowWidth: mipWindow.windowWidth,
+            physicalAspectRatio: geometry.aspectRatio,
+            projectionSlabHalfSize: slabHalfSize,
           };
 
           addTemporaryMPRSeries(tempSeries);
@@ -1077,8 +1136,12 @@ const CaseViewer = () => {
         console.error("Failed to generate MPR:", err);
       } finally {
         clearPendingMPRGeneration();
-        setIsGeneratingMPR(false);
-        setMprGenerationProgress({ phase: "", current: 0, total: 0 });
+        if (isProjectionMode) {
+          setIsGeneratingProjection(false);
+        } else {
+          setIsGeneratingMPR(false);
+          setMprGenerationProgress({ phase: "", current: 0, total: 0 });
+        }
       }
     };
 
@@ -1087,14 +1150,98 @@ const CaseViewer = () => {
     pendingMPRGeneration,
     selectedSeries,
     instances,
+    isGeneratingProjection,
+    isGeneratingMPR,
     API_BASE_URL,
     clearPendingMPRGeneration,
     addTemporaryMPRSeries,
+    mipWorker,
     viewTransform.windowWidth,
     viewTransform.windowCenter,
     miniMIPIntensity,
+    mipIntensity,
     setCrosshairIndices,
   ]);
+
+  // Live projection update: when slab slider changes, just update the slab size
+  // and clear the worker cache. The viewer will re-request slices on demand (~20ms each).
+  useEffect(() => {
+    if (
+      isGeneratingMPR ||
+      isGeneratingProjection ||
+      !selectedSeries ||
+      !selectedTempSeries ||
+      (selectedTempSeries.mprMode !== "MiniMIP" &&
+        selectedTempSeries.mprMode !== "MIP") ||
+      selectedTempSeries.sourceSeriesId !== selectedSeries._id
+    ) {
+      return;
+    }
+
+    const activeProjectionMode = selectedTempSeries.mprMode;
+    const slabHalfSize = Math.max(
+      0,
+      Math.round(
+        activeProjectionMode === "MiniMIP" ? miniMIPIntensity : mipIntensity,
+      ),
+    );
+    if (selectedTempSeries.projectionSlabHalfSize === slabHalfSize) {
+      return;
+    }
+
+    // Clear the worker cache since slab size changed — all cached slices are stale
+    mipWorker.clearCache();
+
+    // Create placeholder slices (rawData will be loaded on demand by the viewer)
+    const [cols, rows, totalSlices] = selectedTempSeries.slices.length > 0
+      ? [selectedTempSeries.slices[0].width, selectedTempSeries.slices[0].height, selectedTempSeries.sliceCount]
+      : [0, 0, 0];
+    const slices: MPRSliceData[] = new Array(totalSlices);
+    for (let z = 0; z < totalSlices; z++) {
+      slices[z] = { index: z, width: cols, height: rows };
+    }
+
+    // Update the series with new slab size — viewer will request slices via onSliceNeeded
+    addTemporaryMPRSeries(
+      {
+        ...selectedTempSeries,
+        slices,
+        sliceCount: totalSlices,
+        createdAt: Date.now(),
+        projectionSlabHalfSize: slabHalfSize,
+      },
+      { autoSelect: false },
+    );
+  }, [
+    isGeneratingMPR,
+    isGeneratingProjection,
+    selectedSeries,
+    selectedTempSeries,
+    miniMIPIntensity,
+    mipIntensity,
+    addTemporaryMPRSeries,
+    mipWorker,
+  ]);
+
+  // On-demand MIP slice provider for TemporaryMPRSeriesViewer lazy loading
+  const handleMIPSliceNeeded = useCallback(
+    async (index: number): Promise<Int16Array | null> => {
+      if (
+        !selectedTempSeries ||
+        (selectedTempSeries.mprMode !== "MiniMIP" &&
+          selectedTempSeries.mprMode !== "MIP")
+      ) {
+        return null;
+      }
+      const slabHalfSize = selectedTempSeries.projectionSlabHalfSize ?? 0;
+      try {
+        return await mipWorker.computeSlice(index, slabHalfSize);
+      } catch {
+        return null;
+      }
+    },
+    [selectedTempSeries, mipWorker],
+  );
 
   // Stable callbacks for 2D-MPR pane index changes (avoid re-render cascades)
   const handleAxialIndexChange = useCallback((idx: number) => setAxialIndex(idx), []);
@@ -1273,11 +1420,7 @@ const CaseViewer = () => {
 
   // Multi-pane grid layout
   if (gridLayout !== "1x1") {
-    const layoutConfig: Record<string, { rows: number; cols: number }> = {
-      "1x2": { rows: 1, cols: 2 },
-      "2x2": { rows: 2, cols: 2 },
-    };
-    const config = layoutConfig[gridLayout] || { rows: 1, cols: 1 };
+    const config = parseGridLayout(gridLayout) ?? { rows: 1, cols: 1 };
     const paneCount = config.rows * config.cols;
 
     if (fullscreenPaneIndex !== null) {
@@ -1293,6 +1436,7 @@ const CaseViewer = () => {
             onToggleFullscreen={() => setFullscreenPaneIndex(null)}
             onImageIndexChange={handlePaneImageIndexChange}
             scoutLines={getScoutLinesForPane(paneIdx)}
+            onSliceNeeded={handleMIPSliceNeeded}
           />
         </div>
       );
@@ -1320,6 +1464,7 @@ const CaseViewer = () => {
               }
               onImageIndexChange={handlePaneImageIndexChange}
               scoutLines={getScoutLinesForPane(idx)}
+              onSliceNeeded={handleMIPSliceNeeded}
             />
           ))}
         </div>
@@ -1354,6 +1499,11 @@ const CaseViewer = () => {
         <TemporaryMPRSeriesViewer
           series={selectedTempSeries}
           className="flex-1 min-h-0"
+          onSliceNeeded={
+            selectedTempSeries.mprMode === "MiniMIP" || selectedTempSeries.mprMode === "MIP"
+              ? handleMIPSliceNeeded
+              : undefined
+          }
         />
       ) : selectedSeries.modality === "SR" ? (
         <SRViewer instances={instances || []} className="flex-1 min-h-0" />

@@ -23,6 +23,7 @@ import {
   type Annotation,
   type HUStats,
   type ViewTransform,
+  type MouseButton,
 } from "../ViewerLayout";
 import { imageCache } from "@/lib/imageCache";
 import {
@@ -253,6 +254,7 @@ export function DicomViewer({
     setActiveTool,
     undo,
     canUndo,
+    mouseBindings,
   } = useViewerContext();
   const viewTransform = paneViewTransform ?? globalViewTransform;
   const setViewTransform =
@@ -1970,7 +1972,24 @@ export function DicomViewer({
   // Interaction Handlers
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (e.button !== 0) return;
+      const button = e.button as MouseButton;
+      const boundTool = mouseBindings[button];
+
+      // Middle or right click: switch tool if bound, otherwise ignore
+      if (button === 1 || button === 2) {
+        if (boundTool) {
+          e.preventDefault();
+          setActiveTool(boundTool);
+        }
+        return;
+      }
+
+      // Left click (button 0): switch tool if bound to a different tool
+      if (boundTool && activeTool !== boundTool) {
+        setActiveTool(boundTool);
+        return;
+      }
+
       const pos = screenToImage(e.clientX, e.clientY);
       lastMousePos.current = { x: e.clientX, y: e.clientY };
       accumulatedStackDelta.current = 0;
@@ -2212,6 +2231,8 @@ export function DicomViewer({
       spineLabelSequence,
       spineNextLabelIndex,
       spineSessionActive,
+      mouseBindings,
+      setActiveTool,
     ],
   );
 
@@ -2730,6 +2751,15 @@ export function DicomViewer({
     }
   }, []);
 
+  // Suppress Radix ContextMenu when right-click is bound to a tool.
+  // Radix's composeEventHandlers checks defaultPrevented — if we call
+  // preventDefault() in our onContextMenu, Radix skips opening the menu.
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (mouseBindings[2]) {
+      e.preventDefault();
+    }
+  }, [mouseBindings]);
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -2740,6 +2770,7 @@ export function DicomViewer({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onContextMenu={handleContextMenu}
           onDoubleClick={(e) => {
             e.stopPropagation();
             toggleFullscreen();

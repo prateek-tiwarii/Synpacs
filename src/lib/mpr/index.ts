@@ -51,3 +51,6 @@ export {
   worldToVoxel,
   voxelToWorld,
 } from "./interpolation";
+
+// MIP Worker
+export { useMIPWorker } from "./useMIPWorker";
