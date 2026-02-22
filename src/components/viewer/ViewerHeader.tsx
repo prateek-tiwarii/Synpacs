@@ -126,16 +126,8 @@ const ToolButton = ({
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
-<<<<<<< HEAD
 import { useViewerContext } from "../ViewerLayout";
-import type { GridLayout, MPRMode, ViewerTool } from "../ViewerLayout";
-=======
-const MOUSE_BUTTON_LABELS: { button: MouseButton; label: string; color: string }[] = [
-  { button: 0, label: "L", color: "bg-blue-400" },
-  { button: 1, label: "M", color: "bg-green-400" },
-  { button: 2, label: "R", color: "bg-amber-400" },
-];
->>>>>>> 2a77d65 (feat: Implement MIP projection via Web Worker and enhance viewer functionality)
+import type { MPRMode, ViewerTool, MouseButton, MouseButtonBindings } from "../ViewerLayout";
 
 const VIEWER_TOOL_IDS = new Set<string>([
   "Stack", "Pan", "Zoom", "Contrast", "FreeRotate", "SpineLabeling",
@@ -144,6 +136,12 @@ const VIEWER_TOOL_IDS = new Set<string>([
 
 const isBindableTool = (toolId: string): toolId is ViewerTool =>
   VIEWER_TOOL_IDS.has(toolId);
+
+const MOUSE_BUTTON_LABELS: { button: MouseButton; label: string; color: string }[] = [
+  { button: 0, label: "L", color: "bg-blue-400" },
+  { button: 1, label: "M", color: "bg-green-400" },
+  { button: 2, label: "R", color: "bg-red-400" },
+];
 
 const MouseBindingBar = memo(({ toolId, mouseBindings, onToggle }: {
   toolId: ViewerTool;
@@ -174,8 +172,6 @@ const MouseBindingBar = memo(({ toolId, mouseBindings, onToggle }: {
   </div>
 ));
 
-import { useViewerContext } from "../ViewerLayout";
-import type { MPRMode, ViewerTool, MouseButton, MouseButtonBindings } from "../ViewerLayout";
 import { buildGridLayoutId, parseGridLayout } from "@/lib/gridLayout";
 
 const LAYOUT_PICKER_MAX_ROWS = 5;
@@ -427,33 +423,6 @@ const ViewerHeader = () => {
     setIsVRTActive,
   ]);
 
-<<<<<<< HEAD
-  type ViewerToolConfig =
-    | {
-        id: ViewerTool;
-        label: string;
-        icon: React.ReactNode;
-        category: string;
-        type: "tool";
-        active?: boolean;
-        onClick?: () => void;
-        disabled?: boolean;
-        description?: string;
-        isToggle?: boolean;
-      }
-    | {
-        id: string;
-        label: string;
-        icon: React.ReactNode;
-        category: string;
-        type: "action" | "dropdown";
-        active?: boolean;
-        onClick?: () => void;
-        disabled?: boolean;
-        description?: string;
-        isToggle?: boolean;
-      };
-=======
   interface ViewerToolBaseConfig {
     label: string;
     icon: React.ReactNode;
@@ -463,7 +432,6 @@ const ViewerHeader = () => {
     description?: string;
     isToggle?: boolean;
   }
->>>>>>> 2a77d65 (feat: Implement MIP projection via Web Worker and enhance viewer functionality)
 
   interface ViewerToolConfig extends ViewerToolBaseConfig {
     id: ViewerTool;
