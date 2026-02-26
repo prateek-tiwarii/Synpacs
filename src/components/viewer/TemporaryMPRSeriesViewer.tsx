@@ -231,17 +231,17 @@ export function TemporaryMPRSeriesViewer({
       if (cached) return cached;
 
       // Check series rawData first, fall back to lazy MIP cache
-      let rawData = slice.rawData ?? lazyCacheRef.current.get(index);
+      const rawData = slice.rawData ?? lazyCacheRef.current.get(index);
       if (!rawData) {
         // Request lazy computation via Web Worker if provider exists
         if (onSliceNeeded && !pendingLazyRequestsRef.current.has(index)) {
           pendingLazyRequestsRef.current.add(index);
           const requestEpoch = lazyRequestEpochRef.current;
           onSliceNeeded(index).then((data) => {
-            pendingLazyRequestsRef.current.delete(index);
             if (requestEpoch !== lazyRequestEpochRef.current) {
               return;
             }
+            pendingLazyRequestsRef.current.delete(index);
             if (data) {
               lazyCacheRef.current.set(index, data);
               setLazyCacheVersion((v) => v + 1);
@@ -416,7 +416,11 @@ export function TemporaryMPRSeriesViewer({
           !pendingLazyRequestsRef.current.has(idx)
         ) {
           pendingLazyRequestsRef.current.add(idx);
+          const requestEpoch = lazyRequestEpochRef.current;
           onSliceNeeded(idx).then((data) => {
+            if (requestEpoch !== lazyRequestEpochRef.current) {
+              return;
+            }
             pendingLazyRequestsRef.current.delete(idx);
             if (data) lazyCacheRef.current.set(idx, data);
             // No version bump for prefetch — avoids unnecessary re-renders

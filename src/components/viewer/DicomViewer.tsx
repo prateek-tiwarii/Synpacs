@@ -34,6 +34,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 // Instance metadata interface matching the ACTUAL API response
 interface Instance {
@@ -3300,7 +3301,7 @@ export function DicomViewer({
         <ContextMenuItem
           onClick={() => {
             if (caseData?._id) {
-              window.open(`/case/${caseData._id}/report`, "_blank", "width=1200,height=800");
+              openReportInSingleWindow(caseData._id);
             }
           }}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"

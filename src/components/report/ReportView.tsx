@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { jsPDF } from 'jspdf';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
     Send,
     FileCheck,
@@ -20,6 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useReportContext } from '@/components/ReportLayout';
 import { apiService } from '@/lib/api';
+import { getOpenedReportCases, OPENED_REPORT_CASES_STORAGE_KEY, type OpenedReportCase } from '@/lib/reportWindow';
 import toast from 'react-hot-toast';
 
 interface PatientInfo {
@@ -100,6 +102,8 @@ const REPORT_HISTORY = [
 
 export function ReportView() {
     const { caseData, reportData } = useReportContext();
+    const { id: activeCaseId } = useParams();
+    const navigate = useNavigate();
     const editorRef = useRef<ReportEditorRef>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -110,6 +114,7 @@ export function ReportView() {
     const [activeSection, setActiveSection] = useState<'templates' | 'recent' | 'history'>('templates');
     const [isSaving, setIsSaving] = useState(false);
     const [savedReportId, setSavedReportId] = useState<string | null>(reportData?._id || null);
+    const [openedCases, setOpenedCases] = useState<OpenedReportCase[]>(() => getOpenedReportCases());
 
     // Initialize editor with existing report content
     useEffect(() => {
@@ -125,6 +130,39 @@ export function ReportView() {
             }
         }
     }, [reportData]);
+
+    useEffect(() => {
+        setOpenedCases(getOpenedReportCases());
+    }, [activeCaseId, caseData, reportData]);
+
+    useEffect(() => {
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key && event.key !== OPENED_REPORT_CASES_STORAGE_KEY) return;
+            setOpenedCases(getOpenedReportCases());
+        };
+
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, []);
+
+    const getCasePrimaryLabel = useCallback((openedCase: OpenedReportCase) => {
+        return (
+            openedCase.patientName ||
+            openedCase.description ||
+            openedCase.caseUid ||
+            openedCase.accessionNumber ||
+            `Case ${openedCase.caseId.slice(-6)}`
+        );
+    }, []);
+
+    const getCaseSecondaryLabel = useCallback((openedCase: OpenedReportCase) => {
+        return openedCase.patientId || openedCase.caseId;
+    }, []);
+
+    const handleCaseTabClick = useCallback((caseId: string) => {
+        if (!caseId || caseId === activeCaseId) return;
+        navigate(`/case/${caseId}/report`);
+    }, [activeCaseId, navigate]);
 
     // Helper function to format date
     const formatDateTime = (dateStr: string, timeStr?: string) => {
@@ -555,6 +593,42 @@ export function ReportView() {
                 accept=".txt,.doc,.docx,.rtf"
                 className="hidden"
             />
+
+            {/* Opened Cases Sidebar */}
+            <div className="w-56 bg-gray-800 border-r border-gray-700 flex flex-col">
+                <div className="p-2 border-b border-gray-700 bg-gray-900">
+                    <h3 className="text-xs font-semibold text-white">Opened Cases</h3>
+                    <p className="text-[10px] text-gray-400 mt-0.5">One report window, switch cases here</p>
+                </div>
+
+                <ScrollArea className="flex-1 p-2">
+                    {openedCases.length === 0 ? (
+                        <p className="text-xs text-gray-500 text-center py-3">No cases opened yet</p>
+                    ) : (
+                        <div className="space-y-1">
+                            {openedCases.map((openedCase) => {
+                                const isActive = openedCase.caseId === activeCaseId;
+
+                                return (
+                                    <button
+                                        key={openedCase.caseId}
+                                        onClick={() => handleCaseTabClick(openedCase.caseId)}
+                                        className={`w-full rounded-md px-2 py-1.5 text-left transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-700/60 text-gray-200 hover:bg-gray-700'
+                                            }`}
+                                    >
+                                        <p className="text-xs font-medium truncate">{getCasePrimaryLabel(openedCase)}</p>
+                                        <p className={`text-[10px] truncate ${isActive ? 'text-blue-100' : 'text-gray-400'}`}>
+                                            {getCaseSecondaryLabel(openedCase)}
+                                        </p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </ScrollArea>
+            </div>
 
             {/* Template Sidebar with Upload, Recent, History */}
             <div className="w-56 bg-gray-800 border-r border-gray-700 flex flex-col shadow-sm">

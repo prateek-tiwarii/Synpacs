@@ -19,6 +19,7 @@ import { formatDate, formatTime } from "@/lib/helperFunctions";
 
 import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
 import { format } from "date-fns";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 interface AssignedDoctor {
   _id: string;
@@ -970,7 +971,7 @@ const ShowAllPatients = () => {
     selectedCases.forEach((caseItem, index) => {
       if (caseItem?._id) {
         setTimeout(() => {
-          window.open(`/case/${caseItem._id}/report`, `report_${caseItem._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+          openReportInSingleWindow(caseItem._id);
         }, index * 100);
       }
     });

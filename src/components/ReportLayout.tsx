@@ -1,7 +1,17 @@
-import { Outlet, useParams } from 'react-router-dom';
-import { createContext, useContext, useState, useEffect } from 'react';
+import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { apiService } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import {
+    emitReportWindowNavigateCommand,
+    getOrCreateReportWindowSessionId,
+    heartbeatReportWindowLeadership,
+    parseReportWindowNavigateStorageValue,
+    releaseReportWindowLeadership,
+    REPORT_WINDOW_NAVIGATE_STORAGE_KEY,
+    tryClaimReportWindowLeadership,
+    upsertOpenedReportCase,
+} from '@/lib/reportWindow';
 
 interface Series {
     _id: string;
@@ -90,10 +100,77 @@ export const useReportContext = () => {
 
 export function ReportLayout() {
     const { id } = useParams();
+    const navigate = useNavigate();
     const [reportData, setReportData] = useState<ReportData | null>(null);
     const [caseData, setCaseData] = useState<CaseData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const currentCaseIdRef = useRef<string | undefined>(id);
+    const windowIdRef = useRef<string>('');
+    const isLeaderRef = useRef(false);
+    const latestNavigateIssuedAtRef = useRef(0);
+
+    useEffect(() => {
+        currentCaseIdRef.current = id;
+    }, [id]);
+
+    useEffect(() => {
+        const windowId = getOrCreateReportWindowSessionId();
+        windowIdRef.current = windowId;
+        isLeaderRef.current = tryClaimReportWindowLeadership(windowId);
+
+        if (!isLeaderRef.current && currentCaseIdRef.current) {
+            emitReportWindowNavigateCommand(currentCaseIdRef.current, windowId);
+            window.setTimeout(() => {
+                window.close();
+            }, 120);
+        }
+
+        const heartbeatInterval = window.setInterval(() => {
+            if (!windowIdRef.current) return;
+
+            if (isLeaderRef.current) {
+                const stillLeader = heartbeatReportWindowLeadership(windowIdRef.current);
+                if (!stillLeader) {
+                    isLeaderRef.current = tryClaimReportWindowLeadership(windowIdRef.current);
+                }
+                return;
+            }
+
+            isLeaderRef.current = tryClaimReportWindowLeadership(windowIdRef.current);
+        }, 1500);
+
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key !== REPORT_WINDOW_NAVIGATE_STORAGE_KEY) return;
+            if (!isLeaderRef.current) return;
+
+            const command = parseReportWindowNavigateStorageValue(event.newValue);
+            if (!command) return;
+            if (command.issuedAt <= latestNavigateIssuedAtRef.current) return;
+            latestNavigateIssuedAtRef.current = command.issuedAt;
+
+            if (command.caseId === currentCaseIdRef.current) return;
+            navigate(`/case/${command.caseId}/report`);
+            window.focus();
+        };
+
+        const handleBeforeUnload = () => {
+            if (!windowIdRef.current) return;
+            releaseReportWindowLeadership(windowIdRef.current);
+        };
+
+        window.addEventListener('storage', handleStorage);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            window.clearInterval(heartbeatInterval);
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            if (windowIdRef.current) {
+                releaseReportWindowLeadership(windowIdRef.current);
+            }
+        };
+    }, [navigate]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -139,6 +216,23 @@ export function ReportLayout() {
         fetchData();
     }, [id]);
 
+    useEffect(() => {
+        if (!id) return;
+
+        const sourceCase = caseData || reportData?.case_id;
+        if (!sourceCase) return;
+
+        upsertOpenedReportCase({
+            caseId: id,
+            caseUid: sourceCase.case_uid,
+            patientName: sourceCase.patient?.name || reportData?.patient_id?.name,
+            patientId: sourceCase.patient?.patient_id || reportData?.patient_id?.patient_id,
+            accessionNumber: sourceCase.accession_number,
+            description: sourceCase.description || sourceCase.body_part,
+            modality: sourceCase.modality,
+        });
+    }, [id, caseData, reportData]);
+
     const contextValue: ReportContextType = {
         reportData,
         caseData,
@@ -176,4 +270,3 @@ export function ReportLayout() {
         </ReportContext.Provider>
     );
 }
-

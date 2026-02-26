@@ -149,6 +149,34 @@ const estimateWindowLevelFromSlices = (
   return { windowWidth, windowCenter };
 };
 
+const adjustProjectionWindowForSlab = (
+  baseline: WindowLevelPreset,
+  baselineSlabHalfSize: number,
+  slabHalfSize: number,
+  mode: "MiniMIP" | "MIP",
+): WindowLevelPreset => {
+  const baselineWindowWidth = Math.max(1, baseline.windowWidth);
+  const clampedBaselineSlab = Math.max(0, baselineSlabHalfSize);
+  const clampedSlab = Math.max(0, slabHalfSize);
+
+  if (clampedSlab <= clampedBaselineSlab) {
+    return {
+      windowWidth: baselineWindowWidth,
+      windowCenter: baseline.windowCenter,
+    };
+  }
+
+  const slabDelta = clampedSlab - clampedBaselineSlab;
+  const widthGainPerStep = mode === "MiniMIP" ? 0.4 : 0.2;
+  const centerShiftRatio = mode === "MiniMIP" ? 0.18 : 0.12;
+
+  const windowWidth = baselineWindowWidth * (1 + slabDelta * widthGainPerStep);
+  const windowCenter =
+    baseline.windowCenter + (windowWidth - baselineWindowWidth) * centerShiftRatio;
+
+  return { windowWidth, windowCenter };
+};
+
 // Self-contained pane viewer for multi-pane grid layout
 type PlaneOrientation = "Axial" | "Coronal" | "Sagittal";
 
@@ -1183,6 +1211,8 @@ const CaseViewer = () => {
             physicalAspectRatio: geometry.aspectRatio,
             projectionSlabHalfSize: slabHalfSize,
             initialProjectionSlabHalfSize: slabHalfSize,
+            initialProjectionWindowCenter: mipWindow.windowCenter,
+            initialProjectionWindowWidth: mipWindow.windowWidth,
           };
 
           addTemporaryMPRSeries(tempSeries);
@@ -1247,8 +1277,9 @@ const CaseViewer = () => {
     setIs2DMPRActive,
   ]);
 
-  // Live projection update: when slab slider changes, just update the slab size
-  // and clear the worker cache. The viewer will re-request slices on demand (~20ms each).
+  // Live projection update: when slab slider changes, update the slab size.
+  // Keep worker cache entries keyed by slab size so revisiting a prior value
+  // restores the exact same projection slices.
   useEffect(() => {
     if (
       isGeneratingMPR ||
@@ -1277,9 +1308,21 @@ const CaseViewer = () => {
       selectedTempSeries.initialProjectionSlabHalfSize ??
       selectedTempSeries.projectionSlabHalfSize ??
       slabHalfSize;
-
-    // Clear the worker cache since slab size changed — all cached slices are stale
-    mipWorker.clearCache();
+    const baselineWindowCenter =
+      selectedTempSeries.initialProjectionWindowCenter ??
+      selectedTempSeries.windowCenter;
+    const baselineWindowWidth =
+      selectedTempSeries.initialProjectionWindowWidth ??
+      selectedTempSeries.windowWidth;
+    const adjustedProjectionWindow = adjustProjectionWindowForSlab(
+      {
+        windowCenter: baselineWindowCenter,
+        windowWidth: baselineWindowWidth,
+      },
+      baselineSlabHalfSize,
+      slabHalfSize,
+      activeProjectionMode,
+    );
 
     // Create placeholder slices (rawData will be loaded on demand by the viewer)
     const [cols, rows, totalSlices] = selectedTempSeries.slices.length > 0
@@ -1297,8 +1340,12 @@ const CaseViewer = () => {
         slices,
         sliceCount: totalSlices,
         createdAt: Date.now(),
+        windowCenter: adjustedProjectionWindow.windowCenter,
+        windowWidth: adjustedProjectionWindow.windowWidth,
         projectionSlabHalfSize: slabHalfSize,
         initialProjectionSlabHalfSize: baselineSlabHalfSize,
+        initialProjectionWindowCenter: baselineWindowCenter,
+        initialProjectionWindowWidth: baselineWindowWidth,
       },
       { autoSelect: false },
     );
@@ -1310,7 +1357,6 @@ const CaseViewer = () => {
     miniMIPIntensity,
     mipIntensity,
     addTemporaryMPRSeries,
-    mipWorker,
   ]);
 
   // On-demand MIP slice provider for TemporaryMPRSeriesViewer lazy loading

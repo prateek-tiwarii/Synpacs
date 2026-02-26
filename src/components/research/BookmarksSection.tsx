@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from "react";
 import type { VisibilityState, RowSelectionState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Bookmark as BookmarkIcon, BookmarkPlus, ChevronDown, ChevronUp, ClipboardCheck, Download, FileText, FolderOpen, ImageIcon, MessageSquare, Settings } from "lucide-react";
-import { Link } from "react-router-dom";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -17,6 +16,7 @@ import BookmarkDialog from "@/components/dashboard/doctorDashboard/molecules/Boo
 import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 type BookmarkedCase = Patient & {
     notes?: Note[];
@@ -364,7 +364,7 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                                 <button
                                     className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                        openReportInSingleWindow(props.row.original._id);
                                     }}
                                 >
                                     <FileText className="w-3.5 h-3.5 text-blue-500" />
@@ -646,13 +646,16 @@ export const BookmarksSection: React.FC<BookmarksSectionProps> = ({ onExportBook
                 const attachedReport = (props.row.original as any).attached_report;
                 if (attachedReport) {
                     return (
-                        <Link
-                            to={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
                         >
                             {attachedReport.is_draft ? 'Draft' : 'Available'}
-                        </Link>
+                        </button>
                     );
                 }
                 return <span className="text-gray-400">-</span>;

@@ -16,6 +16,7 @@ import BookmarkDialog from "@/components/dashboard/doctorDashboard/molecules/Boo
 import { apiService } from "@/lib/api";
 import toast from "react-hot-toast";
 import type { Patient, Note } from "@/components/patient/PacDetailsModal";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 type BookmarkedCase = Patient & {
     notes?: Note[];
@@ -196,7 +197,7 @@ const Bookmark = () => {
         selectedBookmarks.forEach((bookmark, index) => {
             if (bookmark?._id) {
                 setTimeout(() => {
-                    window.open(`/case/${bookmark._id}/report`, `report_${bookmark._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                    openReportInSingleWindow(bookmark._id);
                 }, index * 100);
             }
         });
@@ -392,7 +393,7 @@ const Bookmark = () => {
                                 <button
                                     className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                                     onClick={() => {
-                                        window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                                        openReportInSingleWindow(props.row.original._id);
                                     }}
                                 >
                                     <FileText className="w-3.5 h-3.5 text-blue-500" />
@@ -703,15 +704,16 @@ const Bookmark = () => {
                 const attachedReport = props.row.original.attached_report;
                 if (attachedReport) {
                     return (
-                        <a
-                            href={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
-                            target="_blank"
-                            rel="noreferrer"
                         >
                             {attachedReport.is_draft ? 'Draft' : 'Available'}
-                        </a>
+                        </button>
                     );
                 }
                 return <span className="text-gray-400">-</span>;

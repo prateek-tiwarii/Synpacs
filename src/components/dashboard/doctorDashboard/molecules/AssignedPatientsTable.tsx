@@ -1,6 +1,5 @@
 import { Bookmark, ClipboardCheck, Download, FolderOpen, ImageIcon, MessageSquare, Eye, X, Settings } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
 import type { VisibilityState, RowSelectionState, ColumnSizingState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,7 @@ import PatientHistoryModal from "./PatientHistoryModal";
 
 import type { FilterState } from "@/components/common/FilterPanel";
 import toast from "react-hot-toast";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 // Default column visibility configuration for AssignedPatientsTable
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
@@ -763,38 +763,47 @@ const AssignedPatientsTable = ({
                 // Check for attached report first
                 if (reportingStatus === 'drafted') {
                     return (
-                        <Link
-                            to={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full transition-colors bg-yellow-100 border-2 border-yellow-500 text-yellow-800 hover:bg-yellow-200`}
                         >
                             Drafted
-                        </Link>
+                        </button>
                     );
                 }
 
                 // Check for reporting_status field
                 if (reportingStatus === 'signed_off') {
                     return (
-                        <Link
-                            to={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 border-2 border-green-500 text-green-800 hover:bg-green-200 transition-colors"
                         >
                             Signed Off
-                        </Link>
+                        </button>
                     );
                 }
 
                 if (reportingStatus === 'unreported') {
                     return (
-                        <Link
-                            to={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className="flex justify-center"
                         >
                             -
-                        </Link>
+                        </button>
                     );
                 }
 
@@ -839,7 +848,7 @@ const AssignedPatientsTable = ({
         selectedPatients.forEach((patient, index) => {
             if (patient?._id) {
                 setTimeout(() => {
-                    window.open(`/case/${patient._id}/report`, `report_${patient._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                    openReportInSingleWindow(patient._id);
                 }, index * 100);
             }
         });

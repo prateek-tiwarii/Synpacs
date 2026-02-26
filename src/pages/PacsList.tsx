@@ -7,7 +7,6 @@ import { apiService } from "@/lib/api";
 import { DataTable, CellWithCopy } from "@/components/common/DataTable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Link } from "react-router-dom";
 import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
 import MessageDialog from "@/components/dashboard/doctorDashboard/molecules/MessageDialog";
 import DocumentDialog from "@/components/dashboard/doctorDashboard/molecules/DocumentDialog";
@@ -16,6 +15,7 @@ import DownloadModal from "@/components/common/DownloadModal";
 import PatientHistoryModal from "@/components/dashboard/doctorDashboard/molecules/PatientHistoryModal";
 import toast from "react-hot-toast";
 import type { Note } from "@/components/patient/PacDetailsModal";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 // Default column visibility configuration
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
@@ -785,13 +785,16 @@ const PacsList = () => {
                 const attachedReport = props.row.original.attached_report;
                 if (attachedReport) {
                     return (
-                        <Link
-                            to={`/case/${props.row.original._id}/report`}
-                            onClick={(e) => e.stopPropagation()}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                openReportInSingleWindow(props.row.original._id);
+                            }}
                             className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
                         >
                             {attachedReport.is_draft ? 'Draft' : 'Available'}
-                        </Link>
+                        </button>
                     );
                 }
                 return <span className="text-gray-400">-</span>;

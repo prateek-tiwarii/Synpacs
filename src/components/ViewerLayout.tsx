@@ -113,6 +113,8 @@ export interface TemporaryMPRSeries {
   physicalAspectRatio?: number; // Physical width/height ratio accounting for spacing
   projectionSlabHalfSize?: number; // Used for live projection updates
   initialProjectionSlabHalfSize?: number; // Baseline slab size when the series was created
+  initialProjectionWindowCenter?: number; // Baseline W/L center for projection series
+  initialProjectionWindowWidth?: number; // Baseline W/L width for projection series
 }
 
 export type GridLayout = `${number}x${number}`;

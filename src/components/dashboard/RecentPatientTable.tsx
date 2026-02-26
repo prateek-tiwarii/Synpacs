@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { DataTable } from "@/components/common/DataTable/DataTable";
 import FilterPanel, { type FilterState } from "@/components/common/FilterPanel";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 interface AssignedDoctor {
   _id: string;
@@ -615,7 +616,7 @@ const RecentPatientTable = ({ onDateRangeChange }: RecentPatientTableProps = {})
             className="text-xs px-2 py-0 cursor-pointer hover:opacity-80"
             onClick={(e) => {
               e.stopPropagation();
-              window.open(`/case/${row.original._id}/report`, '_blank');
+              openReportInSingleWindow(row.original._id);
             }}
           >
             {isDraft ? "Draft" : "Available"}

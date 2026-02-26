@@ -5,9 +5,9 @@ import { apiService } from '@/lib/api';
 import { DataTable, CellWithCopy } from '@/components/common/DataTable';
 import type { VisibilityState } from '@tanstack/react-table';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Link } from 'react-router-dom';
 import type { Patient } from '@/components/patient/PacDetailsModal';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { openReportInSingleWindow } from '@/lib/reportWindow';
 
 interface SearchFilters {
   minAge: string;
@@ -244,7 +244,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
                 <button
                   className="p-0.5 hover:bg-blue-50 rounded cursor-pointer"
                   onClick={() => {
-                    window.open(`${window.location.origin}/case/${props.row.original._id}/report`, `report_${props.row.original._id}`, 'width=1200,height=800,resizable=yes,scrollbars=yes');
+                    openReportInSingleWindow(props.row.original._id);
                   }}
                 >
                   <ClipboardCheck className="w-3.5 h-3.5 text-blue-500" />
@@ -510,13 +510,16 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ filters, onExport,
         const attachedReport = props.row.original.attached_report;
         if (attachedReport) {
           return (
-            <Link
-              to={`/case/${props.row.original._id}/report`}
-              onClick={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openReportInSingleWindow(props.row.original._id);
+              }}
               className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
             >
               {attachedReport.is_draft ? 'Draft' : 'Available'}
-            </Link>
+            </button>
           );
         }
         return <span className="text-gray-400">-</span>;

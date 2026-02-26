@@ -54,6 +54,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { openReportInSingleWindow } from "@/lib/reportWindow";
 
 // CT Window Presets with standard W/L values
 const CT_PRESETS = [
@@ -1914,13 +1915,7 @@ const ViewerHeader = () => {
                 icon={<ScrollText size={18} />}
                 label="Report"
                 description="View and edit the study report"
-                onClick={() =>
-                  window.open(
-                    `/case/${caseData._id}/report`,
-                    "_blank",
-                    "width=1200,height=800",
-                  )
-                }
+                onClick={() => openReportInSingleWindow(caseData._id)}
               />
             </div>
           </div>
