@@ -6,13 +6,13 @@ import {
     SheetTitle,
     SheetDescription,
 } from "@/components/ui/sheet";
-import { Monitor, Keyboard, RotateCcw, MousePointer2 } from "lucide-react";
+import { Monitor, Keyboard, RotateCcw, MousePointer2, LayoutGrid } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useViewerContext } from "../ViewerLayout";
+import { useViewerContext, type SidebarColumns, type SidebarPosition } from "../ViewerLayout";
 
 interface SettingsDrawerProps {
     open: boolean;
@@ -31,7 +31,14 @@ const WINDOW_PRESETS = [
 ];
 
 const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
-    const { shortcuts, updateShortcut } = useViewerContext();
+    const {
+        shortcuts,
+        updateShortcut,
+        sidebarPosition,
+        setSidebarPosition,
+        sidebarColumns,
+        setSidebarColumns,
+    } = useViewerContext();
     const [monitor, setMonitor] = useState<string>(() => {
         return localStorage.getItem("viewer_monitor_setting") || "screen1";
     });
@@ -41,6 +48,12 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
     useEffect(() => {
         localStorage.setItem("viewer_monitor_setting", monitor);
     }, [monitor]);
+
+    useEffect(() => {
+        if (sidebarPosition !== "side" && sidebarColumns !== 1) {
+            setSidebarColumns(1);
+        }
+    }, [sidebarPosition, sidebarColumns, setSidebarColumns]);
 
     const handleKeyDown = useCallback((e: globalThis.KeyboardEvent) => {
         if (!recordingId) return;
@@ -143,6 +156,109 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
                                     </Label>
                                 </div>
                             </RadioGroup>
+                        </section>
+
+                        <Separator className="bg-gray-800" />
+
+                        {/* Sidebar Preferences */}
+                        <section className="space-y-2">
+                            <div className="flex items-center gap-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                                <LayoutGrid className="w-3 h-3" />
+                                Sidebar
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <p className="text-[9px] text-gray-500 uppercase tracking-wider">
+                                    Position
+                                </p>
+                                <RadioGroup
+                                    value={sidebarPosition}
+                                    onValueChange={(value) =>
+                                        setSidebarPosition(value as SidebarPosition)
+                                    }
+                                    className="grid grid-cols-3 gap-2"
+                                >
+                                    <div>
+                                        <RadioGroupItem
+                                            value="side"
+                                            id="sidebar-side"
+                                            className="peer sr-only"
+                                        />
+                                        <Label
+                                            htmlFor="sidebar-side"
+                                            className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-[10px] hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
+                                        >
+                                            Side
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem
+                                            value="top"
+                                            id="sidebar-top"
+                                            className="peer sr-only"
+                                        />
+                                        <Label
+                                            htmlFor="sidebar-top"
+                                            className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-[10px] hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
+                                        >
+                                            Top
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem
+                                            value="bottom"
+                                            id="sidebar-bottom"
+                                            className="peer sr-only"
+                                        />
+                                        <Label
+                                            htmlFor="sidebar-bottom"
+                                            className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-[10px] hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
+                                        >
+                                            Lower
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <p className="text-[9px] text-gray-500 uppercase tracking-wider">
+                                    Series Layout
+                                </p>
+                                <RadioGroup
+                                    value={String(sidebarColumns)}
+                                    onValueChange={(value) =>
+                                        setSidebarColumns(Number(value) as SidebarColumns)
+                                    }
+                                    className="grid grid-cols-2 gap-2"
+                                >
+                                    <div>
+                                        <RadioGroupItem
+                                            value="1"
+                                            id="sidebar-columns-1"
+                                            className="peer sr-only"
+                                        />
+                                        <Label
+                                            htmlFor="sidebar-columns-1"
+                                            className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-[10px] hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
+                                        >
+                                            1 × N
+                                        </Label>
+                                    </div>
+                                    <div>
+                                        <RadioGroupItem
+                                            value="2"
+                                            id="sidebar-columns-2"
+                                            className="peer sr-only"
+                                        />
+                                        <Label
+                                            htmlFor="sidebar-columns-2"
+                                            className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-[10px] hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
+                                        >
+                                            2 × N
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
+                            </div>
                         </section>
 
                         <Separator className="bg-gray-800" />

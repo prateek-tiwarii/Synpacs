@@ -35,6 +35,7 @@ import {
   Settings,
   ChevronDown,
   ScanLine,
+  Copy,
 } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -126,7 +127,11 @@ const ToolButton = ({
 
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
-import { useViewerContext } from "../ViewerLayout";
+import {
+  DEFAULT_MINI_MIP_INTENSITY,
+  DEFAULT_MIP_INTENSITY,
+  useViewerContext,
+} from "../ViewerLayout";
 import type { MPRMode, ViewerTool, MouseButton, MouseButtonBindings } from "../ViewerLayout";
 
 const VIEWER_TOOL_IDS = new Set<string>([
@@ -143,34 +148,50 @@ const MOUSE_BUTTON_LABELS: { button: MouseButton; label: string; color: string }
   { button: 2, label: "R", color: "bg-red-400" },
 ];
 
+const getMouseButtonsForTool = (toolId: ViewerTool) =>
+  toolId === "SpineLabeling" ? [] : MOUSE_BUTTON_LABELS;
+
 const MouseBindingBar = memo(({ toolId, mouseBindings, onToggle }: {
   toolId: ViewerTool;
   mouseBindings: MouseButtonBindings;
   onToggle: (button: MouseButton, tool: ViewerTool) => void;
-}) => (
-  <div className="flex w-full justify-center gap-[2px] px-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
-    {MOUSE_BUTTON_LABELS.map(({ button, label, color }) => {
-      const isActive = mouseBindings[button] === toolId;
-      return (
-        <button
-          key={button}
-          type="button"
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onToggle(button, toolId);
-          }}
-          className={`h-[10px] flex-1 rounded-sm transition-colors cursor-pointer text-[6px] leading-[10px] font-bold select-none ${
-            isActive ? `${color} text-gray-900` : "bg-gray-700/60 hover:bg-gray-500 text-gray-500"
-          }`}
-          title={`Assign ${label === "L" ? "Left" : label === "M" ? "Middle" : "Right"} click → ${toolId}`}
-        >
-          {label}
-        </button>
-      );
-    })}
-  </div>
-));
+}) => {
+  const buttons = getMouseButtonsForTool(toolId);
+
+  if (buttons.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="flex w-full justify-center gap-[2px] px-1 mt-0.5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {buttons.map(({ button, label, color }) => {
+        const isActive = mouseBindings[button] === toolId;
+        return (
+          <button
+            key={button}
+            type="button"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onToggle(button, toolId);
+            }}
+            className={`h-[10px] flex-1 rounded-sm transition-colors cursor-pointer text-[6px] leading-[10px] font-bold select-none ${
+              isActive
+                ? `${color} text-gray-900`
+                : "bg-gray-700/60 hover:bg-gray-500 text-gray-500"
+            }`}
+            title={`Assign ${label === "L" ? "Left" : label === "M" ? "Middle" : "Right"} click → ${toolId}`}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+});
 
 import { buildGridLayoutId, parseGridLayout } from "@/lib/gridLayout";
 
@@ -225,6 +246,8 @@ const ViewerHeader = () => {
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    is2DMPRActive,
+    setIs2DMPRActive,
     mouseBindings,
     setMouseBinding,
   } = useViewerContext();
@@ -236,6 +259,39 @@ const ViewerHeader = () => {
       setMouseBinding(button, tool);
     }
   }, [mouseBindings, setMouseBinding]);
+
+  const handleCopyCurrentFrame = useCallback(async () => {
+    const activeCanvas =
+      document.querySelector<HTMLCanvasElement>(
+        'canvas[data-viewer-canvas="true"][data-viewer-active="true"]',
+      ) ??
+      document.querySelector<HTMLCanvasElement>('canvas[data-viewer-canvas="true"]');
+
+    if (!activeCanvas) {
+      toast.error("No image available to copy");
+      return;
+    }
+
+    if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+      toast.error("Clipboard image copy not supported in this browser");
+      return;
+    }
+
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        activeCanvas.toBlob(resolve, "image/png");
+      });
+      if (!blob) {
+        toast.error("Failed to capture image");
+        return;
+      }
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("Copied current frame to clipboard");
+    } catch (error) {
+      console.error("Failed to copy image to clipboard", error);
+      toast.error("Failed to copy image to clipboard");
+    }
+  }, []);
 
   const [activeTab, setActiveTab] = useState<
     "Favourites" | "Tools" | "Measurement"
@@ -765,6 +821,27 @@ const ViewerHeader = () => {
       ? { min: 1, max: 20, hint: "Thin slab for local vessel emphasis" }
       : { min: 8, max: 80, hint: "Thick slab for angiographic overview" };
 
+  const getProjectionDefault = (mode: ProjectionMode) => {
+    const series = getProjectionSeries(mode);
+    const baseline =
+      series?.initialProjectionSlabHalfSize ?? series?.projectionSlabHalfSize;
+    if (typeof baseline === "number") {
+      return baseline;
+    }
+    return mode === "MiniMIP" ? DEFAULT_MINI_MIP_INTENSITY : DEFAULT_MIP_INTENSITY;
+  };
+
+  const projectionSliderBaseClassName =
+    "w-full appearance-none rounded-full outline-none cursor-pointer transition-[filter] duration-150 hover:brightness-110 active:brightness-125 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.35)] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2";
+
+  const getProjectionTheme = () => ({
+    chipClassName: "text-amber-100 border-amber-400/60 bg-amber-400/20",
+    sliderClassName: `${projectionSliderBaseClassName} h-2 [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-moz-range-track]:h-2 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-webkit-slider-thumb]:bg-amber-300 [&::-webkit-slider-thumb]:border-amber-100 [&::-moz-range-thumb]:bg-amber-300 [&::-moz-range-thumb]:border-amber-100`,
+    fillColor: "#f59e0b",
+    trackColor: "#334155",
+    resetClassName: "border-amber-400/40 text-amber-200 hover:bg-amber-500/10",
+  });
+
   const getProjectionSeries = (mode: ProjectionMode) =>
     selectedSeries
       ? temporaryMPRSeries.find(
@@ -808,147 +885,197 @@ const ViewerHeader = () => {
   const renderLayoutDropdownContent = () => (
     <DropdownMenuContent
       align="start"
-      className="w-64 bg-gray-900/95 border-gray-700 text-gray-200 p-3 shadow-2xl"
+      className="bg-gray-900/95 border-gray-700 text-gray-200 p-1.5 shadow-2xl"
     >
-      <div className="flex items-center justify-between px-0.5">
-        <DropdownMenuLabel className="text-gray-400 text-[11px] uppercase tracking-wider px-0 py-0">
-          Grid Layout
-        </DropdownMenuLabel>
-        <span className="text-[11px] font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded px-1.5 py-0.5">
-          {selectedLayout.rows} × {selectedLayout.cols}
-        </span>
+      <div
+        className="grid gap-1"
+        style={{
+          gridTemplateColumns: `repeat(${LAYOUT_PICKER_MAX_COLS}, minmax(0, 1fr))`,
+        }}
+        onMouseLeave={() => setLayoutHover(null)}
+      >
+        {Array.from({ length: LAYOUT_PICKER_MAX_ROWS }).map((_, rowIndex) =>
+          Array.from({ length: LAYOUT_PICKER_MAX_COLS }).map((__, colIndex) => {
+            const rows = rowIndex + 1;
+            const cols = colIndex + 1;
+            const isHighlighted =
+              rowIndex < previewLayout.rows && colIndex < previewLayout.cols;
+            const isSelected =
+              rows === selectedLayout.rows && cols === selectedLayout.cols;
+
+            return (
+              <button
+                key={`${rows}x${cols}`}
+                type="button"
+                onMouseEnter={() => setLayoutHover({ rows, cols })}
+                onFocus={() => setLayoutHover({ rows, cols })}
+                onClick={() => handleLayoutSelect(rows, cols)}
+                className={`h-6 w-6 rounded border transition-all duration-150 ${isHighlighted
+                  ? "bg-amber-400/85 border-amber-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+                  : "bg-gray-800/80 border-gray-700 hover:border-gray-500 hover:bg-gray-700/80"
+                  } ${isSelected ? "ring-2 ring-amber-200/80 ring-offset-1 ring-offset-gray-900" : ""}`}
+                aria-label={`Set layout ${rows} by ${cols}`}
+              />
+            );
+          }),
+        )}
       </div>
-
-      <div className="mt-2 rounded-lg border border-gray-700/70 bg-gradient-to-b from-gray-800/70 to-gray-900/80 p-2">
-        <div className="flex items-center justify-between text-[11px] mb-2 px-0.5">
-          <span className="text-gray-200">
-            {previewLayout.rows} × {previewLayout.cols}
-          </span>
-          <span className="text-gray-500">
-            {previewLayout.rows * previewLayout.cols} panes
-          </span>
-        </div>
-
-        <div
-          className="grid gap-1.5"
-          style={{
-            gridTemplateColumns: `repeat(${LAYOUT_PICKER_MAX_COLS}, minmax(0, 1fr))`,
-          }}
-          onMouseLeave={() => setLayoutHover(null)}
-        >
-          {Array.from({ length: LAYOUT_PICKER_MAX_ROWS }).map((_, rowIndex) =>
-            Array.from({ length: LAYOUT_PICKER_MAX_COLS }).map((__, colIndex) => {
-              const rows = rowIndex + 1;
-              const cols = colIndex + 1;
-              const isHighlighted =
-                rowIndex < previewLayout.rows && colIndex < previewLayout.cols;
-              const isSelected =
-                rows === selectedLayout.rows && cols === selectedLayout.cols;
-
-              return (
-                <button
-                  key={`${rows}x${cols}`}
-                  type="button"
-                  onMouseEnter={() => setLayoutHover({ rows, cols })}
-                  onFocus={() => setLayoutHover({ rows, cols })}
-                  onClick={() => handleLayoutSelect(rows, cols)}
-                  className={`relative h-6 w-6 rounded border transition-all duration-150 ${isHighlighted
-                    ? "bg-amber-400/85 border-amber-100/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
-                    : "bg-gray-800/80 border-gray-700 hover:border-gray-500 hover:bg-gray-700/80"
-                    } ${isSelected ? "ring-2 ring-amber-200/80 ring-offset-1 ring-offset-gray-900" : ""}`}
-                  aria-label={`Set layout ${rows} by ${cols}`}
-                >
-                  {isSelected && (
-                    <Check size={11} className="absolute inset-0 m-auto text-gray-900" />
-                  )}
-                </button>
-              );
-            }),
-          )}
-        </div>
-      </div>
-
-      <p className="mt-2 px-0.5 text-[10px] text-gray-500">
-        Hover to preview, click to apply
-      </p>
     </DropdownMenuContent>
   );
 
   const renderProjectionDropdownContent = (mode: ProjectionMode) => {
     const config = getProjectionRange(mode);
     const intensity = getProjectionIntensity(mode);
-    const existingSeries = getProjectionSeries(mode);
-    const isSelected = getProjectionSelected(mode);
-    const projectedSliceCount = intensity * 2 + 1;
+    const defaultIntensity = getProjectionDefault(mode);
+    const isDefault = intensity === defaultIntensity;
+    const theme = getProjectionTheme();
     const fillPercent =
       ((intensity - config.min) / (config.max - config.min)) * 100;
 
     return (
       <DropdownMenuContent
         align="start"
-        className="w-72 bg-gray-900 border-gray-700 text-gray-200 p-3"
+        className="w-64 bg-gray-900 border-gray-700 text-gray-200 p-2"
       >
-        <div className="flex items-center justify-between">
-          <DropdownMenuLabel className="text-gray-400 text-xs px-0">
-            {mode}
-          </DropdownMenuLabel>
-          <span className="text-[11px] px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-500/10 text-amber-200 font-medium">
+        <div className="flex items-center justify-between mb-2">
+          <button
+            type="button"
+            onClick={() => setProjectionIntensity(mode, defaultIntensity)}
+            disabled={isDefault}
+            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${theme.resetClassName} ${
+              isDefault ? "opacity-40 cursor-not-allowed hover:bg-transparent" : ""
+            }`}
+          >
+            Reset
+          </button>
+          <span
+            className={`text-[11px] px-1.5 py-0.5 rounded border font-medium ${theme.chipClassName}`}
+          >
             {intensity}
           </span>
         </div>
-        <DropdownMenuSeparator className="bg-gray-800 my-2" />
-
-        <div className="mb-2 text-[11px] text-gray-500">
-          {existingSeries
-            ? `${mode} is open and updates live`
-            : `Opening this menu auto-starts ${mode}`}
-        </div>
-
-        <div className="text-xs text-gray-400 mb-1">Intensity</div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-800/70 px-2 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-500">Low</span>
-            <input
-              type="range"
-              min={config.min}
-              max={config.max}
-              step={1}
-              value={intensity}
-              onInput={(e) =>
-                setProjectionIntensity(
-                  mode,
-                  Number((e.target as HTMLInputElement).value),
-                )
-              }
-              onChange={(e) =>
-                setProjectionIntensity(
-                  mode,
-                  Number((e.target as HTMLInputElement).value),
-                )
-              }
-              style={{
-                background: `linear-gradient(90deg, #f59e0b 0%, #f59e0b ${fillPercent}%, #374151 ${fillPercent}%, #374151 100%)`,
-              }}
-              className="h-2 w-full appearance-none rounded-full outline-none cursor-pointer transition-[filter] duration-150 hover:brightness-110 active:brightness-125 [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-300 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-amber-100 [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.35)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-amber-100 [&::-moz-range-thumb]:bg-amber-300"
-            />
-            <span className="text-[11px] text-gray-500">High</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px]">
-            <span className="text-gray-400 font-mono">
-              {projectedSliceCount} slices
-            </span>
-            <span className="text-gray-500">{config.hint}</span>
-          </div>
-        </div>
-
-        <div className="mt-2 text-[11px] text-gray-500">
-          {isSelected ? "Live update enabled" : `Open ${mode} to preview updates`}
-        </div>
+        <input
+          type="range"
+          min={config.min}
+          max={config.max}
+          step={1}
+          value={intensity}
+          onInput={(e) =>
+            setProjectionIntensity(
+              mode,
+              Number((e.target as HTMLInputElement).value),
+            )
+          }
+          onChange={(e) =>
+            setProjectionIntensity(
+              mode,
+              Number((e.target as HTMLInputElement).value),
+            )
+          }
+          style={{
+            background: `linear-gradient(90deg, ${theme.fillColor} 0%, ${theme.fillColor} ${fillPercent}%, ${theme.trackColor} ${fillPercent}%, ${theme.trackColor} 100%)`,
+          }}
+          className={theme.sliderClassName}
+        />
       </DropdownMenuContent>
     );
   };
 
   if (!caseData) return null;
+
+  // 2D MPR mode: dedicated header with compact tool palette + exit button
+  if (is2DMPRActive) {
+    const mprTools: { tool: ViewerTool; icon: React.ReactNode; label: string }[] = [
+      { tool: "Stack", icon: <Layers size={16} />, label: "Scroll" },
+      { tool: "Pan", icon: <Move size={16} />, label: "Pan" },
+      { tool: "Zoom", icon: <ZoomIn size={16} />, label: "Zoom" },
+      { tool: "Contrast", icon: <Contrast size={16} />, label: "W/L" },
+      { tool: "FreeRotate", icon: <RotateCw size={16} />, label: "Rotate" },
+      { tool: "Length", icon: <Ruler size={16} />, label: "Length" },
+      { tool: "Angle", icon: <CornerDownRight size={16} />, label: "Angle" },
+      { tool: "Ellipse", icon: <Circle size={16} />, label: "Ellipse" },
+      { tool: "Rectangle", icon: <Square size={16} />, label: "Rect" },
+      { tool: "HU", icon: <Crosshair size={16} />, label: "HU" },
+    ];
+
+    return (
+      <TooltipProvider>
+        <header className="bg-gray-900 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-1.5">
+            <div className="flex items-center gap-3">
+              <Layers size={18} className="text-green-400" />
+              <span className="text-sm font-medium text-white">2D MPR View</span>
+              <div className="w-px h-6 bg-gray-700 mx-1" />
+              {/* Compact tool palette */}
+              <div className="flex items-center gap-0.5">
+                {mprTools.map(({ tool, icon, label }) => (
+                  <div key={tool} className="flex flex-col items-center">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => setActiveTool(tool)}
+                          className={`flex items-center gap-1 px-2 py-1.5 rounded text-xs transition-colors ${
+                            activeTool === tool
+                              ? "bg-blue-600 text-white"
+                              : "text-gray-400 hover:text-white hover:bg-gray-800"
+                          }`}
+                        >
+                          {icon}
+                          <span className="hidden xl:inline">{label}</span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                        <p>{label}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <MouseBindingBar toolId={tool} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                  </div>
+                ))}
+              </div>
+              <div className="w-px h-6 bg-gray-700 mx-1" />
+              {/* Window presets */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+                    <SunMoon size={14} />
+                    <span>Presets</span>
+                    <ChevronDown size={12} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-gray-800 border-gray-700">
+                  {CT_PRESETS.map((preset) => (
+                    <DropdownMenuItem
+                      key={preset.key}
+                      onClick={() => {
+                        setViewTransform((prev) => ({
+                          ...prev,
+                          windowWidth: preset.width,
+                          windowCenter: preset.center,
+                        }));
+                      }}
+                      className="text-gray-200 hover:bg-gray-700 text-xs"
+                    >
+                      <span className="text-gray-500 mr-2">{preset.key}</span>
+                      {preset.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Press Escape to exit</span>
+              <button
+                onClick={() => setIs2DMPRActive(false)}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors font-medium"
+              >
+                Exit MPR
+              </button>
+            </div>
+          </div>
+        </header>
+      </TooltipProvider>
+    );
+  }
 
   // 3D MPR mode: show minimal header with exit button only
   if (isVRTActive) {
@@ -1800,6 +1927,12 @@ const ViewerHeader = () => {
 
           {/* Export Group */}
           <div className="flex items-center gap-0.5 border-l border-gray-700 pl-4">
+            <ToolButton
+              icon={<Copy size={18} />}
+              label="Copy"
+              description="Copy current frame to clipboard (PNG)"
+              onClick={handleCopyCurrentFrame}
+            />
             <ToolButton icon={<Download size={18} />} label="Export" description="Download image as DICOM, JPEG or BMP" />
             <ToolButton icon={<Printer size={18} />} label="Print" description="Print the current view" />
             <ToolButton icon={<Share2 size={18} />} label="Share" description="Share the case with other users" />

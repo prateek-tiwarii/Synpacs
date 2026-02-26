@@ -3,6 +3,8 @@ import { ChevronDown, ChevronRight, Image, Layers, X, Calendar } from "lucide-re
 import {
   useViewerContext,
   type TemporaryMPRSeries,
+  type SidebarColumns,
+  type SidebarPosition,
 } from "@/components/ViewerLayout";
 import toast from "react-hot-toast";
 import { getCookie } from "@/lib/cookies";
@@ -78,6 +80,8 @@ interface SeriesItemProps {
   isDownloaded?: boolean;
   dragPayload?: DragSeriesPayload;
   isDraggable?: boolean;
+  className?: string;
+  isCompact?: boolean;
 }
 
 // Compact series item with image count
@@ -90,7 +94,10 @@ const SeriesItem = ({
   isDownloaded = false,
   dragPayload,
   isDraggable = true,
+  className = "",
+  isCompact = false,
 }: SeriesItemProps) => (
+  // Fixed thumbnail height keeps cards visually uniform.
   <div
     draggable={isDraggable}
     onDragStart={(event) => {
@@ -98,7 +105,7 @@ const SeriesItem = ({
       setSeriesDragData(event, dragPayload);
     }}
     onClick={onClick}
-    className={`rounded-lg overflow-hidden border transition-all ${
+    className={`rounded-lg overflow-hidden border transition-all ${className} ${
       isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
     } ${
       isSelected
@@ -106,10 +113,12 @@ const SeriesItem = ({
         : "border-gray-700 bg-gray-900/70 hover:border-gray-500 hover:bg-gray-800/70"
     }`}
   >
-    <div className="p-2">
+    <div className={isCompact ? "p-1" : "p-1.5"}>
       {/* Thumbnail */}
       <div
-        className="w-full aspect-[4/3] rounded-md flex items-center justify-center relative overflow-hidden"
+        className={`w-full flex items-center justify-center relative overflow-hidden ${
+          isCompact ? "h-[72px] rounded-sm" : "h-[120px] rounded-md"
+        }`}
         style={{ backgroundColor: getSeriesColor(series.description) }}
       >
         {thumbnailUrl ? (
@@ -122,31 +131,48 @@ const SeriesItem = ({
         ) : (
           <Image size={24} className="text-gray-500/60" />
         )}
-        <span className="absolute top-0.5 left-0.5 text-[8px] bg-black/60 px-0.5 rounded text-white font-mono">
+        <span
+          className={`absolute top-0.5 left-0.5 bg-black/60 px-0.5 rounded text-white font-mono ${
+            isCompact ? "text-[7px]" : "text-[8px]"
+          }`}
+        >
           {series.modality}
         </span>
       </div>
 
       {/* Series info */}
-      <div className="mt-2 min-w-0">
-        <p className="text-[10px] text-blue-300 font-semibold tracking-wide">
+      <div className={isCompact ? "min-w-0 mt-1" : "min-w-0 mt-1.5"}>
+        <p
+          className={`text-blue-300 font-semibold tracking-wide ${
+            isCompact ? "text-[9px]" : "text-[10px]"
+          }`}
+        >
           SERIES {series.series_number}
         </p>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-white font-medium leading-tight break-words h-8 overflow-hidden">
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <p
+            className={`text-white font-medium leading-tight break-words h-8 overflow-hidden ${
+              isCompact ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
             {series.description || "Untitled series"}
           </p>
         </div>
-        <div className="mt-1.5">
-          <p className="text-[11px] text-gray-400">
+        <div className="mt-1">
+          <p
+            className={`text-gray-400 ${
+              isCompact ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
             {series.image_count} images
           </p>
           {isDownloaded && !loadProgress && (
-            <div className="mt-1">
-              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/90">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Downloaded
-              </span>
+            <div className="mt-1 flex items-center">
+              <span
+                className={`${isCompact ? "h-1.5 w-1.5" : "h-2 w-2"} rounded-full bg-emerald-400`}
+                title="Downloaded"
+              />
+              <span className="sr-only">Downloaded</span>
             </div>
           )}
         </div>
@@ -175,6 +201,8 @@ interface MPRSeriesItemProps {
   onRemove: () => void;
   dragPayload?: DragSeriesPayload;
   isDraggable?: boolean;
+  className?: string;
+  isCompact?: boolean;
 }
 
 const MPRSeriesItem = ({
@@ -184,6 +212,8 @@ const MPRSeriesItem = ({
   onRemove,
   dragPayload,
   isDraggable = true,
+  className = "",
+  isCompact = false,
 }: MPRSeriesItemProps) => {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -255,7 +285,7 @@ const MPRSeriesItem = ({
         setSeriesDragData(event, dragPayload);
       }}
       onClick={onClick}
-      className={`rounded-lg overflow-hidden border transition-all relative ${
+      className={`rounded-lg overflow-hidden border transition-all relative ${className} ${
         isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       } ${
         isSelected
@@ -275,9 +305,13 @@ const MPRSeriesItem = ({
         <X size={12} className="text-gray-300 hover:text-white" />
       </button>
 
-      <div className="p-2">
+      <div className={isCompact ? "p-1" : "p-1.5"}>
         {/* Thumbnail */}
-        <div className="w-full aspect-[4/3] rounded-md flex items-center justify-center relative overflow-hidden bg-purple-900/30">
+        <div
+          className={`w-full flex items-center justify-center relative overflow-hidden bg-purple-900/30 ${
+            isCompact ? "h-[72px] rounded-sm" : "h-[120px] rounded-md"
+          }`}
+        >
           <canvas
             ref={previewCanvasRef}
             aria-label={`${series.mprMode} preview`}
@@ -287,20 +321,36 @@ const MPRSeriesItem = ({
             size={22}
             className="absolute text-purple-400/30 pointer-events-none"
           />
-          <span className="absolute top-0.5 left-0.5 text-[8px] bg-purple-600/80 px-0.5 rounded text-white font-mono">
+          <span
+            className={`absolute top-0.5 left-0.5 bg-purple-600/80 px-0.5 rounded text-white font-mono ${
+              isCompact ? "text-[7px]" : "text-[8px]"
+            }`}
+          >
             MPR
           </span>
         </div>
 
         {/* Series info */}
-        <div className="mt-2 min-w-0">
-          <p className="text-[10px] text-purple-300 font-semibold tracking-wide">
+        <div className={isCompact ? "mt-1 min-w-0" : "mt-1.5 min-w-0"}>
+          <p
+            className={`text-purple-300 font-semibold tracking-wide ${
+              isCompact ? "text-[9px]" : "text-[10px]"
+            }`}
+          >
             {series.mprMode}
           </p>
-          <p className="text-[11px] text-white font-medium leading-tight break-words h-8 overflow-hidden mt-1">
+          <p
+            className={`text-white font-medium leading-tight break-words h-8 overflow-hidden mt-0.5 ${
+              isCompact ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
             {series.description || `${series.mprMode} MPR`}
           </p>
-          <p className="text-[11px] text-gray-400 mt-1.5">
+          <p
+            className={`text-gray-400 mt-1 ${
+              isCompact ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
             {series.sliceCount} slices
           </p>
         </div>
@@ -318,6 +368,8 @@ interface StudyAccordionProps {
   children: React.ReactNode;
   defaultOpen?: boolean;
   isCurrent?: boolean;
+  showHeader?: boolean;
+  contentClassName?: string;
 }
 
 const StudyAccordion = ({
@@ -328,8 +380,14 @@ const StudyAccordion = ({
   children,
   defaultOpen = false,
   isCurrent = false,
+  showHeader = true,
+  contentClassName = "px-2 pb-2 space-y-1",
 }: StudyAccordionProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  if (!showHeader) {
+    return <div className={contentClassName}>{children}</div>;
+  }
 
   return (
     <div className={`border-b border-gray-700 ${isCurrent ? "bg-gray-800/30" : ""}`}>
@@ -355,12 +413,17 @@ const StudyAccordion = ({
           </p>
         </div>
       </button>
-      {isOpen && <div className="px-2 pb-2 space-y-1">{children}</div>}
+      {isOpen && <div className={contentClassName}>{children}</div>}
     </div>
   );
 };
 
-const ViewerSidebar = () => {
+interface ViewerSidebarProps {
+  position?: SidebarPosition;
+  columns?: SidebarColumns;
+}
+
+const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) => {
   const {
     caseData,
     selectedSeries,
@@ -465,7 +528,7 @@ const ViewerSidebar = () => {
       return generateDicomInstanceThumbnail(middleInstanceUid, {
         apiBaseUrl: API_BASE_URL,
         authToken: token || undefined,
-        size: 96,
+        size: 160,
       });
     };
 
@@ -512,9 +575,28 @@ const ViewerSidebar = () => {
     };
   }, [API_BASE_URL, caseData?.series]);
 
+  const isHorizontal = position !== "side";
+  const isCompact = isHorizontal;
+  const gridClassName = columns === 2 ? "grid-cols-2 gap-2" : "grid-cols-1 gap-3";
+  const seriesListClassName = isHorizontal
+    ? "flex gap-2 overflow-x-auto pb-1.5 items-stretch"
+    : `grid ${gridClassName}`;
+  const seriesItemClassName = isHorizontal
+    ? "w-[160px] flex-shrink-0"
+    : "";
+  const borderClass =
+    position === "side"
+      ? "border-r"
+      : position === "top"
+        ? "border-b"
+        : "border-t";
+  const sizeClass = position === "side" ? "w-64" : "w-full h-56";
+
   if (!caseData) {
     return (
-      <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col items-center justify-center p-4">
+      <aside
+        className={`${sizeClass} bg-gray-900 ${borderClass} border-gray-700 flex flex-col items-center justify-center p-4`}
+      >
         <p className="text-red-400 text-sm text-center">No data available</p>
       </aside>
     );
@@ -522,24 +604,33 @@ const ViewerSidebar = () => {
 
   // Get temp series for the current selected series
   const currentTempSeries = temporaryMPRSeries.filter(
-    (ts) => ts.sourceSeriesId === selectedSeries?._id,
+    (ts) =>
+      ts.sourceSeriesId === selectedSeries?._id &&
+      ts.mprMode !== "MiniMIP" &&
+      ts.mprMode !== "MIP",
   );
 
   return (
-    <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
+    <aside
+      className={`${sizeClass} bg-gray-900 ${borderClass} border-gray-700 flex flex-col overflow-hidden`}
+    >
       {/* Patient Header */}
-      <div className="p-3 border-b border-gray-700 bg-gray-800/50">
-        <p className="text-sm font-semibold text-white truncate">
-          {caseData.patient?.name || "Unknown Patient"}
-        </p>
-        <p className="text-[11px] text-gray-400 mt-0.5">
-          ID: {caseData.patient?.patient_id || "N/A"} • {caseData.patient?.sex || "U"}
-        </p>
-      </div>
+      {position === "side" && (
+        <div className="p-3 border-b border-gray-700 bg-gray-800/50">
+          <p className="text-sm font-semibold text-white truncate">
+            {caseData.patient?.name || "Unknown Patient"}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            ID: {caseData.patient?.patient_id || "N/A"} • {caseData.patient?.sex || "U"}
+          </p>
+        </div>
+      )}
 
       {/* VRT active indicator */}
       {isVRTActive && (
-        <div className="px-3 py-2 bg-purple-900/30 border-b border-purple-800/50">
+        <div
+          className={`${isHorizontal ? "px-2 py-1.5" : "px-3 py-2"} bg-purple-900/30 border-b border-purple-800/50`}
+        >
           <p className="text-[11px] text-purple-400 font-medium">VRT Mode Active</p>
           <p className="text-[10px] text-gray-500">Exit VRT to switch series</p>
         </div>
@@ -555,8 +646,10 @@ const ViewerSidebar = () => {
           imageCount={caseData.instance_count}
           defaultOpen={true}
           isCurrent={true}
+          showHeader={position === "side"}
+          contentClassName={isHorizontal ? "px-2 pb-1.5" : "px-2 pb-2 space-y-1"}
         >
-          <div className="grid grid-cols-2 gap-2">
+          <div className={seriesListClassName}>
             {caseData.series
               .filter((series) => series.image_count > 0)
               .sort((a, b) => a.series_number - b.series_number)
@@ -578,6 +671,8 @@ const ViewerSidebar = () => {
                       : null
                   }
                   isDownloaded={downloadedSeriesIds.has(series._id)}
+                  className={seriesItemClassName}
+                  isCompact={isCompact}
                 />
               ))}
           </div>
@@ -589,12 +684,16 @@ const ViewerSidebar = () => {
         {/* Temporary MPR Series Section */}
         {currentTempSeries.length > 0 && (
           <div className="border-b border-gray-700">
-            <div className="p-2">
-              <p className="text-[10px] text-purple-400 font-medium mb-2 flex items-center gap-1">
+            <div className={isHorizontal ? "p-1.5" : "p-2"}>
+              <p
+                className={`text-purple-400 font-medium mb-2 flex items-center gap-1 ${
+                  isHorizontal ? "text-[9px]" : "text-[10px]"
+                }`}
+              >
                 <Layers size={10} />
                 Generated MPR Views
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className={seriesListClassName}>
                 {currentTempSeries.map((tempSeries) => (
                   <MPRSeriesItem
                     key={tempSeries.id}
@@ -604,6 +703,8 @@ const ViewerSidebar = () => {
                     onRemove={() => removeTemporaryMPRSeries(tempSeries.id)}
                     dragPayload={{ seriesId: tempSeries.id, kind: "mpr" }}
                     isDraggable={!isVRTActive}
+                    className={seriesItemClassName}
+                    isCompact={isCompact}
                   />
                 ))}
               </div>
@@ -613,7 +714,9 @@ const ViewerSidebar = () => {
       </div>
 
       {/* Footer with selected series info */}
-      <div className="p-2 border-t border-gray-700 bg-gray-800/50">
+      <div
+        className={`${isHorizontal ? "p-1.5" : "p-2"} border-t border-gray-700 bg-gray-800/50`}
+      >
         <div className="text-[10px] text-gray-400">
           <span className="text-gray-500">Selected: </span>
           <span className="text-white">

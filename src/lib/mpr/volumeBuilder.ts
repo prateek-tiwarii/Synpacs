@@ -394,7 +394,7 @@ export async function buildVolume(
   const { sliceSpacing, normal } = sortSlicesByPosition(sortedInstances);
 
   // Decode remains serial (OpenJPEG global state), but fetch is pipelined.
-  const FETCH_LOOKAHEAD = 8;
+  const FETCH_LOOKAHEAD = 16;
   let loadedCount = 0;
   const sliceVoxelCount = cols * rows;
 

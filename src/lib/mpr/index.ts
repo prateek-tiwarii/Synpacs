@@ -54,3 +54,6 @@ export {
 
 // MIP Worker
 export { useMIPWorker } from "./useMIPWorker";
+
+// MPR Slice Worker
+export { useMPRSliceWorker } from "./useMPRSliceWorker";

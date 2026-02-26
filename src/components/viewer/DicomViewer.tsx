@@ -23,6 +23,7 @@ import {
   type Annotation,
   type HUStats,
   type ViewTransform,
+  type ViewerTool,
   type MouseButton,
 } from "../ViewerLayout";
 import { imageCache } from "@/lib/imageCache";
@@ -66,6 +67,7 @@ interface DicomViewerProps {
   seriesId?: string | null;
   className?: string;
   paneIndex?: number;
+  isActive?: boolean;
   scoutLines?: ScoutLine[];
   onImageIndexChange?: (index: number) => void;
   paneViewTransform?: ViewTransform;
@@ -97,6 +99,42 @@ const formatDicomDate = (dateStr: string) => {
     "Dec",
   ];
   return `${months[parseInt(month) - 1]} ${day}, ${year}`;
+};
+
+const parseDicomDate = (dateStr?: string | null): Date | null => {
+  if (!dateStr || dateStr.length !== 8) return null;
+  const year = Number.parseInt(dateStr.substring(0, 4), 10);
+  const month = Number.parseInt(dateStr.substring(4, 6), 10);
+  const day = Number.parseInt(dateStr.substring(6, 8), 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatPatientAge = (
+  dobStr?: string | null,
+  referenceDateStr?: string | null,
+  explicitAge?: string | number | null,
+): string | null => {
+  if (explicitAge !== undefined && explicitAge !== null) {
+    const ageText = String(explicitAge).trim();
+    if (ageText) return ageText;
+  }
+
+  const dob = parseDicomDate(dobStr);
+  if (!dob) return null;
+  const referenceDate = parseDicomDate(referenceDateStr) ?? new Date();
+  if (referenceDate.getTime() < dob.getTime()) return null;
+
+  let age = referenceDate.getFullYear() - dob.getFullYear();
+  const monthDiff = referenceDate.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && referenceDate.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  if (age < 0) return null;
+  return `${age}Y`;
 };
 
 // Helper to format DICOM TM (HHMMSS.FFFFFF) to readable time
@@ -225,6 +263,7 @@ export function DicomViewer({
   seriesId = null,
   className = "",
   paneIndex,
+  isActive = false,
   scoutLines,
   onImageIndexChange,
   paneViewTransform,
@@ -260,6 +299,11 @@ export function DicomViewer({
   const setViewTransform =
     onPaneViewTransformChange ?? setGlobalViewTransform;
   const isFullscreen = Boolean(isPaneFullscreen || globalIsFullscreen);
+  const patientAge = formatPatientAge(
+    caseData?.patient?.dob || caseData?.patient?.date_of_birth,
+    caseData?.case_date,
+    caseData?.patient?.age,
+  );
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
@@ -430,6 +474,9 @@ export function DicomViewer({
   const isDragging = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
   const lastImagePos = useRef({ x: 0, y: 0 });
+  const activeMouseButtonRef = useRef<MouseButton | null>(null);
+  const interactionToolRef = useRef<ViewerTool | null>(null);
+  const suppressContextMenuRef = useRef(false);
   const currentAnnotation = useRef<Annotation | null>(null);
   const accumulatedStackDelta = useRef(0);
   const draggedHandleIndex = useRef<number | null>(null);
@@ -1974,20 +2021,23 @@ export function DicomViewer({
     (e: React.MouseEvent) => {
       const button = e.button as MouseButton;
       const boundTool = mouseBindings[button];
+      const tool = boundTool ?? activeTool;
 
-      // Middle or right click: switch tool if bound, otherwise ignore
-      if (button === 1 || button === 2) {
-        if (boundTool) {
-          e.preventDefault();
-          setActiveTool(boundTool);
-        }
+      // Ignore middle/right click if no tool is bound (allow default context menu)
+      if ((button === 1 || button === 2) && !boundTool) {
         return;
       }
 
-      // Left click (button 0): switch tool if bound to a different tool
-      if (boundTool && activeTool !== boundTool) {
-        setActiveTool(boundTool);
-        return;
+      if (button === 2) {
+        // If the right button is bound to a tool, suppress the context menu.
+        suppressContextMenuRef.current = Boolean(boundTool);
+      }
+
+      activeMouseButtonRef.current = button;
+      interactionToolRef.current = tool;
+
+      if (boundTool) {
+        e.preventDefault();
       }
 
       const pos = screenToImage(e.clientX, e.clientY);
@@ -2002,7 +2052,7 @@ export function DicomViewer({
         "CobbsAngle",
       ];
 
-      if (activeTool === "SpineLabeling") {
+      if (tool === "SpineLabeling") {
         e.preventDefault();
         e.stopPropagation();
 
@@ -2046,7 +2096,7 @@ export function DicomViewer({
       }
 
       // Handle HU tool - get HU value at clicked point
-      if (activeTool === "HU") {
+      if (tool === "HU") {
         e.preventDefault();
         const huValue = getHUAtPoint(pos);
         if (huValue !== null) {
@@ -2066,7 +2116,7 @@ export function DicomViewer({
         return;
       }
 
-      if (activeTool === "FreeRotate") {
+      if (tool === "FreeRotate") {
         e.preventDefault();
         e.stopPropagation();
         freeRotateLastAngle.current = getPointerAngleFromCenter(
@@ -2116,7 +2166,7 @@ export function DicomViewer({
       }
 
       // Text tool: if no existing annotation is hit, create a new text input
-      if (activeTool === "Text") {
+      if (tool === "Text") {
         e.preventDefault();
         e.stopPropagation();
         setSelectedAnnotationId(null);
@@ -2129,18 +2179,18 @@ export function DicomViewer({
       }
 
       // Deselect if clicking elsewhere (when not using an annotation tool)
-      if (!annotationTools.includes(activeTool)) {
+      if (!annotationTools.includes(tool)) {
         setSelectedAnnotationId(null);
       }
 
       isDragging.current = true;
 
       // Handle annotation tools
-      if (annotationTools.includes(activeTool)) {
+      if (annotationTools.includes(tool)) {
         setSelectedAnnotationId(null);
         const id = Math.random().toString(36).substr(2, 9);
 
-        if (activeTool === "Angle") {
+        if (tool === "Angle") {
           if (angleClickCount.current === 0) {
             // First click - start the angle
             currentAnnotation.current = {
@@ -2180,7 +2230,7 @@ export function DicomViewer({
             renderCanvas();
             return;
           }
-        } else if (activeTool === "CobbsAngle") {
+        } else if (tool === "CobbsAngle") {
           if (angleClickCount.current === 0) {
             // First click - start first line
             currentAnnotation.current = {
@@ -2202,7 +2252,7 @@ export function DicomViewer({
         } else {
           currentAnnotation.current = {
             id,
-            type: activeTool as Annotation["type"],
+            type: tool as Annotation["type"],
             points: [pos],
             color: "#00ff00",
             imageIndex: currentImageIndex,
@@ -2232,14 +2282,14 @@ export function DicomViewer({
       spineNextLabelIndex,
       spineSessionActive,
       mouseBindings,
-      setActiveTool,
     ],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      const tool = interactionToolRef.current ?? activeTool;
       if (
-        activeTool === "Angle" &&
+        tool === "Angle" &&
         currentAnnotation.current &&
         (angleClickCount.current === 1 || angleClickCount.current === 2)
       ) {
@@ -2325,18 +2375,25 @@ export function DicomViewer({
         return;
       }
 
-      if (activeTool === "Pan") {
+      if (activeMouseButtonRef.current === 2) {
+        const dragDistance = Math.abs(deltaX) + Math.abs(deltaY);
+        if (dragDistance > 2) {
+          suppressContextMenuRef.current = true;
+        }
+      }
+
+      if (tool === "Pan") {
         setViewTransform((prev) => ({
           ...prev,
           x: prev.x + deltaX,
           y: prev.y + deltaY,
         }));
-      } else if (activeTool === "Zoom") {
+      } else if (tool === "Zoom") {
         setViewTransform((prev) => ({
           ...prev,
           scale: Math.max(0.1, prev.scale - deltaY * 0.01),
         }));
-      } else if (activeTool === "Stack") {
+      } else if (tool === "Stack") {
         // Smooth 1-image-at-a-time stepping; stackSpeed controls drag sensitivity
         accumulatedStackDelta.current += deltaY;
         const threshold = Math.max(2, 12 - stackSpeed);
@@ -2347,7 +2404,7 @@ export function DicomViewer({
             Math.max(0, Math.min(prev + steps, sortedInstances.length - 1)),
           );
         }
-      } else if (activeTool === "Contrast") {
+      } else if (tool === "Contrast") {
         if (dicomMetaRef.current) {
           const { defaultWinWidth, defaultWinCenter } = dicomMetaRef.current;
           setViewTransform((prev) => {
@@ -2363,7 +2420,7 @@ export function DicomViewer({
             };
           });
         }
-      } else if (activeTool === "FreeRotate") {
+      } else if (tool === "FreeRotate") {
         const currentAngle = getPointerAngleFromCenter(e.clientX, e.clientY);
         const previousAngle = freeRotateLastAngle.current;
 
@@ -2393,19 +2450,19 @@ export function DicomViewer({
             }));
           });
         }
-      } else if (["Length", "Ellipse", "Rectangle"].includes(activeTool)) {
+      } else if (["Length", "Ellipse", "Rectangle"].includes(tool)) {
         if (currentAnnotation.current) {
           const pos = screenToImage(e.clientX, e.clientY);
           currentAnnotation.current.points[1] = pos;
           renderCanvas();
         }
-      } else if (activeTool === "Freehand") {
+      } else if (tool === "Freehand") {
         if (currentAnnotation.current) {
           const pos = screenToImage(e.clientX, e.clientY);
           currentAnnotation.current.points.push(pos);
           renderCanvas();
         }
-      } else if (activeTool === "CobbsAngle") {
+      } else if (tool === "CobbsAngle") {
         if (currentAnnotation.current) {
           const pos = screenToImage(e.clientX, e.clientY);
           if (angleClickCount.current === 1) {
@@ -2435,6 +2492,22 @@ export function DicomViewer({
 
   const handleMouseUp = useCallback(() => {
     freeRotateLastAngle.current = null;
+    const tool = interactionToolRef.current ?? activeTool;
+
+    const finalizeMouseUp = () => {
+      activeMouseButtonRef.current = null;
+      isDragging.current = false;
+
+      if (rotationAnimationFrame.current !== null) {
+        cancelAnimationFrame(rotationAnimationFrame.current);
+        rotationAnimationFrame.current = null;
+        pendingRotation.current = 0;
+      }
+
+      if (angleClickCount.current === 0 && currentAnnotation.current === null) {
+        interactionToolRef.current = null;
+      }
+    };
 
     // Handle modification completion
     if (isModifyingAnnotation.current && selectedAnnotationId) {
@@ -2458,28 +2531,28 @@ export function DicomViewer({
       isModifyingAnnotation.current = false;
       draggedHandleIndex.current = null;
       isDraggingWholeAnnotation.current = false;
-      isDragging.current = false;
       renderCanvas();
+      finalizeMouseUp();
       return;
     }
 
     // Angle tool finalizes on the third click (mouse down), not on mouse up
-    if (activeTool === "Angle" && currentAnnotation.current) {
-      isDragging.current = false;
+    if (tool === "Angle" && currentAnnotation.current) {
       renderCanvas();
+      finalizeMouseUp();
       return;
     }
 
     // Handle Cobb's angle tool completion
-    if (activeTool === "CobbsAngle" && currentAnnotation.current) {
+    if (tool === "CobbsAngle" && currentAnnotation.current) {
       if (
         angleClickCount.current === 1 &&
         currentAnnotation.current.points.length >= 2
       ) {
         // First line complete, wait for second
         angleClickCount.current = 2;
-        isDragging.current = false;
         renderCanvas();
+        finalizeMouseUp();
         return;
       }
       if (
@@ -2499,8 +2572,8 @@ export function DicomViewer({
         currentAnnotation.current = null;
         angleClickCount.current = 0;
       }
-      isDragging.current = false;
       renderCanvas();
+      finalizeMouseUp();
       return;
     }
 
@@ -2515,8 +2588,8 @@ export function DicomViewer({
         if (currentAnnotation.current.points.length < 2) {
           // User just clicked without dragging, cancel
           currentAnnotation.current = null;
-          isDragging.current = false;
           renderCanvas();
+          finalizeMouseUp();
           return;
         }
       }
@@ -2524,8 +2597,8 @@ export function DicomViewer({
       // Check if annotation is outside bounds
       if (isAnnotationOutsideBounds(currentAnnotation.current)) {
         currentAnnotation.current = null;
-        isDragging.current = false;
         renderCanvas();
+        finalizeMouseUp();
         return;
       }
 
@@ -2539,14 +2612,8 @@ export function DicomViewer({
       saveToHistory();
       renderCanvas();
     }
-    isDragging.current = false;
 
-    // Cleanup rotation animation frame
-    if (rotationAnimationFrame.current !== null) {
-      cancelAnimationFrame(rotationAnimationFrame.current);
-      rotationAnimationFrame.current = null;
-      pendingRotation.current = 0;
-    }
+    finalizeMouseUp();
   }, [
     setAnnotations,
     saveToHistory,
@@ -2751,14 +2818,13 @@ export function DicomViewer({
     }
   }, []);
 
-  // Suppress Radix ContextMenu when right-click is bound to a tool.
-  // Radix's composeEventHandlers checks defaultPrevented — if we call
-  // preventDefault() in our onContextMenu, Radix skips opening the menu.
+  // Suppress Radix ContextMenu when the right button is bound to a tool.
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    if (mouseBindings[2]) {
+    if (suppressContextMenuRef.current) {
       e.preventDefault();
+      suppressContextMenuRef.current = false;
     }
-  }, [mouseBindings]);
+  }, []);
 
   return (
     <ContextMenu>
@@ -2777,7 +2843,12 @@ export function DicomViewer({
           }}
         >
       <div className="absolute inset-0">
-        <canvas ref={canvasRef} className="w-full h-full" />
+        <canvas
+          ref={canvasRef}
+          data-viewer-canvas="true"
+          data-viewer-active={isActive ? "true" : undefined}
+          className="w-full h-full"
+        />
       </div>
 
       {error && (
@@ -3089,6 +3160,7 @@ export function DicomViewer({
                   )
                   : "N/A"}
               </span>
+              <span>Age: {patientAge ?? "N/A"}</span>
               <span>Sex: {caseData.patient.sex}</span>
             </div>
           )}

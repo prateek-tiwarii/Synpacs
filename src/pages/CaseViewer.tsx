@@ -18,7 +18,7 @@ import { getCookie } from "@/lib/cookies";
 import DicomViewer, { type ScoutLine } from "@/components/viewer/DicomViewer";
 import SRViewer from "@/components/viewer/SRViewer";
 import TemporaryMPRSeriesViewer from "@/components/viewer/TemporaryMPRSeriesViewer";
-import VRTViewer from "@/components/viewer/VRTViewer";
+import ObliqueMPRViewer from "@/components/viewer/ObliqueMPRViewer";
 import { Loader2 } from "lucide-react";
 import {
   type Instance as MPRInstance,
@@ -32,6 +32,7 @@ import {
   calculateSliceNormal,
   getSliceGeometry,
   useMIPWorker,
+  useMPRSliceWorker,
 } from "@/lib/mpr";
 import toast from "react-hot-toast";
 import { imageCache } from "@/lib/imageCache";
@@ -349,7 +350,7 @@ const PaneViewer = ({
 
   return (
     <div
-      className={`relative flex min-h-0 flex-col overflow-hidden ${isFullscreen ? "h-full" : ""} ${
+      className={`relative flex min-h-0 flex-col overflow-hidden bg-black ${isFullscreen ? "h-full" : ""} ${
         isDragOver
           ? "ring-2 ring-amber-400 ring-inset"
           : isActive
@@ -382,6 +383,7 @@ const PaneViewer = ({
           className="flex-1 min-h-0"
           scoutLines={scoutLines}
           onImageIndexChange={handleMPRImageIndexChange}
+          isActive={isActive}
           viewTransformOverride={paneTransform}
           onViewTransformChangeOverride={handlePaneTransformChange}
           isFullscreenOverride={isFullscreen}
@@ -397,6 +399,7 @@ const PaneViewer = ({
           instances={instances}
           seriesId={seriesId}
           paneIndex={paneIndex}
+          isActive={isActive}
           scoutLines={scoutLines}
           onImageIndexChange={handleImageIndexChange}
           className="flex-1 min-h-0"
@@ -450,12 +453,16 @@ const CaseViewer = () => {
     showScoutLine,
     isVRTActive,
     setIsVRTActive,
+    is2DMPRActive,
+    setIs2DMPRActive,
     miniMIPIntensity,
     mipIntensity,
+    removeTemporaryMPRSeries,
   } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSinglePaneDragOver, setIsSinglePaneDragOver] = useState(false);
 
   // VRT volume reference (kept across renders, not in context to avoid re-renders)
   const vrtVolumeRef = useRef<VolumeData | null>(null);
@@ -472,6 +479,7 @@ const CaseViewer = () => {
 
   // 2D-MPR split layout state
   const [active2DMPRPane, setActive2DMPRPane] = useState<number>(0); // 0=axial, 1=coronal, 2=sagittal
+  const [majorPane2DMPR, setMajorPane2DMPR] = useState<PlaneOrientation>("Axial");
   const [axialIndex, setAxialIndex] = useState(0);
   const [coronalIndex, setCoronalIndex] = useState(0);
   const [sagittalIndex, setSagittalIndex] = useState(0);
@@ -494,6 +502,49 @@ const CaseViewer = () => {
       });
     },
     [],
+  );
+
+  const handleSinglePaneDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (
+      !event.dataTransfer.types.includes(SERIES_DND_MIME) &&
+      !event.dataTransfer.types.includes("text/plain")
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsSinglePaneDragOver(true);
+  }, []);
+
+  const handleSinglePaneDragLeave = useCallback(() => {
+    setIsSinglePaneDragOver(false);
+  }, []);
+
+  const handleSinglePaneDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setIsSinglePaneDragOver(false);
+
+      const droppedSeriesId = parseDroppedSeriesId(event);
+      if (!droppedSeriesId) return;
+
+      const droppedTempSeries = temporaryMPRSeries.find(
+        (tempSeries) => tempSeries.id === droppedSeriesId,
+      );
+      if (droppedTempSeries) {
+        setSelectedTemporarySeriesId(droppedTempSeries.id);
+        return;
+      }
+
+      const droppedSeries = caseData?.series?.find(
+        (series) => series._id === droppedSeriesId,
+      );
+      if (!droppedSeries) return;
+
+      setSelectedSeries(droppedSeries);
+      setSelectedTemporarySeriesId(null);
+    },
+    [temporaryMPRSeries, setSelectedTemporarySeriesId, caseData?.series, setSelectedSeries],
   );
 
   const clampRatio = (value: number) => Math.max(0, Math.min(1, value));
@@ -601,6 +652,8 @@ const CaseViewer = () => {
     current: 0,
     total: 0,
   });
+  const [mprStartTime, setMprStartTime] = useState<number | null>(null);
+  const [mprElapsed, setMprElapsed] = useState(0);
   // Volume cache (in-memory, cleared on page refresh)
   const volumeCache = useRef<Map<string, VolumeData>>(new Map());
 
@@ -624,6 +677,18 @@ const CaseViewer = () => {
 
   // MIP Web Worker for on-demand slice computation
   const mipWorker = useMIPWorker();
+
+  // MPR Slice Web Worker for progressive 2D-MPR loading
+  const mprSliceWorker = useMPRSliceWorker();
+
+  // Elapsed time tracker for MPR generation
+  useEffect(() => {
+    if (!mprStartTime) return;
+    const interval = setInterval(() => {
+      setMprElapsed(Math.floor((Date.now() - mprStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [mprStartTime]);
 
   // Find selected temporary series if any
   const selectedTempSeries = selectedTemporarySeriesId
@@ -853,6 +918,8 @@ const CaseViewer = () => {
         setIsGeneratingProjection(true);
       } else {
         setIsGeneratingMPR(true);
+        setMprStartTime(Date.now());
+        setMprElapsed(0);
       }
 
       try {
@@ -981,7 +1048,7 @@ const CaseViewer = () => {
           return slices;
         };
 
-        // Handle 2D-MPR: generate all three planes
+        // Handle 2D-MPR: progressive loading via Web Worker
         if (mode === "2D-MPR") {
           let sourcePlane: PlaneOrientation | null = null;
           if (instances[0]?.image_orientation_patient?.length === 6) {
@@ -1000,17 +1067,26 @@ const CaseViewer = () => {
               ? ["Coronal", "Sagittal"]
               : ["Axial", "Coronal", "Sagittal"];
 
+          // Initialize the MPR slice worker with the volume
+          await mprSliceWorker.initVolume(volume, selectedSeries._id);
+
+          // Create placeholder series immediately (slices loaded on-demand by worker)
           const generatedSeries: TemporaryMPRSeries[] = [];
           for (const plane of planes) {
-            const totalSlices = getMaxIndex(volume, plane) + 1;
-            const slices = await generateSlices(
-              totalSlices,
-              `slices-${plane}`,
-              (index) => extractSlice(volume, plane, index),
-            );
-
-            // Create temporary series for this plane
+            const totalSliceCount = getMaxIndex(volume, plane) + 1;
             const geometry = getSliceGeometry(volume, plane);
+
+            // Placeholder slices with dimensions only — rawData loaded lazily
+            const slices: MPRSliceData[] = new Array(totalSliceCount);
+            for (let i = 0; i < totalSliceCount; i++) {
+              slices[i] = {
+                index: i,
+                rawData: undefined,
+                width: geometry.width,
+                height: geometry.height,
+              };
+            }
+
             const tempSeries: TemporaryMPRSeries = {
               id: `mpr-${selectedSeries._id}-${plane}-${Date.now()}`,
               sourceSeriesId: selectedSeries._id,
@@ -1027,20 +1103,24 @@ const CaseViewer = () => {
             generatedSeries.push(tempSeries);
           }
 
+          // Add all series at once — layout shows immediately
           for (let i = 0; i < generatedSeries.length; i++) {
             const tempSeries = generatedSeries[i];
             addTemporaryMPRSeries(tempSeries, {
               autoSelect: i === generatedSeries.length - 1,
             });
           }
+
+          // Activate dedicated 2D-MPR mode (hides sidebar, shows MPR header)
+          setIs2DMPRActive(true);
         }
-        // Handle 3D-MPR: Activate VRT (3D Volume Rendering)
+        // Handle 3D-MPR: activate CPU oblique reformatted view
         else if (mode === "3D-MPR") {
           if (gridLayout !== "1x1") {
-            toast("3D VRT is only available in 1x1 layout");
+            toast("3D MPR is only available in 1x1 layout");
             return;
           }
-          // Store volume reference and activate VRT mode
+          // Store volume reference and activate focused 3D-MPR mode
           vrtVolumeRef.current = volume;
           setIsVRTActive(true);
           setSelectedTemporarySeriesId(null);
@@ -1102,6 +1182,7 @@ const CaseViewer = () => {
             windowWidth: mipWindow.windowWidth,
             physicalAspectRatio: geometry.aspectRatio,
             projectionSlabHalfSize: slabHalfSize,
+            initialProjectionSlabHalfSize: slabHalfSize,
           };
 
           addTemporaryMPRSeries(tempSeries);
@@ -1140,6 +1221,7 @@ const CaseViewer = () => {
           setIsGeneratingProjection(false);
         } else {
           setIsGeneratingMPR(false);
+          setMprStartTime(null);
           setMprGenerationProgress({ phase: "", current: 0, total: 0 });
         }
       }
@@ -1161,6 +1243,8 @@ const CaseViewer = () => {
     miniMIPIntensity,
     mipIntensity,
     setCrosshairIndices,
+    mprSliceWorker,
+    setIs2DMPRActive,
   ]);
 
   // Live projection update: when slab slider changes, just update the slab size
@@ -1189,6 +1273,11 @@ const CaseViewer = () => {
       return;
     }
 
+    const baselineSlabHalfSize =
+      selectedTempSeries.initialProjectionSlabHalfSize ??
+      selectedTempSeries.projectionSlabHalfSize ??
+      slabHalfSize;
+
     // Clear the worker cache since slab size changed — all cached slices are stale
     mipWorker.clearCache();
 
@@ -1209,6 +1298,7 @@ const CaseViewer = () => {
         sliceCount: totalSlices,
         createdAt: Date.now(),
         projectionSlabHalfSize: slabHalfSize,
+        initialProjectionSlabHalfSize: baselineSlabHalfSize,
       },
       { autoSelect: false },
     );
@@ -1243,29 +1333,134 @@ const CaseViewer = () => {
     [selectedTempSeries, mipWorker],
   );
 
+  // On-demand MPR slice providers for progressive 2D-MPR loading
+  const handleMPRAxialSliceNeeded = useCallback(
+    async (index: number): Promise<Int16Array | null> => {
+      try {
+        const result = await mprSliceWorker.computeSlice("Axial", index);
+        return result.data;
+      } catch {
+        return null;
+      }
+    },
+    [mprSliceWorker],
+  );
+  const handleMPRCoronalSliceNeeded = useCallback(
+    async (index: number): Promise<Int16Array | null> => {
+      try {
+        const result = await mprSliceWorker.computeSlice("Coronal", index);
+        return result.data;
+      } catch {
+        return null;
+      }
+    },
+    [mprSliceWorker],
+  );
+  const handleMPRSagittalSliceNeeded = useCallback(
+    async (index: number): Promise<Int16Array | null> => {
+      try {
+        const result = await mprSliceWorker.computeSlice("Sagittal", index);
+        return result.data;
+      } catch {
+        return null;
+      }
+    },
+    [mprSliceWorker],
+  );
+
   // Stable callbacks for 2D-MPR pane index changes (avoid re-render cascades)
   const handleAxialIndexChange = useCallback((idx: number) => setAxialIndex(idx), []);
   const handleCoronalIndexChange = useCallback((idx: number) => setCoronalIndex(idx), []);
   const handleSagittalIndexChange = useCallback((idx: number) => setSagittalIndex(idx), []);
+
+  // Crosshair drag handlers — update other panes when the locator circle is dragged
+  const handleAxialCrosshairDrag = useCallback(
+    (hRatio: number, vRatio: number) => {
+      if (!mpr2DSeries) return;
+      // Axial pane: horizontal scout line = coronal position, vertical = sagittal position
+      const coronalTotal = mpr2DSeries.coronal.sliceCount;
+      const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
+      setCoronalIndex(Math.round(vRatio * (coronalTotal - 1)));
+      setSagittalIndex(Math.round(hRatio * (sagittalTotal - 1)));
+    },
+    [mpr2DSeries],
+  );
+  const handleCoronalCrosshairDrag = useCallback(
+    (hRatio: number, vRatio: number) => {
+      if (!mpr2DSeries) return;
+      // Coronal pane: horizontal scout line = axial position (inverted), vertical = sagittal position
+      const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : instances.length;
+      const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
+      setAxialIndex(Math.round((1 - vRatio) * (axialTotal - 1)));
+      setSagittalIndex(Math.round(hRatio * (sagittalTotal - 1)));
+    },
+    [mpr2DSeries, instances.length],
+  );
+  const handleSagittalCrosshairDrag = useCallback(
+    (hRatio: number, vRatio: number) => {
+      if (!mpr2DSeries) return;
+      // Sagittal pane: horizontal scout line = axial position (inverted), vertical = coronal position
+      const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : instances.length;
+      const coronalTotal = mpr2DSeries.coronal.sliceCount;
+      setAxialIndex(Math.round((1 - vRatio) * (axialTotal - 1)));
+      setCoronalIndex(Math.round(hRatio * (coronalTotal - 1)));
+    },
+    [mpr2DSeries, instances.length],
+  );
 
   // Memoized scout lines for each 2D-MPR pane
   const scoutLinesAxial = useMemo(() => get2DMPRScoutLines(0), [get2DMPRScoutLines]);
   const scoutLinesCoronal = useMemo(() => get2DMPRScoutLines(1), [get2DMPRScoutLines]);
   const scoutLinesSagittal = useMemo(() => get2DMPRScoutLines(2), [get2DMPRScoutLines]);
 
-  // VRT exit handler
-  const handleExitVRT = useCallback(() => {
-    setIsVRTActive(false);
-  }, [setIsVRTActive]);
+  // 2D-MPR exit handler — called from header "Exit MPR" button or Escape key
+  useEffect(() => {
+    if (!is2DMPRActive) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIs2DMPRActive(false);
+        setSelectedTemporarySeriesId(null);
+        // Clean up 2D-MPR temp series for current source
+        if (selectedSeries) {
+          temporaryMPRSeries
+            .filter(
+              (ts) =>
+                ts.description.includes("(2D-MPR)") &&
+                ts.sourceSeriesId === selectedSeries._id,
+            )
+            .forEach((ts) => removeTemporaryMPRSeries(ts.id));
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [is2DMPRActive, setIs2DMPRActive, setSelectedTemporarySeriesId, selectedSeries, temporaryMPRSeries, removeTemporaryMPRSeries]);
 
-  // Show VRT viewer when active
+  // Also exit 2D-MPR when the header exit button sets is2DMPRActive=false
+  useEffect(() => {
+    if (!is2DMPRActive && mpr2DSeries) {
+      // Header set is2DMPRActive to false — clean up temp series
+      if (selectedSeries) {
+        temporaryMPRSeries
+          .filter(
+            (ts) =>
+              ts.description.includes("(2D-MPR)") &&
+              ts.sourceSeriesId === selectedSeries._id,
+          )
+          .forEach((ts) => removeTemporaryMPRSeries(ts.id));
+      }
+      setSelectedTemporarySeriesId(null);
+      mprSliceWorker.clearCache();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [is2DMPRActive]);
+
+  // Show CPU oblique 3D-MPR viewer when active
   if (isVRTActive && vrtVolumeRef.current) {
     return (
       <div className="flex-1 flex flex-col bg-black h-full relative">
-        <VRTViewer
+        <ObliqueMPRViewer
           volume={vrtVolumeRef.current}
-          onExit={handleExitVRT}
-          hideTools
           className="flex-1"
         />
       </div>
@@ -1280,24 +1475,45 @@ const CaseViewer = () => {
           (mprGenerationProgress.current / mprGenerationProgress.total) * 100,
         )
         : 0;
-    const phaseText =
-      mprGenerationProgress.phase === "volume"
-        ? "Building volume..."
-        : "Generating slices...";
+    const isVolumePhase = mprGenerationProgress.phase === "volume";
+    const phaseLabel = isVolumePhase ? "Building 3D Volume" : "Preparing MPR Views";
+    const phaseDetail = isVolumePhase
+      ? `Fetching & decoding slice ${mprGenerationProgress.current} of ${mprGenerationProgress.total}`
+      : "Initializing slice worker...";
 
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-black">
-        <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
-        <p className="text-gray-400 text-sm mt-3">{phaseText}</p>
-        <div className="w-48 h-1 bg-gray-700 rounded mt-3 overflow-hidden">
-          <div
-            className="h-full bg-purple-500 transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="flex flex-col items-center gap-4 max-w-xs">
+          <Loader2 className="w-10 h-10 text-purple-500 animate-spin" />
+          <div className="text-center">
+            <p className="text-white text-sm font-medium">{phaseLabel}</p>
+            <p className="text-gray-500 text-xs mt-1">{phaseDetail}</p>
+          </div>
+          <div className="w-full">
+            <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+              <span>{progress}%</span>
+              {mprElapsed > 0 && <span>{mprElapsed}s elapsed</span>}
+            </div>
+            <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-600 to-purple-400 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+          {/* Phase steps indicator */}
+          <div className="flex items-center gap-2 text-xs mt-1">
+            <div className={`flex items-center gap-1 ${isVolumePhase ? "text-purple-400" : "text-green-400"}`}>
+              <div className={`w-2 h-2 rounded-full ${isVolumePhase ? "bg-purple-400 animate-pulse" : "bg-green-400"}`} />
+              <span>Volume</span>
+            </div>
+            <div className="w-4 h-px bg-gray-700" />
+            <div className={`flex items-center gap-1 ${!isVolumePhase && mprGenerationProgress.phase ? "text-purple-400" : "text-gray-600"}`}>
+              <div className={`w-2 h-2 rounded-full ${!isVolumePhase && mprGenerationProgress.phase ? "bg-purple-400 animate-pulse" : "bg-gray-700"}`} />
+              <span>Ready</span>
+            </div>
+          </div>
         </div>
-        <p className="text-gray-500 text-xs mt-2">
-          {mprGenerationProgress.current} / {mprGenerationProgress.total}
-        </p>
       </div>
     );
   }
@@ -1357,62 +1573,119 @@ const CaseViewer = () => {
     );
   }
 
-  // 2D-MPR split layout: Left (Coronal + Sagittal stacked) | Right (Axial)
+  // 2D-MPR split layout: Left (2 minor panes stacked) | Right (major pane, configurable via dropdown)
   if (is2DMPRLayout && mpr2DSeries) {
+    // Map plane → series, scout lines, handlers, slice needed callbacks
+    const planeConfig: Record<PlaneOrientation, {
+      series: TemporaryMPRSeries | null;
+      scoutLines: ScoutLine[];
+      onIndexChange: (idx: number) => void;
+      onSliceNeeded: (index: number) => Promise<Int16Array | null>;
+      onCrosshairDrag: (hRatio: number, vRatio: number) => void;
+      paneId: number; // legacy pane id for active state
+    }> = {
+      Axial: {
+        series: mpr2DSeries.axial,
+        scoutLines: scoutLinesAxial,
+        onIndexChange: handleAxialIndexChange,
+        onSliceNeeded: handleMPRAxialSliceNeeded,
+        onCrosshairDrag: handleAxialCrosshairDrag,
+        paneId: 0,
+      },
+      Coronal: {
+        series: mpr2DSeries.coronal,
+        scoutLines: scoutLinesCoronal,
+        onIndexChange: handleCoronalIndexChange,
+        onSliceNeeded: handleMPRCoronalSliceNeeded,
+        onCrosshairDrag: handleCoronalCrosshairDrag,
+        paneId: 1,
+      },
+      Sagittal: {
+        series: mpr2DSeries.sagittal,
+        scoutLines: scoutLinesSagittal,
+        onIndexChange: handleSagittalIndexChange,
+        onSliceNeeded: handleMPRSagittalSliceNeeded,
+        onCrosshairDrag: handleSagittalCrosshairDrag,
+        paneId: 2,
+      },
+    };
+
+    const allPlanes: PlaneOrientation[] = ["Axial", "Coronal", "Sagittal"];
+    const minorPlanes = allPlanes.filter((p) => p !== majorPane2DMPR);
+    const major = planeConfig[majorPane2DMPR];
+    const minor0 = planeConfig[minorPlanes[0]];
+    const minor1 = planeConfig[minorPlanes[1]];
+
+    const renderPane = (
+      cfg: typeof major,
+      isCompact: boolean,
+    ) => {
+      // If no temp series for this plane (e.g. source is already axial), use DicomViewer
+      if (!cfg.series) {
+        return (
+          <DicomViewer
+            instances={instances}
+            seriesId={selectedSeries._id}
+            className="h-full"
+            scoutLines={cfg.scoutLines}
+            onImageIndexChange={cfg.onIndexChange}
+            isActive={active2DMPRPane === cfg.paneId}
+          />
+        );
+      }
+      return (
+        <TemporaryMPRSeriesViewer
+          series={cfg.series}
+          className="h-full"
+          scoutLines={cfg.scoutLines}
+          onImageIndexChange={cfg.onIndexChange}
+          isActive={active2DMPRPane === cfg.paneId}
+          onSliceNeeded={cfg.onSliceNeeded}
+          onCrosshairDrag={cfg.onCrosshairDrag}
+          compact={isCompact}
+        />
+      );
+    };
+
     return (
-      <div className="flex-1 flex bg-black h-full gap-0.5">
-        {/* Left column — Coronal (top) + Sagittal (bottom) */}
-        <div className="w-1/2 flex flex-col gap-0.5 min-w-0">
-          {/* Coronal — top */}
-          <div
-            className={`flex-1 min-h-0 relative overflow-hidden ${active2DMPRPane === 1 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-            onClick={() => setActive2DMPRPane(1)}
-          >
-            <TemporaryMPRSeriesViewer
-              series={mpr2DSeries.coronal}
-              className="h-full"
-              scoutLines={scoutLinesCoronal}
-              onImageIndexChange={handleCoronalIndexChange}
-              compact
-            />
-          </div>
-          {/* Sagittal — bottom */}
-          <div
-            className={`flex-1 min-h-0 relative overflow-hidden ${active2DMPRPane === 2 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-            onClick={() => setActive2DMPRPane(2)}
-          >
-            <TemporaryMPRSeriesViewer
-              series={mpr2DSeries.sagittal}
-              className="h-full"
-              scoutLines={scoutLinesSagittal}
-              onImageIndexChange={handleSagittalIndexChange}
-              compact
-            />
+      <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
+        {/* Left column — Major pane with view type dropdown */}
+        <div
+          className={`w-1/2 min-h-0 min-w-0 overflow-hidden relative bg-black ${active2DMPRPane === major.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+          onClick={() => setActive2DMPRPane(major.paneId)}
+        >
+          {renderPane(major, false)}
+          {/* View type dropdown */}
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
+            <select
+              value={majorPane2DMPR}
+              onChange={(e) => setMajorPane2DMPR(e.target.value as PlaneOrientation)}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-black/80 text-white text-xs px-2 py-1 rounded border border-gray-600 hover:border-gray-400 cursor-pointer outline-none focus:border-green-500 appearance-auto"
+            >
+              <option value="Axial">Axial</option>
+              <option value="Coronal">Coronal</option>
+              <option value="Sagittal">Sagittal</option>
+            </select>
           </div>
         </div>
 
-        {/* Right column — Axial */}
-        <div
-          className={`w-1/2 min-h-0 min-w-0 overflow-hidden ${active2DMPRPane === 0 ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-          onClick={() => setActive2DMPRPane(0)}
-        >
-          {mpr2DSeries.axial ? (
-            <TemporaryMPRSeriesViewer
-              series={mpr2DSeries.axial}
-              className="h-full"
-              scoutLines={scoutLinesAxial}
-              onImageIndexChange={handleAxialIndexChange}
-              compact
-            />
-          ) : (
-            <DicomViewer
-              instances={instances}
-              seriesId={selectedSeries._id}
-              className="h-full"
-              scoutLines={scoutLinesAxial}
-              onImageIndexChange={handleAxialIndexChange}
-            />
-          )}
+        {/* Right column — 2 minor panes stacked */}
+        <div className="w-1/2 flex flex-col min-w-0 divide-y divide-gray-800">
+          {/* Minor pane 0 — top */}
+          <div
+            className={`flex-1 min-h-0 relative overflow-hidden bg-black ${active2DMPRPane === minor0.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+            onClick={() => setActive2DMPRPane(minor0.paneId)}
+          >
+            {renderPane(minor0, true)}
+          </div>
+          {/* Minor pane 1 — bottom */}
+          <div
+            className={`flex-1 min-h-0 relative overflow-hidden bg-black ${active2DMPRPane === minor1.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
+            onClick={() => setActive2DMPRPane(minor1.paneId)}
+          >
+            {renderPane(minor1, true)}
+          </div>
         </div>
       </div>
     );
@@ -1445,7 +1718,7 @@ const CaseViewer = () => {
     return (
       <div className="flex-1 flex flex-col bg-black h-full min-h-0">
         <div
-          className="flex-1 grid gap-0.5"
+          className="flex-1 grid gap-px bg-gray-800"
           style={{
             gridTemplateColumns: `repeat(${config.cols}, 1fr)`,
             gridTemplateRows: `repeat(${config.rows}, 1fr)`,
@@ -1474,31 +1747,21 @@ const CaseViewer = () => {
 
   // Single-pane (1x1) layout
   return (
-    <div className="flex-1 flex flex-col bg-black h-full min-h-0">
-      {/* Series info header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-900/50 border-b border-gray-800">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-400">
-            Series {selectedSeries.series_number}:{" "}
-            {selectedSeries.description || "No description"}
-          </span>
-          <span className="text-xs text-gray-500">
-            {selectedSeries.modality} • {instances.length}{" "}
-            {selectedSeries.modality === "SR" ? "document(s)" : "images"}
-          </span>
-        </div>
-        {caseData && (
-          <span className="text-xs text-gray-500">
-            {caseData.patient?.name} • {caseData.accession_number}
-          </span>
-        )}
-      </div>
+    <div
+      className={`relative flex-1 flex flex-col bg-black h-full min-h-0 ${
+        isSinglePaneDragOver ? "ring-2 ring-amber-400 ring-inset" : ""
+      }`}
+      onDragOver={handleSinglePaneDragOver}
+      onDragLeave={handleSinglePaneDragLeave}
+      onDrop={handleSinglePaneDrop}
+    >
 
       {/* Viewer - Temporary MPR series, SR, or DicomViewer */}
       {selectedTempSeries ? (
         <TemporaryMPRSeriesViewer
           series={selectedTempSeries}
           className="flex-1 min-h-0"
+          isActive={true}
           onSliceNeeded={
             selectedTempSeries.mprMode === "MiniMIP" || selectedTempSeries.mprMode === "MIP"
               ? handleMIPSliceNeeded
@@ -1512,7 +1775,16 @@ const CaseViewer = () => {
           instances={instances || []}
           seriesId={selectedSeries._id}
           className="flex-1 min-h-0"
+          isActive={true}
         />
+      )}
+
+      {isSinglePaneDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-20 border-2 border-dashed border-amber-400 bg-amber-500/10 flex items-center justify-center">
+          <span className="text-xs text-amber-200 font-medium uppercase tracking-wider">
+            Drop Series
+          </span>
+        </div>
       )}
     </div>
   );

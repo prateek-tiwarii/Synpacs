@@ -46,6 +46,42 @@ const formatDicomDate = (dateStr: string) => {
   return `${day}/${month}/${year}`;
 };
 
+const parseDicomDate = (dateStr?: string | null): Date | null => {
+  if (!dateStr || dateStr.length !== 8) return null;
+  const year = Number.parseInt(dateStr.substring(0, 4), 10);
+  const month = Number.parseInt(dateStr.substring(4, 6), 10);
+  const day = Number.parseInt(dateStr.substring(6, 8), 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatPatientAge = (
+  dobStr?: string | null,
+  referenceDateStr?: string | null,
+  explicitAge?: string | number | null,
+): string | null => {
+  if (explicitAge !== undefined && explicitAge !== null) {
+    const ageText = String(explicitAge).trim();
+    if (ageText) return ageText;
+  }
+
+  const dob = parseDicomDate(dobStr);
+  if (!dob) return null;
+  const referenceDate = parseDicomDate(referenceDateStr) ?? new Date();
+  if (referenceDate.getTime() < dob.getTime()) return null;
+
+  let age = referenceDate.getFullYear() - dob.getFullYear();
+  const monthDiff = referenceDate.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && referenceDate.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  if (age < 0) return null;
+  return `${age}Y`;
+};
+
 export function VRTViewer({
   volume,
   onExit,
@@ -53,6 +89,11 @@ export function VRTViewer({
   hideTools = false,
 }: VRTViewerProps) {
   const { caseData, isFullscreen, toggleFullscreen } = useViewerContext();
+  const patientAge = formatPatientAge(
+    caseData?.patient?.dob || caseData?.patient?.date_of_birth,
+    caseData?.case_date,
+    caseData?.patient?.age,
+  );
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -347,6 +388,7 @@ export function VRTViewer({
                     "N/A",
                 )}
               </span>
+              <span>Age: {patientAge ?? "N/A"}</span>
               <span>Sex: {caseData.patient?.sex || "U"}</span>
               <span className="font-medium mt-1 text-purple-400">
                 3D Volume Rendering
@@ -366,9 +408,9 @@ export function VRTViewer({
 
           {/* Controls hint - Bottom Left */}
           <div className="absolute bottom-0 left-0 text-gray-500 text-[10px]">
-            <span>Drag: Rotate</span>
+            <span>L-Drag: Rotate</span>
             <span className="mx-2">|</span>
-            <span>Shift+Drag: Pan</span>
+            <span>R-Drag/Shift+Drag: Pan</span>
             <span className="mx-2">|</span>
             <span>Scroll: Zoom</span>
           </div>

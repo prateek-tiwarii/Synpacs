@@ -21,6 +21,7 @@ interface Patient {
   patient_id: string;
   date_of_birth: string;
   dob?: string;
+  age?: string | number;
   name: string;
   sex: string;
 }
@@ -111,13 +112,36 @@ export interface TemporaryMPRSeries {
   windowWidth: number;
   physicalAspectRatio?: number; // Physical width/height ratio accounting for spacing
   projectionSlabHalfSize?: number; // Used for live projection updates
+  initialProjectionSlabHalfSize?: number; // Baseline slab size when the series was created
 }
 
 export type GridLayout = `${number}x${number}`;
+export type SidebarPosition = "side" | "top" | "bottom";
+export type SidebarColumns = 1 | 2;
 
 // Mouse button binding types
 export type MouseButton = 0 | 1 | 2; // 0=Left, 1=Middle, 2=Right
 export type MouseButtonBindings = Partial<Record<MouseButton, ViewerTool>>;
+
+export const DEFAULT_MINI_MIP_INTENSITY = 5;
+export const DEFAULT_MIP_INTENSITY = 20;
+const DEFAULT_VIEW_SCALE = 1.4;
+const DEFAULT_PANE_SCALE = 0.75;
+
+const sanitizeMouseBindings = (bindings: MouseButtonBindings) => {
+  let changed = false;
+  const next = { ...bindings };
+
+  [0, 1, 2].forEach((button) => {
+    const key = button as MouseButton;
+    if (next[key] === "SpineLabeling") {
+      delete next[key];
+      changed = true;
+    }
+  });
+
+  return { next, changed };
+};
 
 export interface ViewTransform {
   x: number;
@@ -249,6 +273,11 @@ interface ViewerContextType {
   // Shortcuts
   shortcuts: Shortcut[];
   updateShortcut: (id: string, newKey: string) => void;
+  // Sidebar preferences
+  sidebarPosition: SidebarPosition;
+  setSidebarPosition: (position: SidebarPosition) => void;
+  sidebarColumns: SidebarColumns;
+  setSidebarColumns: (columns: SidebarColumns) => void;
   // Stack speed (1-10, default 4)
   stackSpeed: number;
   setStackSpeed: (speed: number) => void;
@@ -264,6 +293,9 @@ interface ViewerContextType {
   // VRT (3D Volume Rendering) mode
   isVRTActive: boolean;
   setIsVRTActive: (active: boolean) => void;
+  // 2D-MPR dedicated mode
+  is2DMPRActive: boolean;
+  setIs2DMPRActive: (active: boolean) => void;
   // Mouse button → tool bindings
   mouseBindings: MouseButtonBindings;
   setMouseBinding: (button: MouseButton, tool: ViewerTool | null) => void;
@@ -290,7 +322,7 @@ export function ViewerLayout() {
   const [viewTransform, setViewTransform] = useState<ViewTransform>({
     x: 0,
     y: 0,
-    scale: 1.2,
+    scale: DEFAULT_VIEW_SCALE,
     rotation: 0,
     flipH: false,
     flipV: false,
@@ -343,20 +375,46 @@ export function ViewerLayout() {
     new Set(),
   );
   const [stackSpeed, setStackSpeed] = useState(4); // 1-10, default 4
-  const [miniMIPIntensity, setMiniMIPIntensity] = useState(5); // slab half-size (0-20)
-  const [mipIntensity, setMIPIntensity] = useState(20); // slab half-size (0-80)
+  const [miniMIPIntensity, setMiniMIPIntensity] = useState(
+    DEFAULT_MINI_MIP_INTENSITY,
+  ); // slab half-size (0-20)
+  const [mipIntensity, setMIPIntensity] = useState(DEFAULT_MIP_INTENSITY); // slab half-size (0-80)
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
+  const [is2DMPRActive, setIs2DMPRActive] = useState(false);
+  const [sidebarPosition, setSidebarPositionState] = useState<SidebarPosition>(() => {
+    const saved = localStorage.getItem("viewer_sidebar_position");
+    if (saved === "top" || saved === "bottom" || saved === "side") {
+      return saved;
+    }
+    return "side";
+  });
+  const [sidebarColumns, setSidebarColumnsState] = useState<SidebarColumns>(() => {
+    const saved = Number(localStorage.getItem("viewer_sidebar_columns"));
+    return saved === 1 || saved === 2 ? saved : 1;
+  });
 
   // Mouse button → tool bindings (persisted in localStorage)
   const [mouseBindings, setMouseBindingsState] = useState<MouseButtonBindings>(() => {
     const saved = localStorage.getItem("viewer_mouse_bindings");
-    return saved ? JSON.parse(saved) : {};
+    const parsed = saved ? (JSON.parse(saved) as MouseButtonBindings) : {};
+    const { next, changed } = sanitizeMouseBindings(parsed);
+    if (changed) {
+      localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
+    }
+    return next;
   });
 
   const setMouseBinding = useCallback((button: MouseButton, tool: ViewerTool | null) => {
     setMouseBindingsState((prev) => {
       const next = { ...prev };
+
+      if (tool === "SpineLabeling") {
+        delete next[button];
+        localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
+        return next;
+      }
+
       if (tool !== null) {
         next[button] = tool;
       } else {
@@ -365,6 +423,16 @@ export function ViewerLayout() {
       localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const setSidebarPosition = useCallback((position: SidebarPosition) => {
+    setSidebarPositionState(position);
+    localStorage.setItem("viewer_sidebar_position", position);
+  }, []);
+
+  const setSidebarColumns = useCallback((columns: SidebarColumns) => {
+    setSidebarColumnsState(columns);
+    localStorage.setItem("viewer_sidebar_columns", String(columns));
   }, []);
 
   // Window presets have fixed keys (1-7), other shortcuts start empty for user to assign
@@ -536,7 +604,7 @@ export function ViewerLayout() {
     viewTransform: {
       x: 0,
       y: 0,
-      scale: 0.65,
+      scale: DEFAULT_PANE_SCALE,
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -767,7 +835,7 @@ export function ViewerLayout() {
       // Also reset other view transforms
       x: 0,
       y: 0,
-      scale: 1.2,
+      scale: DEFAULT_VIEW_SCALE,
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -926,6 +994,10 @@ export function ViewerLayout() {
     clearDownloadedSeriesIds,
     shortcuts,
     updateShortcut,
+    sidebarPosition,
+    setSidebarPosition,
+    sidebarColumns,
+    setSidebarColumns,
     stackSpeed,
     setStackSpeed,
     miniMIPIntensity,
@@ -936,6 +1008,8 @@ export function ViewerLayout() {
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    is2DMPRActive,
+    setIs2DMPRActive,
     mouseBindings,
     setMouseBinding,
   };
@@ -966,11 +1040,23 @@ export function ViewerLayout() {
     <ViewerContext.Provider value={contextValue}>
       <div className="min-h-screen w-full bg-black text-white flex flex-col h-screen overflow-hidden">
         <ViewerHeader />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          {!isVRTActive && <ViewerSidebar />}
+        {sidebarPosition === "top" && !isVRTActive && !is2DMPRActive && (
+          <ViewerSidebar position="top" columns={sidebarColumns} />
+        )}
+        <div
+          className={`flex flex-1 min-h-0 overflow-hidden ${
+            sidebarPosition === "side" ? "" : "flex-col"
+          }`}
+        >
+          {sidebarPosition === "side" && !isVRTActive && !is2DMPRActive && (
+            <ViewerSidebar position="side" columns={sidebarColumns} />
+          )}
           <main className="flex-1 min-w-0 min-h-0">
             <Outlet />
           </main>
+          {sidebarPosition === "bottom" && !isVRTActive && !is2DMPRActive && (
+            <ViewerSidebar position="bottom" columns={sidebarColumns} />
+          )}
         </div>
       </div>
     </ViewerContext.Provider>
