@@ -115,15 +115,16 @@ onmessage = (e: MessageEvent) => {
       }
       const { plane, index, requestId } = payload;
       const result = extractSlice(plane, index);
+      const sliceBuffer = result.data.buffer as ArrayBuffer;
       const msg: SliceResultPayload = {
         plane,
         index,
         requestId,
-        buffer: result.data.buffer,
+        buffer: sliceBuffer,
         width: result.width,
         height: result.height,
       };
-      _postMessage({ type: "sliceResult", payload: msg }, [result.data.buffer]);
+      _postMessage({ type: "sliceResult", payload: msg }, [sliceBuffer]);
       break;
     }
 
@@ -149,17 +150,16 @@ onmessage = (e: MessageEvent) => {
       };
       for (const idx of indices) {
         const result = extractSlice(batchPlane, idx);
+        const sliceBuffer = result.data.buffer as ArrayBuffer;
         const msg: SliceResultPayload = {
           plane: batchPlane,
           index: idx,
           requestId: batchReqId,
-          buffer: result.data.buffer,
+          buffer: sliceBuffer,
           width: result.width,
           height: result.height,
         };
-        _postMessage({ type: "sliceResult", payload: msg }, [
-          result.data.buffer,
-        ]);
+        _postMessage({ type: "sliceResult", payload: msg }, [sliceBuffer]);
       }
       _postMessage({
         type: "batchComplete",
