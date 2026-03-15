@@ -824,9 +824,9 @@ const CaseViewer = () => {
     const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : 0;
     const coronalTotal = mpr2DSeries.coronal?.sliceCount ?? 0;
     const sagittalTotal = mpr2DSeries.sagittal?.sliceCount ?? 0;
-    if (axialTotal > 0) setAxialIndex((prev) => Math.max(0, Math.min(axialTotal - 1, crosshairIndices.z)));
-    if (coronalTotal > 0) setCoronalIndex((prev) => Math.max(0, Math.min(coronalTotal - 1, crosshairIndices.y)));
-    if (sagittalTotal > 0) setSagittalIndex((prev) => Math.max(0, Math.min(sagittalTotal - 1, crosshairIndices.x)));
+    if (axialTotal > 0) setAxialIndex((_prev) => Math.max(0, Math.min(axialTotal - 1, crosshairIndices.z)));
+    if (coronalTotal > 0) setCoronalIndex((_prev) => Math.max(0, Math.min(coronalTotal - 1, crosshairIndices.y)));
+    if (sagittalTotal > 0) setSagittalIndex((_prev) => Math.max(0, Math.min(sagittalTotal - 1, crosshairIndices.x)));
   }, [is2DMPRLayout, mpr2DSeries, crosshairIndices.x, crosshairIndices.y, crosshairIndices.z]);
 
   // Scout line computation for 2D-MPR layout (respect global show-scout toggle so crosshair visible in all 3 planes)
@@ -1146,6 +1146,7 @@ const CaseViewer = () => {
         // 2D vs 3D MPR: only difference is plane constraint — 2D = orthogonal only; 3D = oblique (free slice rotation).
         // Handle 2D-MPR: orthogonal planes only, progressive loading via Web Worker
         if (mode === "2D-MPR") {
+          // @ts-ignore - reserved for future plane-specific logic
           let sourcePlane: PlaneOrientation | null = null;
           if (instances[0]?.image_orientation_patient?.length === 6) {
             const normal = calculateSliceNormal(instances[0].image_orientation_patient);
@@ -1801,7 +1802,7 @@ const CaseViewer = () => {
     if (mprLayoutPreset === "1x3") {
       return (
         <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
-          {(["Axial", "Coronal", "Sagittal"] as const).map((plane, i) => (
+          {(["Axial", "Coronal", "Sagittal"] as const).map((plane, _i) => (
             <div key={plane} className={paneClass(planeConfig[plane].paneId)} onClick={() => setActive2DMPRPane(planeConfig[plane].paneId)}>
               {renderPane(planeConfig[plane], true, plane === "Axial" ? axialIndex : plane === "Coronal" ? coronalIndex : sagittalIndex)}
             </div>

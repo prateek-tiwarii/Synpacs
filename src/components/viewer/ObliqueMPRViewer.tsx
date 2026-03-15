@@ -256,43 +256,6 @@ export function ObliqueMPRViewer({
     [syncMode],
   );
 
-  const handleSyncModeChange = useCallback(
-    (nextMode: SyncMode) => {
-      if (nextMode === syncMode) return;
-
-      if (nextMode === "manual") {
-        setManualPaneStates(
-          createPaneSyncStateMap(
-            autoSyncState.crosshair,
-            autoSyncState.rotation,
-          ),
-        );
-        setSyncMode("manual");
-        return;
-      }
-
-      if (nextMode === "none") {
-        setManualPaneStates(
-          createPaneSyncStateMap(
-            autoSyncState.crosshair,
-            autoSyncState.rotation,
-          ),
-        );
-        setSyncMode("none");
-        return;
-      }
-
-      // nextMode === "auto"
-      const source = manualPaneStates[activePane] ?? manualPaneStates.Axial;
-      setAutoSyncState({
-        crosshair: cloneVec3(source.crosshair),
-        rotation: cloneRotation(source.rotation),
-      });
-      setSyncMode("auto");
-    },
-    [activePane, autoSyncState, manualPaneStates, syncMode],
-  );
-
   const handleManualSyncNow = useCallback(() => {
     if (syncMode !== "manual") return;
     const source = manualPaneStates[activePane] ?? manualPaneStates.Axial;
@@ -659,6 +622,7 @@ export function ObliqueMPRViewer({
         target &&
         (target instanceof HTMLSelectElement ||
           target instanceof HTMLButtonElement ||
+          // @ts-ignore
           target.closest?.("select, button"))
       ) {
         setActivePane(paneId);

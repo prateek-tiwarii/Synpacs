@@ -244,7 +244,6 @@ const ViewerHeader = () => {
     mprLayoutPreset,
     setMprLayoutPreset,
     mouseBindings,
-    setMouseBinding,
     assignToolToButton,
   } = useViewerContext();
 
