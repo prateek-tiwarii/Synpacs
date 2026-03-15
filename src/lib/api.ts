@@ -388,6 +388,12 @@ class ApiService {
     })
   }
 
+  async getReportsByPatient(patientId: string) {
+    return this.request(`/api/v1/reports/patient/${patientId}`, {
+      method: 'GET',
+    })
+  }
+
   async downloadReport(reportId: string) {
     return this.request(`/api/v1/reports/${reportId}/download`, {
       method: 'GET',
