@@ -222,11 +222,22 @@ export function ReportLayout() {
         const sourceCase = caseData || reportData?.case_id;
         if (!sourceCase) return;
 
+        // IMPORTANT: Only update if the case ID matches the current route ID
+        // This prevents overwriting other cases' data when switching tabs
+        if (sourceCase._id !== id) {
+            return;
+        }
+
+        const patientName = sourceCase.patient?.name || reportData?.patient_id?.name;
+        const patientId = sourceCase.patient?.patient_id || reportData?.patient_id?.patient_id;
+        const patientSex = sourceCase.patient?.sex || reportData?.patient_id?.sex;
+
         upsertOpenedReportCase({
             caseId: id,
             caseUid: sourceCase.case_uid,
-            patientName: sourceCase.patient?.name || reportData?.patient_id?.name,
-            patientId: sourceCase.patient?.patient_id || reportData?.patient_id?.patient_id,
+            patientName,
+            patientId,
+            patientSex,
             accessionNumber: sourceCase.accession_number,
             description: sourceCase.description || sourceCase.body_part,
             modality: sourceCase.modality,

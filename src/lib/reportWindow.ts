@@ -19,6 +19,7 @@ export interface OpenedReportCase {
   caseUid?: string;
   patientName?: string;
   patientId?: string;
+  patientSex?: string;
   accessionNumber?: string;
   description?: string;
   modality?: string;
@@ -30,6 +31,7 @@ export interface ReportCaseMetadata {
   caseUid?: string;
   patientName?: string;
   patientId?: string;
+  patientSex?: string;
   accessionNumber?: string;
   description?: string;
   modality?: string;
@@ -111,6 +113,7 @@ const toOpenedReportCase = (value: unknown): OpenedReportCase | null => {
     caseUid: sanitizeText(entry.caseUid),
     patientName: sanitizeText(entry.patientName),
     patientId: sanitizeText(entry.patientId),
+    patientSex: sanitizeText(entry.patientSex),
     accessionNumber: sanitizeText(entry.accessionNumber),
     description: sanitizeText(entry.description),
     modality: sanitizeText(entry.modality),
@@ -307,16 +310,26 @@ export const upsertOpenedReportCase = (
 
   if (existingIndex >= 0) {
     const existingEntry = currentEntries[existingIndex];
+    // Update existing entry - prefer new data over old data
+    const newPatientName = sanitizeText(metadata.patientName);
+    const newPatientId = sanitizeText(metadata.patientId);
+    const newPatientSex = sanitizeText(metadata.patientSex);
+    const newCaseUid = sanitizeText(metadata.caseUid);
+    const newAccessionNumber = sanitizeText(metadata.accessionNumber);
+    const newDescription = sanitizeText(metadata.description);
+    const newModality = sanitizeText(metadata.modality);
+    
     nextEntries[existingIndex] = {
       ...existingEntry,
       caseId,
-      caseUid: sanitizeText(metadata.caseUid) ?? existingEntry.caseUid,
-      patientName: sanitizeText(metadata.patientName) ?? existingEntry.patientName,
-      patientId: sanitizeText(metadata.patientId) ?? existingEntry.patientId,
-      accessionNumber:
-        sanitizeText(metadata.accessionNumber) ?? existingEntry.accessionNumber,
-      description: sanitizeText(metadata.description) ?? existingEntry.description,
-      modality: sanitizeText(metadata.modality) ?? existingEntry.modality,
+      // Always update with new data if provided (not undefined)
+      caseUid: newCaseUid !== undefined ? newCaseUid : existingEntry.caseUid,
+      patientName: newPatientName !== undefined ? newPatientName : existingEntry.patientName,
+      patientId: newPatientId !== undefined ? newPatientId : existingEntry.patientId,
+      patientSex: newPatientSex !== undefined ? newPatientSex : existingEntry.patientSex,
+      accessionNumber: newAccessionNumber !== undefined ? newAccessionNumber : existingEntry.accessionNumber,
+      description: newDescription !== undefined ? newDescription : existingEntry.description,
+      modality: newModality !== undefined ? newModality : existingEntry.modality,
       // Keep existing order by preserving original timestamp.
       lastOpenedAt: existingEntry.lastOpenedAt,
     };
@@ -326,6 +339,7 @@ export const upsertOpenedReportCase = (
       caseUid: sanitizeText(metadata.caseUid),
       patientName: sanitizeText(metadata.patientName),
       patientId: sanitizeText(metadata.patientId),
+      patientSex: sanitizeText(metadata.patientSex),
       accessionNumber: sanitizeText(metadata.accessionNumber),
       description: sanitizeText(metadata.description),
       modality: sanitizeText(metadata.modality),
@@ -336,6 +350,17 @@ export const upsertOpenedReportCase = (
   if (nextEntries.length > MAX_TRACKED_REPORT_CASES) {
     nextEntries = nextEntries.slice(nextEntries.length - MAX_TRACKED_REPORT_CASES);
   }
+
+  writeOpenedReportCases(nextEntries);
+  return nextEntries;
+};
+
+export const removeOpenedReportCase = (caseId: string): OpenedReportCase[] => {
+  const normalizedCaseId = sanitizeText(caseId);
+  if (!normalizedCaseId) return readOpenedReportCases();
+
+  const currentEntries = readOpenedReportCases();
+  const nextEntries = currentEntries.filter((entry) => entry.caseId !== normalizedCaseId);
 
   writeOpenedReportCases(nextEntries);
   return nextEntries;

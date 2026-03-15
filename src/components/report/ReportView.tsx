@@ -14,6 +14,7 @@ import {
     Clock,
     History,
     Loader2,
+    X,
 } from 'lucide-react';
 import { ReportEditor } from './ReportEditor';
 import type { ReportEditorRef } from './ReportEditor';
@@ -21,7 +22,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useReportContext } from '@/components/ReportLayout';
 import { apiService } from '@/lib/api';
-import { getOpenedReportCases, OPENED_REPORT_CASES_STORAGE_KEY, type OpenedReportCase } from '@/lib/reportWindow';
+import { getOpenedReportCases, removeOpenedReportCase, OPENED_REPORT_CASES_STORAGE_KEY, type OpenedReportCase } from '@/lib/reportWindow';
+import { PatientDetailsSection } from './PatientDetailsSection';
 import toast from 'react-hot-toast';
 
 interface PatientInfo {
@@ -131,8 +133,10 @@ export function ReportView() {
         }
     }, [reportData]);
 
+    // Update opened cases list when storage changes or component mounts
     useEffect(() => {
-        setOpenedCases(getOpenedReportCases());
+        const cases = getOpenedReportCases();
+        setOpenedCases(cases);
     }, [activeCaseId, caseData, reportData]);
 
     useEffect(() => {
@@ -159,10 +163,56 @@ export function ReportView() {
         return openedCase.patientId || openedCase.caseId;
     }, []);
 
-    const handleCaseTabClick = useCallback((caseId: string) => {
-        if (!caseId || caseId === activeCaseId) return;
-        navigate(`/case/${caseId}/report`);
-    }, [activeCaseId, navigate]);
+    // Helper function to extract plain text from Lexical state
+    const extractPlainText = useCallback((content: any): string => {
+        const texts: string[] = [];
+
+        function traverse(node: any) {
+            if (node.text) {
+                texts.push(node.text);
+            }
+            if (node.children) {
+                node.children.forEach(traverse);
+            }
+        }
+
+        if (content?.root) {
+            traverse(content.root);
+        }
+        return texts.join(' ');
+    }, []);
+
+    // Auto-save before switching tabs
+    const handleCaseTabClick = useCallback(
+        async (caseId: string) => {
+            if (!caseId || caseId === activeCaseId) return;
+            
+            // Auto-save current report before switching (only if not signed off)
+            if (isDraft && currentContent && editorRef.current && !reportData?.is_signed_off) {
+                try {
+                    const editorState = editorRef.current?.getEditorState();
+                    const html = editorRef.current?.getHtml();
+                    
+                    if (editorState && caseData && savedReportId) {
+                        const plainText = extractPlainText(editorState);
+                        await apiService.updateReport(savedReportId, {
+                            content: editorState,
+                            content_html: html || '',
+                            content_plain_text: plainText,
+                            reporting_status: 'drafted',
+                        });
+                        toast.success('Report auto-saved');
+                    }
+                } catch (error) {
+                    console.error('Auto-save failed:', error);
+                    // Continue with navigation even if auto-save fails
+                }
+            }
+            
+            navigate(`/case/${caseId}/report`);
+        },
+        [activeCaseId, navigate, isDraft, currentContent, caseData, savedReportId, extractPlainText, reportData]
+    );
 
     // Helper function to format date
     const formatDateTime = (dateStr: string, timeStr?: string) => {
@@ -280,6 +330,25 @@ export function ReportView() {
         setIsDraft(true);
     }, []);
 
+    const handleLoadPreviousReport = useCallback((content: string, mode: 'replace' | 'append') => {
+        if (!editorRef.current) return;
+
+        if (mode === 'replace') {
+            // Replace entire content
+            editorRef.current.setContent(content);
+            toast.success('Previous report loaded - content replaced');
+        } else {
+            // Append to existing content
+            const currentHtml = editorRef.current.getHtml();
+            const separator = '\n\n--- Previous Report ---\n\n';
+            const newContent = currentHtml + separator + content;
+            editorRef.current.setContent(newContent);
+            toast.success('Previous report appended to current content');
+        }
+        
+        setIsDraft(true);
+    }, []);
+
     const handleSaveDraft = useCallback(async () => {
         if (!caseData) {
             toast.error('Case data not available');
@@ -351,26 +420,7 @@ export function ReportView() {
         } finally {
             setIsSaving(false);
         }
-    }, [caseData, patientInfo.serviceName, selectedTemplateId, savedReportId]);
-
-    // Helper function to extract plain text from Lexical state
-    const extractPlainText = (content: any): string => {
-        const texts: string[] = [];
-
-        function traverse(node: any) {
-            if (node.text) {
-                texts.push(node.text);
-            }
-            if (node.children) {
-                node.children.forEach(traverse);
-            }
-        }
-
-        if (content?.root) {
-            traverse(content.root);
-        }
-        return texts.join(' ');
-    };
+    }, [caseData, patientInfo.serviceName, selectedTemplateId, savedReportId, extractPlainText]);
 
     const handleSignOff = useCallback(async () => {
         if (!caseData) {
@@ -414,7 +464,7 @@ export function ReportView() {
         } finally {
             setIsSaving(false);
         }
-    }, [caseData, savedReportId]);
+    }, [caseData, savedReportId, extractPlainText]);
 
     const handleUploadTemplate = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -788,28 +838,90 @@ export function ReportView() {
 
             {/* Main Editor Area */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Compact Patient Info + Actions Bar */}
+                {/* Case Tabs - Browser-style tabs */}
+                {openedCases.length > 0 && (
+                    <div className="bg-gray-900 border-b border-gray-700 flex items-end overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                        <div className="flex items-end h-10 px-2 gap-1">
+                            {openedCases.map((openedCase) => {
+                                const isActive = openedCase.caseId === activeCaseId;
+                                
+                                // Get patient details - use stored data first, then context for active case
+                                let patientName = openedCase.patientName || 'Unknown Patient';
+                                let patientIdDisplay = openedCase.patientId || 'N/A';
+                                let sex = openedCase.patientSex || 'U';
+                                let studyDescription = openedCase.description || openedCase.modality || 'Study';
+                                
+                                // If this is the active case, prefer fresh data from context
+                                if (isActive && caseData) {
+                                    patientName = caseData.patient?.name || patientName;
+                                    patientIdDisplay = caseData.patient?.patient_id || patientIdDisplay;
+                                    sex = caseData.patient?.sex || sex;
+                                    studyDescription = caseData.description || caseData.body_part || studyDescription;
+                                }
+                                
+                                return (
+                                    <div
+                                        key={openedCase.caseId}
+                                        className={`
+                                            group relative flex items-center gap-2 px-3 py-2 min-w-[250px] max-w-[450px] 
+                                            rounded-t-md cursor-pointer transition-all
+                                            ${isActive 
+                                                ? 'bg-gray-800 text-white border-t-2 border-t-blue-500 shadow-lg z-10' 
+                                                : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800/70 hover:text-gray-200'
+                                            }
+                                        `}
+                                        onClick={() => handleCaseTabClick(openedCase.caseId)}
+                                    >
+                                        <div className="flex-1 overflow-hidden">
+                                            <p className={`text-xs font-medium truncate ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                                                {patientName} | {patientIdDisplay} / {sex} | {studyDescription}
+                                            </p>
+                                        </div>
+                                        
+                                        {/* Close button - shows on hover */}
+                                        <button
+                                            className={`
+                                                p-0.5 rounded hover:bg-gray-700 transition-opacity
+                                                ${isActive ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover:opacity-60 hover:opacity-100!'}
+                                            `}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const updatedCases = removeOpenedReportCase(openedCase.caseId);
+                                                setOpenedCases(updatedCases);
+                                                
+                                                // If closing the active tab, navigate to the first remaining case or close window
+                                                if (isActive && updatedCases.length > 0) {
+                                                    navigate(`/case/${updatedCases[0].caseId}/report`);
+                                                } else if (isActive && updatedCases.length === 0) {
+                                                    window.close();
+                                                }
+                                            }}
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions Bar - Simplified */}
                 <div className="bg-gray-900 border-b border-gray-700 shadow-sm">
-                    <div className="flex items-stretch">
-                        {/* Patient Info - Left */}
-                        <div className="flex-1 flex items-center px-3 py-2 gap-6 border-r border-gray-700">
-                            <div className="flex items-center gap-4">
-                                <div>
-                                    <span className="text-[10px] text-gray-500 uppercase">Patient</span>
-                                    <p className="text-sm font-semibold text-white">{patientInfo.patientName}</p>
-                                </div>
-                                <div className="h-8 w-px bg-gray-700" />
-                                <div className="grid grid-cols-3 gap-x-6 gap-y-0.5 text-xs">
-                                    <div><span className="text-gray-500">ID:</span> <span className="text-gray-300">{patientInfo.patientId}</span></div>
-                                    <div><span className="text-gray-500">Age/Sex:</span> <span className="text-gray-300">{patientInfo.age} / {patientInfo.sex}</span></div>
-                                    <div><span className="text-gray-500">Service:</span> <span className="text-gray-300">{patientInfo.serviceName}</span></div>
-                                    <div><span className="text-gray-500">Scan:</span> <span className="text-gray-300">{patientInfo.scanDateTime}</span></div>
-                                </div>
-                            </div>
+                    <div className="flex items-center justify-between px-3 py-2">
+                        {/* Report Title/Status */}
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm font-medium text-gray-200">Report Editor</span>
+                            {reportData?.is_signed_off && (
+                                <Badge className="bg-green-600 text-white">Signed Off</Badge>
+                            )}
+                            {isDraft && !reportData?.is_signed_off && (
+                                <Badge variant="secondary" className="bg-yellow-600 text-white">Draft</Badge>
+                            )}
                         </div>
 
-                        {/* Actions - Right */}
-                        <div className="flex items-center gap-1 px-2">
+                        {/* Actions */}
+                        <div className="flex items-center gap-1">
                             <Button variant="ghost" size="sm" disabled={isSaving || !savedReportId} onClick={handleDownload} className="h-7 px-2 text-xs text-gray-400 hover:text-white hover:bg-gray-700">
                                 <Download size={14} />
                             </Button>
@@ -859,13 +971,31 @@ export function ReportView() {
                     </div>
                 </div>
 
-                {/* Editor - Maximum Space */}
-                <div className="flex-1 min-h-0 bg-gray-800">
-                    <ReportEditor
-                        ref={editorRef}
-                        onChange={handleContentChange}
-                        placeholder="Select a template or start typing your report..."
-                    />
+                {/* Editor with Patient Details Section */}
+                <div className="flex-1 min-h-0 bg-gray-800 overflow-auto">
+                    <div className="max-w-5xl mx-auto p-4">
+                        {/* Patient Details Section - Always visible */}
+                        <PatientDetailsSection
+                            patientName={patientInfo.patientName}
+                            patientId={patientInfo.patientId}
+                            age={patientInfo.age}
+                            sex={patientInfo.sex}
+                            referredBy={patientInfo.referredBy}
+                            studyDate={patientInfo.scanDateTime}
+                            studyDescription={patientInfo.serviceName}
+                            modality={caseData?.modality || 'N/A'}
+                            onLoadReport={handleLoadPreviousReport}
+                        />
+                        
+                        {/* Editor */}
+                        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+                            <ReportEditor
+                                ref={editorRef}
+                                onChange={handleContentChange}
+                                placeholder="Select a template or start typing your report..."
+                            />
+                        </div>
+                    </div>
                 </div>
 
                 {/* Minimal Footer */}
