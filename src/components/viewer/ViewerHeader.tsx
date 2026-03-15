@@ -36,6 +36,9 @@ import {
   Copy,
   RectangleVertical,
   RectangleHorizontal,
+  Link,
+  Unlink,
+  Hand,
 } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -233,6 +236,9 @@ const ViewerHeader = () => {
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    mprSyncMode,
+    setMprSyncMode,
+    mprSyncNowRef,
     is2DMPRActive,
     setIs2DMPRActive,
     mprLayoutPreset,
@@ -1192,16 +1198,90 @@ const ViewerHeader = () => {
     );
   }
 
-  // 3D MPR mode: show minimal header with exit button only
+  // 3D MPR mode: header with sync tool options + exit button
   if (isVRTActive) {
     return (
       <TooltipProvider>
         <header className="bg-gray-900 border-b border-gray-700">
           <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-3">
-              <Box size={18} className="text-purple-400" />
-              <span className="text-sm font-medium text-white">3D MPR View</span>
-              <span className="text-xs text-gray-500">Press Escape or click Exit to return</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <Box size={18} className="text-purple-400" />
+                <span className="text-sm font-medium text-white">3D MPR View</span>
+                <span className="text-xs text-gray-500">Press Escape or click Exit to return</span>
+              </div>
+              <div className="flex items-center gap-0.5 rounded-md border border-gray-600 bg-black/60 py-0.5 pl-0.5 pr-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setMprSyncMode("auto")}
+                      className={`rounded p-1.5 transition-colors ${
+                        mprSyncMode === "auto"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:bg-gray-700 hover:text-white"
+                      }`}
+                    >
+                      <Link size={18} strokeWidth={2} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                    <p>Auto Sync – match slices by position/orientation</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setMprSyncMode("manual")}
+                      className={`rounded p-1.5 transition-colors ${
+                        mprSyncMode === "manual"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:bg-gray-700 hover:text-white"
+                      }`}
+                    >
+                      <Unlink size={18} strokeWidth={2} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                    <p>Manual Sync – link selected panes only</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setMprSyncMode("none")}
+                      className={`rounded p-1.5 transition-colors ${
+                        mprSyncMode === "none"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:bg-gray-700 hover:text-white"
+                      }`}
+                    >
+                      <Hand size={18} strokeWidth={2} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                    <p>No Sync – panes independent</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              {mprSyncMode === "manual" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => mprSyncNowRef.current?.()}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded border border-blue-500 transition-colors font-medium"
+                    >
+                      Sync Now
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                    <p>Apply active pane state to all panes</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
             <button
               onClick={() => setIsVRTActive(false)}

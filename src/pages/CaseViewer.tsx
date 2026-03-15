@@ -499,6 +499,9 @@ const CaseViewer = () => {
     showScoutLine,
     isVRTActive,
     setIsVRTActive,
+    mprSyncMode,
+    setMprSyncMode,
+    mprSyncNowRef,
     is2DMPRActive,
     setIs2DMPRActive,
     mprLayoutPreset,
@@ -1587,6 +1590,9 @@ const CaseViewer = () => {
         <ObliqueMPRViewer
           volume={vrtVolumeRef.current}
           className="flex-1"
+          syncMode={mprSyncMode}
+          onSyncModeChange={setMprSyncMode}
+          syncNowCallbackRef={mprSyncNowRef}
         />
       </div>
     );

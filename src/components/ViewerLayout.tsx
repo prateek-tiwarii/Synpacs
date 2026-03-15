@@ -1,5 +1,5 @@
 import { Outlet, useParams } from "react-router-dom";
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type MutableRefObject } from "react";
 import ViewerHeader from "./viewer/ViewerHeader";
 import ViewerSidebar from "./viewer/ViewerSidebar";
 import { apiService } from "@/lib/api";
@@ -302,6 +302,10 @@ interface ViewerContextType {
   // VRT (3D Volume Rendering) mode
   isVRTActive: boolean;
   setIsVRTActive: (active: boolean) => void;
+  // 3D MPR sync mode (Auto / Manual / No Sync)
+  mprSyncMode: "auto" | "manual" | "none";
+  setMprSyncMode: (mode: "auto" | "manual" | "none") => void;
+  mprSyncNowRef: MutableRefObject<(() => void) | null>;
   // 2D-MPR dedicated mode
   is2DMPRActive: boolean;
   setIs2DMPRActive: (active: boolean) => void;
@@ -394,6 +398,8 @@ export function ViewerLayout() {
   const [mipIntensity, setMIPIntensity] = useState(DEFAULT_MIP_INTENSITY); // slab half-size (0-80)
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
+  const [mprSyncMode, setMprSyncMode] = useState<"auto" | "manual" | "none">("auto");
+  const mprSyncNowRef = useRef<(() => void) | null>(null);
   const [is2DMPRActive, setIs2DMPRActive] = useState(false);
   const [mprLayoutPreset, setMprLayoutPreset] = useState<
     "left-large" | "right-large" | "top-large" | "bottom-large" | "1x3" | "3x1"
@@ -1032,6 +1038,9 @@ export function ViewerLayout() {
     setShowScoutLine,
     isVRTActive,
     setIsVRTActive,
+    mprSyncMode,
+    setMprSyncMode,
+    mprSyncNowRef,
     is2DMPRActive,
     setIs2DMPRActive,
     mprLayoutPreset,

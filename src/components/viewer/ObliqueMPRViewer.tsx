@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   applyWindowLevel,
   type ObliquePlane,
@@ -12,11 +12,16 @@ import {
 interface ObliqueMPRViewerProps {
   volume: VolumeData;
   className?: string;
+  /** When provided, sync mode is controlled from parent (e.g. header). */
+  syncMode?: SyncMode;
+  onSyncModeChange?: (mode: SyncMode) => void;
+  /** Ref to register the "Sync Now" callback when in manual mode (called from header). */
+  syncNowCallbackRef?: MutableRefObject<(() => void) | null>;
 }
 
 type PlaneOrientation = "Axial" | "Coronal" | "Sagittal";
 type Vec3 = [number, number, number];
-type SyncMode = "auto" | "manual";
+type SyncMode = "auto" | "manual" | "none";
 
 interface RotationState {
   pitch: number;
@@ -145,6 +150,9 @@ const getPlaneBaseVectors = (
 export function ObliqueMPRViewer({
   volume,
   className = "",
+  syncMode: controlledSyncMode,
+  onSyncModeChange,
+  syncNowCallbackRef,
 }: ObliqueMPRViewerProps) {
   const paneContainerRefs = useRef<Record<PlaneOrientation, HTMLDivElement | null>>({
     Axial: null,
@@ -169,7 +177,9 @@ export function ObliqueMPRViewer({
   const [majorPane, setMajorPane] = useState<PlaneOrientation>("Axial");
   const [activePane, setActivePane] = useState<PlaneOrientation>("Axial");
   const [layoutTick, setLayoutTick] = useState(0);
-  const [syncMode, setSyncMode] = useState<SyncMode>("auto");
+  const [internalSyncMode, setInternalSyncMode] = useState<SyncMode>("auto");
+  const syncMode = controlledSyncMode ?? internalSyncMode;
+  const setSyncMode = onSyncModeChange ?? setInternalSyncMode;
   const [autoSyncState, setAutoSyncState] = useState<PaneSyncState>(() => ({
     crosshair: cloneVec3(volumeCenter),
     rotation: { pitch: 0, yaw: 0 },
@@ -198,6 +208,7 @@ export function ObliqueMPRViewer({
         Sagittal: autoSyncState,
       };
     }
+    // manual and none: each pane has its own state (none = no syncing between them)
     return manualPaneStates;
   }, [autoSyncState, manualPaneStates, syncMode]);
 
@@ -260,6 +271,18 @@ export function ObliqueMPRViewer({
         return;
       }
 
+      if (nextMode === "none") {
+        setManualPaneStates(
+          createPaneSyncStateMap(
+            autoSyncState.crosshair,
+            autoSyncState.rotation,
+          ),
+        );
+        setSyncMode("none");
+        return;
+      }
+
+      // nextMode === "auto"
       const source = manualPaneStates[activePane] ?? manualPaneStates.Axial;
       setAutoSyncState({
         crosshair: cloneVec3(source.crosshair),
@@ -277,6 +300,37 @@ export function ObliqueMPRViewer({
       createPaneSyncStateMap(source.crosshair, source.rotation),
     );
   }, [activePane, manualPaneStates, syncMode]);
+
+  // When sync mode is controlled from parent (e.g. header), apply same transition logic
+  const prevControlledRef = useRef<SyncMode | undefined>(undefined);
+  useEffect(() => {
+    if (controlledSyncMode === undefined) return;
+    if (prevControlledRef.current === controlledSyncMode) return;
+    const prev = prevControlledRef.current;
+    prevControlledRef.current = controlledSyncMode;
+    if (controlledSyncMode === "manual" || controlledSyncMode === "none") {
+      setManualPaneStates(
+        createPaneSyncStateMap(autoSyncState.crosshair, autoSyncState.rotation),
+      );
+    } else if (controlledSyncMode === "auto" && (prev === "manual" || prev === "none")) {
+      const source = manualPaneStates[activePane] ?? manualPaneStates.Axial;
+      setAutoSyncState({
+        crosshair: cloneVec3(source.crosshair),
+        rotation: cloneRotation(source.rotation),
+      });
+    }
+  }, [controlledSyncMode, activePane, autoSyncState, manualPaneStates]);
+
+  // Register Sync Now callback for header when in manual mode
+  useEffect(() => {
+    if (!syncNowCallbackRef) return;
+    if (syncMode === "manual") {
+      syncNowCallbackRef.current = handleManualSyncNow;
+    }
+    return () => {
+      syncNowCallbackRef.current = null;
+    };
+  }, [syncMode, syncNowCallbackRef, handleManualSyncNow]);
 
   const planes = useMemo<Record<PlaneOrientation, PlaneDefinition>>(() => {
     const definitions = {} as Record<PlaneOrientation, PlaneDefinition>;
@@ -599,6 +653,17 @@ export function ObliqueMPRViewer({
   const onPaneMouseDown = useCallback(
     (paneId: PlaneOrientation, event: React.MouseEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
+      // Let clicks on selects/buttons open dropdowns and work normally (don't preventDefault)
+      const target = event.target as Node;
+      if (
+        target &&
+        (target instanceof HTMLSelectElement ||
+          target instanceof HTMLButtonElement ||
+          target.closest?.("select, button"))
+      ) {
+        setActivePane(paneId);
+        return;
+      }
       setActivePane(paneId);
 
       const metrics = paneMetricsRef.current[paneId];
@@ -704,32 +769,6 @@ export function ObliqueMPRViewer({
               <option value="Coronal">Coronal</option>
               <option value="Sagittal">Sagittal</option>
             </select>
-          </div>
-
-          <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
-            <select
-              value={syncMode}
-              onChange={(event) => handleSyncModeChange(event.target.value as SyncMode)}
-              onClick={(event) => event.stopPropagation()}
-              className="bg-black/85 text-white text-xs px-2 py-1 rounded border border-gray-600 hover:border-gray-400 cursor-pointer outline-none focus:border-green-500"
-              title={syncMode === "auto" ? "Auto Sync enabled" : "Manual Sync enabled"}
-            >
-              <option value="auto">Auto Sync</option>
-              <option value="manual">Manual Sync</option>
-            </select>
-            {syncMode === "manual" && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleManualSyncNow();
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded border border-blue-500 transition-colors"
-                title="Apply active pane state to all panes"
-              >
-                Sync Now
-              </button>
-            )}
           </div>
 
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 bg-black/75 px-2 py-1 rounded text-[10px] text-gray-300 border border-gray-700 whitespace-nowrap">
