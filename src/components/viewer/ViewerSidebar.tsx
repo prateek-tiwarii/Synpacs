@@ -1,5 +1,23 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ChevronDown, ChevronRight, Image, Layers, X, Calendar } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Image,
+  Layers,
+  X,
+  Calendar,
+  FileText,
+  Zap,
+  Box,
+  Crosshair,
+  Camera,
+  ScanLine,
+  Star,
+  File,
+  Database,
+  ClipboardList,
+  FileCheck,
+} from "lucide-react";
 import {
   useViewerContext,
   type TemporaryMPRSeries,
@@ -21,7 +39,99 @@ interface Series {
   image_count: number;
 }
 
-const NON_PREVIEW_MODALITIES = new Set(["SR"]);
+const NON_PREVIEW_MODALITIES = new Set([
+  "SR",
+  "RTDOSE",
+  "RTSTRUCT",
+  "RTPLAN",
+  "RTRECORD",
+  "KO",
+  "PR",
+  "SEG",
+  "REG",
+  "FID",
+  "DOC",
+]);
+
+type ModalityFallback = {
+  icon: typeof FileText;
+  label: string;
+  tooltip: string;
+};
+
+const MODALITY_FALLBACK: Record<string, ModalityFallback> = {
+  SR: {
+    icon: FileText,
+    label: "Structured Report",
+    tooltip: "Structured Report: machine-readable clinical report (e.g. CAD, measurements)",
+  },
+  RTDOSE: {
+    icon: Zap,
+    label: "Dose",
+    tooltip: "Dose: radiation dose distribution from treatment planning",
+  },
+  RTSTRUCT: { icon: Box, label: "RT Structure", tooltip: "RT Structure: contours and regions of interest" },
+  RTPLAN: { icon: Crosshair, label: "RT Plan", tooltip: "RT Plan: treatment plan parameters" },
+  RTRECORD: { icon: FileText, label: "RT Record", tooltip: "RT Record: treatment session record" },
+  SC: {
+    icon: Camera,
+    label: "Secondary Capture",
+    tooltip: "Secondary Capture: screenshots, photos, or non-DICOM images saved as DICOM",
+  },
+  KO: { icon: Star, label: "Key Object", tooltip: "Key Object: key image selection" },
+  PR: { icon: ScanLine, label: "Presentation State", tooltip: "Presentation State: display settings and annotations" },
+  SEG: { icon: Layers, label: "Segmentation", tooltip: "Segmentation: segmentation mask or ROI" },
+  DOC: { icon: File, label: "Document", tooltip: "Document: PDF or other document" },
+  OT: { icon: File, label: "Other", tooltip: "Other: uncategorized modality" },
+};
+
+// Description-based fallbacks — checked FIRST so e.g. "Dose Report" / "Examination Report" (SR) get distinct icons
+const DESCRIPTION_FALLBACKS: Array<{
+  pattern: RegExp;
+  icon: typeof FileText;
+  label: string;
+  tooltip: string;
+}> = [
+  {
+    pattern: /dose\s*report|^dose$/i,
+    icon: Zap,
+    label: "Dose Report",
+    tooltip: "Dose Report: radiation dose summary or report",
+  },
+  {
+    pattern: /examination\s*report|^examination\s*report$/i,
+    icon: FileCheck,
+    label: "Examination Report",
+    tooltip: "Examination Report: clinical examination or study report",
+  },
+  {
+    pattern: /raw\s*data|ct\s*raw/i,
+    icon: Database,
+    label: "CT Raw Data",
+    tooltip: "CT Raw Data: unprocessed or raw CT projection/sinogram data",
+  },
+  {
+    pattern: /patient\s*protocol|protocol\s*summary/i,
+    icon: ClipboardList,
+    label: "Patient Protocol",
+    tooltip: "Patient Protocol: scan protocol or acquisition parameters for the patient",
+  },
+];
+
+const getModalityFallback = (modality: string): ModalityFallback | null => {
+  const key = (modality || "").toUpperCase();
+  return MODALITY_FALLBACK[key] ?? null;
+};
+
+const getSeriesFallback = (series: { modality?: string; description?: string }): ModalityFallback | null => {
+  const desc = (series.description ?? "").trim();
+  if (desc) {
+    for (const { pattern, icon, label, tooltip } of DESCRIPTION_FALLBACKS) {
+      if (pattern.test(desc)) return { icon, label, tooltip };
+    }
+  }
+  return getModalityFallback(series.modality ?? "");
+};
 
 const SERIES_DND_MIME = "application/x-sync-pacs-series";
 
@@ -76,28 +186,132 @@ interface SeriesItemProps {
   isSelected: boolean;
   onClick: () => void;
   thumbnailUrl?: string | null;
+  thumbnailLoading?: boolean;
   loadProgress?: { fetched: number; total: number } | null;
   isDownloaded?: boolean;
   dragPayload?: DragSeriesPayload;
   isDraggable?: boolean;
   className?: string;
   isCompact?: boolean;
+  singleLine?: boolean;
 }
 
-// Compact series item with image count
-const SeriesItem = ({
+const SeriesItemSingleLine = ({
   series,
   isSelected,
   onClick,
   thumbnailUrl = null,
+  thumbnailLoading = false,
+  loadProgress,
+  isDownloaded = false,
+  dragPayload,
+  isDraggable = true,
+  className = "",
+}: Omit<SeriesItemProps, "isCompact" | "singleLine">) => (
+  <div
+    draggable={isDraggable}
+    onDragStart={(event) => {
+      if (!dragPayload) return;
+      setSeriesDragData(event, dragPayload);
+    }}
+    onClick={onClick}
+    className={`rounded-md overflow-hidden border transition-all ${className} ${
+      isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+    } ${
+      isSelected
+        ? "border-blue-500 bg-blue-500/10 shadow-[0_0_0_1px_rgba(59,130,246,0.45)]"
+        : "border-gray-700/60 bg-gray-900/70 hover:border-gray-500 hover:bg-gray-800/70"
+    }`}
+  >
+    <div className="flex flex-col p-1.5 gap-1.5">
+      {/* Thumbnail */}
+      <div className="w-full h-[120px] rounded-md overflow-hidden bg-[#0a0a14] flex items-center justify-center relative">
+        {thumbnailUrl ? (
+          <img
+            src={thumbnailUrl}
+            alt={`${series.description} preview`}
+            className="w-full h-full object-contain"
+            loading="lazy"
+          />
+        ) : thumbnailLoading ? (
+          <div className="w-16 h-16 rounded bg-gray-700/40 animate-pulse" />
+        ) : (() => {
+          const fallback = getSeriesFallback(series);
+          if (fallback?.label === "Structured Report") {
+            const srTooltip = MODALITY_FALLBACK.SR?.tooltip ?? "Structured Report";
+            return (
+              <div className="flex flex-col items-center gap-1" title={srTooltip}>
+                <FileText size={24} className="text-amber-400/80" />
+                <div className="w-12 flex flex-col gap-[2px]">
+                  <div className="w-full h-[2px] rounded-full bg-gray-500/50" />
+                  <div className="w-[75%] h-[2px] rounded-full bg-gray-500/40" />
+                </div>
+              </div>
+            );
+          }
+          if (fallback) {
+            const FallbackIcon = fallback.icon;
+            return (
+              <div className="flex flex-col items-center gap-0.5" title={fallback.tooltip}>
+                <FallbackIcon size={28} className="text-gray-400" />
+                <span className="text-[9px] text-gray-500 font-medium">{fallback.label}</span>
+              </div>
+            );
+          }
+          return (
+              <div title="Image series">
+                <Image size={28} className="text-gray-500" />
+              </div>
+            );
+        })()}
+        <span className="absolute top-0.5 left-0.5 bg-black/70 backdrop-blur-sm px-1 rounded text-white font-mono text-[8px]">
+          {series.modality}
+        </span>
+      </div>
+
+      {/* Series info — single compact line */}
+      <div className="flex items-center gap-1.5 min-w-0 px-0.5">
+        <span className="text-blue-400 font-semibold text-[10px] shrink-0">
+          S{series.series_number}
+        </span>
+        <span className="text-white text-[11px] font-medium truncate flex-1 min-w-0">
+          {series.description || "Untitled"}
+        </span>
+        {isDownloaded && !loadProgress && (
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" title="Downloaded" />
+        )}
+        <span className="text-gray-500 text-[10px] tabular-nums shrink-0">
+          {series.image_count}
+        </span>
+      </div>
+    </div>
+
+    {loadProgress && loadProgress.total > 0 && (
+      <div className="w-full h-0.5 bg-black">
+        <div
+          className="h-full bg-blue-500 transition-all duration-300"
+          style={{
+            width: `${(loadProgress.fetched / loadProgress.total) * 100}%`,
+          }}
+        />
+      </div>
+    )}
+  </div>
+);
+
+const SeriesItemCard = ({
+  series,
+  isSelected,
+  onClick,
+  thumbnailUrl = null,
+  thumbnailLoading = false,
   loadProgress,
   isDownloaded = false,
   dragPayload,
   isDraggable = true,
   className = "",
   isCompact = false,
-}: SeriesItemProps) => (
-  // Fixed thumbnail height keeps cards visually uniform.
+}: Omit<SeriesItemProps, "singleLine">) => (
   <div
     draggable={isDraggable}
     onDragStart={(event) => {
@@ -116,23 +330,113 @@ const SeriesItem = ({
     <div className={isCompact ? "p-1" : "p-1.5"}>
       {/* Thumbnail */}
       <div
-        className={`w-full flex items-center justify-center relative overflow-hidden ${
+        className={`w-full flex items-center justify-center relative overflow-hidden bg-[#0a0a14] ${
           isCompact ? "h-[72px] rounded-sm" : "h-[120px] rounded-md"
         }`}
-        style={{ backgroundColor: getSeriesColor(series.description) }}
       >
         {thumbnailUrl ? (
           <img
             src={thumbnailUrl}
             alt={`${series.description} preview`}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
             loading="lazy"
           />
-        ) : (
-          <Image size={24} className="text-gray-500/60" />
-        )}
+        ) : thumbnailLoading ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div
+              className="rounded bg-gray-700/40 animate-pulse"
+              style={{ width: "60%", height: "60%" }}
+            />
+          </div>
+        ) : (() => {
+          const fallback = getSeriesFallback(series);
+          const srTooltip = MODALITY_FALLBACK.SR?.tooltip ?? "Structured Report";
+          if (fallback?.label === "Structured Report") {
+            return (
+              <div
+                className="flex flex-col items-center justify-center w-full h-full px-2"
+                title={srTooltip}
+              >
+                <div
+                  className={`bg-gray-800 border border-gray-600/50 rounded shadow-sm flex flex-col items-center justify-center ${
+                    isCompact
+                      ? "w-[52px] h-[52px] gap-0.5 px-1"
+                      : "w-[80px] h-[80px] gap-1 px-2"
+                  }`}
+                >
+                  <FileText
+                    size={isCompact ? 14 : 20}
+                    className="text-amber-400/90 shrink-0"
+                  />
+                  <div className="w-full flex flex-col gap-[2px]">
+                    <div className="w-full h-[2px] rounded-full bg-gray-500/50" />
+                    <div className="w-[75%] h-[2px] rounded-full bg-gray-500/40" />
+                    <div className="w-[60%] h-[2px] rounded-full bg-gray-500/30" />
+                  </div>
+                </div>
+                <span
+                  className={`text-amber-400/70 font-medium mt-1 ${
+                    isCompact ? "text-[7px]" : "text-[9px]"
+                  }`}
+                >
+                  Structured Report
+                </span>
+              </div>
+            );
+          }
+          if (fallback) {
+            const FallbackIcon = fallback.icon;
+            return (
+              <div
+                className="flex flex-col items-center gap-1.5 opacity-80"
+                title={fallback.tooltip}
+              >
+                <div
+                  className={`flex items-center justify-center rounded-lg ${
+                    isCompact ? "w-8 h-8" : "w-11 h-11"
+                  }`}
+                  style={{ backgroundColor: getSeriesColor(series.description) }}
+                >
+                  <FallbackIcon
+                    size={isCompact ? 16 : 22}
+                    className="text-gray-300"
+                  />
+                </div>
+                <span
+                  className={`text-gray-400 font-medium text-center leading-tight px-1 ${
+                    isCompact ? "text-[7px]" : "text-[9px]"
+                  }`}
+                >
+                  {fallback.label}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col items-center gap-1.5 opacity-80" title="Image series (no preview)">
+              <div
+                className={`flex items-center justify-center rounded-lg ${
+                  isCompact ? "w-8 h-8" : "w-11 h-11"
+                }`}
+                style={{ backgroundColor: getSeriesColor(series.description) }}
+              >
+                <Image
+                  size={isCompact ? 16 : 22}
+                  className="text-gray-300"
+                />
+              </div>
+              <span
+                className={`text-gray-500 font-medium text-center leading-tight px-1 ${
+                  isCompact ? "text-[7px]" : "text-[9px]"
+                }`}
+              >
+                No Preview
+              </span>
+            </div>
+          );
+        })()}
         <span
-          className={`absolute top-0.5 left-0.5 bg-black/60 px-0.5 rounded text-white font-mono ${
+          className={`absolute top-0.5 left-0.5 bg-black/70 backdrop-blur-sm px-1 rounded text-white font-mono ${
             isCompact ? "text-[7px]" : "text-[8px]"
           }`}
         >
@@ -193,6 +497,9 @@ const SeriesItem = ({
   </div>
 );
 
+const SeriesItem = ({ singleLine = false, ...props }: SeriesItemProps) =>
+  singleLine ? <SeriesItemSingleLine {...props} /> : <SeriesItemCard {...props} />;
+
 // MPR Series Item
 interface MPRSeriesItemProps {
   series: TemporaryMPRSeries;
@@ -205,6 +512,8 @@ interface MPRSeriesItemProps {
   isCompact?: boolean;
 }
 
+const SINGLE_PLANE_REFORMAT_MODES = ["Axial", "Coronal", "Sagittal"] as const;
+
 const MPRSeriesItem = ({
   series,
   isSelected,
@@ -216,8 +525,14 @@ const MPRSeriesItem = ({
   isCompact = false,
 }: MPRSeriesItemProps) => {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isSinglePlaneReformat = SINGLE_PLANE_REFORMAT_MODES.includes(
+    series.mprMode as (typeof SINGLE_PLANE_REFORMAT_MODES)[number],
+  );
 
+  // Do not generate/save thumbnails for single-plane reformats (Axial/Coronal/Sagittal)
   useEffect(() => {
+    if (isSinglePlaneReformat) return;
+
     const previewCanvas = previewCanvasRef.current;
     if (!previewCanvas) return;
 
@@ -275,7 +590,13 @@ const MPRSeriesItem = ({
     } catch {
       // Ignore preview rendering failures and keep fallback icon style.
     }
-  }, [series.sliceCount, series.slices, series.windowCenter, series.windowWidth]);
+  }, [
+    isSinglePlaneReformat,
+    series.sliceCount,
+    series.slices,
+    series.windowCenter,
+    series.windowWidth,
+  ]);
 
   return (
     <div
@@ -306,17 +627,19 @@ const MPRSeriesItem = ({
       </button>
 
       <div className={isCompact ? "p-1" : "p-1.5"}>
-        {/* Thumbnail */}
+        {/* Thumbnail: not generated for single-plane reformats (Axial/Coronal/Sagittal) */}
         <div
           className={`w-full flex items-center justify-center relative overflow-hidden bg-purple-900/30 ${
             isCompact ? "h-[72px] rounded-sm" : "h-[120px] rounded-md"
           }`}
         >
-          <canvas
-            ref={previewCanvasRef}
-            aria-label={`${series.mprMode} preview`}
-            className="w-full h-full"
-          />
+          {!isSinglePlaneReformat && (
+            <canvas
+              ref={previewCanvasRef}
+              aria-label={`${series.mprMode} preview`}
+              className="w-full h-full"
+            />
+          )}
           <Layers
             size={22}
             className="absolute text-purple-400/30 pointer-events-none"
@@ -326,7 +649,7 @@ const MPRSeriesItem = ({
               isCompact ? "text-[7px]" : "text-[8px]"
             }`}
           >
-            MPR
+            {isSinglePlaneReformat ? series.mprMode : "MPR"}
           </span>
         </div>
 
@@ -428,6 +751,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
     caseData,
     selectedSeries,
     setSelectedSeries,
+    setActivePaneSeries,
     temporaryMPRSeries,
     removeTemporaryMPRSeries,
     selectedTemporarySeriesId,
@@ -443,7 +767,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
   >({});
   const seriesThumbnailsRef = useRef<Record<string, string | null>>({});
 
-  // Handle selecting a regular series (deselect any temp series)
+  // Handle selecting a regular series (deselect any temp series); set active pane so each pane can show different series
   const handleSelectSeries = (series: Series) => {
     if (isVRTActive) {
       toast("Exit VRT mode before switching series");
@@ -451,15 +775,17 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
     }
     setSelectedSeries(series);
     setSelectedTemporarySeriesId(null);
+    setActivePaneSeries(series._id);
   };
 
-  // Handle selecting a temporary MPR series
+  // Handle selecting a temporary MPR series; set active pane so each pane can show different orientation (e.g. Sagittal in one, Coronal in another)
   const handleSelectTempSeries = (tempSeries: TemporaryMPRSeries) => {
     if (isVRTActive) {
       toast("Exit VRT mode before switching series");
       return;
     }
     setSelectedTemporarySeriesId(tempSeries.id);
+    setActivePaneSeries(tempSeries.id);
   };
 
   useEffect(() => {
@@ -577,9 +903,10 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
 
   const isHorizontal = position !== "side";
   const isCompact = isHorizontal;
-  const gridClassName = columns === 2 ? "grid-cols-2 gap-2" : "grid-cols-1 gap-3";
+  const isSingleLine = position === "side" && columns === 1;
+  const gridClassName = columns === 2 ? "grid-cols-2 gap-2" : isSingleLine ? "grid-cols-1 gap-1" : "grid-cols-1 gap-3";
   const seriesListClassName = isHorizontal
-    ? "flex gap-2 overflow-x-auto pb-1.5 items-stretch"
+    ? "flex gap-2 overflow-x-auto pb-1 items-stretch"
     : `grid ${gridClassName}`;
   const seriesItemClassName = isHorizontal
     ? "w-[160px] flex-shrink-0"
@@ -590,7 +917,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
       : position === "top"
         ? "border-b"
         : "border-t";
-  const sizeClass = position === "side" ? "w-64" : "w-full h-56";
+  const sizeClass = position === "side" ? "w-64" : "w-full h-44";
 
   if (!caseData) {
     return (
@@ -629,7 +956,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
       {/* VRT active indicator */}
       {isVRTActive && (
         <div
-          className={`${isHorizontal ? "px-2 py-1.5" : "px-3 py-2"} bg-purple-900/30 border-b border-purple-800/50`}
+          className={`${isHorizontal ? "px-2 py-1" : "px-3 py-2"} bg-purple-900/30 border-b border-purple-800/50`}
         >
           <p className="text-[11px] text-purple-400 font-medium">VRT Mode Active</p>
           <p className="text-[10px] text-gray-500">Exit VRT to switch series</p>
@@ -647,7 +974,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
           defaultOpen={true}
           isCurrent={true}
           showHeader={position === "side"}
-          contentClassName={isHorizontal ? "px-2 pb-1.5" : "px-2 pb-2 space-y-1"}
+          contentClassName={isHorizontal ? "px-2 pb-1" : "px-2 pb-2 space-y-1"}
         >
           <div className={seriesListClassName}>
             {caseData.series
@@ -663,6 +990,10 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
                   }
                   onClick={() => handleSelectSeries(series)}
                   thumbnailUrl={seriesThumbnails[series._id] ?? null}
+                  thumbnailLoading={
+                    !(series._id in seriesThumbnails) &&
+                    !NON_PREVIEW_MODALITIES.has((series.modality || "").toUpperCase())
+                  }
                   dragPayload={{ seriesId: series._id, kind: "regular" }}
                   isDraggable={!isVRTActive}
                   loadProgress={
@@ -673,6 +1004,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
                   isDownloaded={downloadedSeriesIds.has(series._id)}
                   className={seriesItemClassName}
                   isCompact={isCompact}
+                  singleLine={isSingleLine}
                 />
               ))}
           </div>
@@ -715,7 +1047,7 @@ const ViewerSidebar = ({ position = "side", columns = 1 }: ViewerSidebarProps) =
 
       {/* Footer with selected series info */}
       <div
-        className={`${isHorizontal ? "p-1.5" : "p-2"} border-t border-gray-700 bg-gray-800/50`}
+        className={`${isHorizontal ? "p-1" : "p-2"} border-t border-gray-700 bg-gray-800/50`}
       >
         <div className="text-[10px] text-gray-400">
           <span className="text-gray-500">Selected: </span>

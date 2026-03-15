@@ -12,6 +12,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { useViewerContext, type SidebarColumns, type SidebarPosition } from "../ViewerLayout";
 
 interface SettingsDrawerProps {
@@ -118,44 +125,28 @@ const SettingsDrawer = ({ open, onOpenChange }: SettingsDrawerProps) => {
 
                 <ScrollArea className="flex-1 p-4">
                     <div className="space-y-5">
-                        {/* Multi Monitor Setting */}
+                        {/* Multi Monitor Setting – choose which display the viewer opens on */}
                         <section className="space-y-2">
                             <div className="flex items-center gap-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                                 <Monitor className="w-3 h-3" />
                                 Monitor
                             </div>
-                            <RadioGroup
-                                value={monitor}
-                                onValueChange={setMonitor}
-                                className="grid grid-cols-2 gap-2"
-                            >
-                                <div>
-                                    <RadioGroupItem
-                                        value="screen1"
-                                        id="screen1"
-                                        className="peer sr-only"
-                                    />
-                                    <Label
-                                        htmlFor="screen1"
-                                        className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-xs hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
-                                    >
+                            <p className="text-[10px] text-gray-500">
+                                If you have multiple monitors, choose where the viewer opens.
+                            </p>
+                            <Select value={monitor} onValueChange={setMonitor}>
+                                <SelectTrigger className="h-9 rounded border-gray-800 bg-gray-900/50 text-xs text-gray-100 focus:ring-blue-500 focus:border-blue-500">
+                                    <SelectValue placeholder="Select display" />
+                                </SelectTrigger>
+                                <SelectContent className="border-gray-800 bg-gray-900 text-gray-100">
+                                    <SelectItem value="screen1" className="text-xs focus:bg-gray-800 focus:text-gray-100">
                                         Screen 1
-                                    </Label>
-                                </div>
-                                <div>
-                                    <RadioGroupItem
-                                        value="screen2"
-                                        id="screen2"
-                                        className="peer sr-only"
-                                    />
-                                    <Label
-                                        htmlFor="screen2"
-                                        className="flex items-center justify-center rounded border border-gray-800 bg-gray-900/50 p-2 text-xs hover:bg-gray-800 peer-data-[state=checked]:border-blue-500 cursor-pointer transition-all"
-                                    >
+                                    </SelectItem>
+                                    <SelectItem value="screen2" className="text-xs focus:bg-gray-800 focus:text-gray-100">
                                         Screen 2
-                                    </Label>
-                                </div>
-                            </RadioGroup>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
                         </section>
 
                         <Separator className="bg-gray-800" />

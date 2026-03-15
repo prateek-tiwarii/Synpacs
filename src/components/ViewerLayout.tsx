@@ -74,7 +74,7 @@ export type ViewerTool =
   | "CobbsAngle"
   | "HU";
 
-// MPR Mode types
+/** MPR modes. 2D-MPR = orthogonal planes only (Axial/Coronal/Sagittal); 3D-MPR = same but allows oblique plane rotation (user can rotate slice angle freely). */
 export type MPRMode =
   | "Axial"
   | "Coronal"
@@ -125,10 +125,17 @@ export type SidebarColumns = 1 | 2;
 export type MouseButton = 0 | 1 | 2; // 0=Left, 1=Middle, 2=Right
 export type MouseButtonBindings = Partial<Record<MouseButton, ViewerTool>>;
 
-export const DEFAULT_MINI_MIP_INTENSITY = 5;
-export const DEFAULT_MIP_INTENSITY = 20;
-const DEFAULT_VIEW_SCALE = 1.4;
-const DEFAULT_PANE_SCALE = 0.75;
+export const DEFAULT_MINI_MIP_INTENSITY = 10;
+export const DEFAULT_MIP_INTENSITY = 10;
+// Default zoom level for the primary viewer.
+// Increased slightly to reduce empty margins around images.
+const DEFAULT_VIEW_SCALE = 1.8;
+// Default zoom level for multi-pane (grid) layouts, scaled by pane count.
+export const getPaneScale = (paneCount: number): number => {
+  if (paneCount <= 1) return 1.8;
+  if (paneCount <= 2) return 1.6;
+  return 1.0;
+};
 
 const sanitizeMouseBindings = (bindings: MouseButtonBindings) => {
   let changed = false;
@@ -298,9 +305,13 @@ interface ViewerContextType {
   // 2D-MPR dedicated mode
   is2DMPRActive: boolean;
   setIs2DMPRActive: (active: boolean) => void;
+  // 2D-MPR layout arrangement (user can choose)
+  mprLayoutPreset: "left-large" | "right-large" | "top-large" | "bottom-large" | "1x3" | "3x1";
+  setMprLayoutPreset: (preset: "left-large" | "right-large" | "top-large" | "bottom-large" | "1x3" | "3x1") => void;
   // Mouse button → tool bindings
   mouseBindings: MouseButtonBindings;
   setMouseBinding: (button: MouseButton, tool: ViewerTool | null) => void;
+  assignToolToButton: (button: MouseButton, tool: ViewerTool) => void;
 }
 
 const ViewerContext = createContext<ViewerContextType | undefined>(undefined);
@@ -384,6 +395,16 @@ export function ViewerLayout() {
   const [showScoutLine, setShowScoutLine] = useState(false);
   const [isVRTActive, setIsVRTActive] = useState(false);
   const [is2DMPRActive, setIs2DMPRActive] = useState(false);
+  const [mprLayoutPreset, setMprLayoutPreset] = useState<
+    "left-large" | "right-large" | "top-large" | "bottom-large" | "1x3" | "3x1"
+  >(() => {
+    const saved = localStorage.getItem("viewer_mpr_layout_preset");
+    if (saved === "right-large" || saved === "top-large" || saved === "bottom-large" || saved === "1x3" || saved === "3x1") return saved;
+    return "left-large";
+  });
+  useEffect(() => {
+    localStorage.setItem("viewer_mpr_layout_preset", mprLayoutPreset);
+  }, [mprLayoutPreset]);
   const [sidebarPosition, setSidebarPositionState] = useState<SidebarPosition>(() => {
     const saved = localStorage.getItem("viewer_sidebar_position");
     if (saved === "top" || saved === "bottom" || saved === "side") {
@@ -425,6 +446,32 @@ export function ViewerLayout() {
       localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const assignToolToButton = useCallback((button: MouseButton, tool: ViewerTool) => {
+    if (tool === "SpineLabeling") {
+      setActiveTool(tool);
+      return;
+    }
+
+    setMouseBindingsState((prev) => {
+      const next = { ...prev };
+
+      // Remove this tool from any other button it's currently on
+      for (const b of [0, 1, 2] as MouseButton[]) {
+        if (next[b] === tool) {
+          delete next[b];
+        }
+      }
+
+      next[button] = tool;
+      localStorage.setItem("viewer_mouse_bindings", JSON.stringify(next));
+      return next;
+    });
+
+    if (button === 0) {
+      setActiveTool(tool);
+    }
   }, []);
 
   const setSidebarPosition = useCallback((position: SidebarPosition) => {
@@ -517,10 +564,15 @@ export function ViewerLayout() {
     // Auto-select the newly added/updated series
     setSelectedTemporarySeriesId(newId);
 
+    // TemporaryMPRSeriesViewer already CSS-fits the canvas to the container,
+    // so scale=1.0 there equals "fill container". DicomViewer draws at native
+    // pixels in a container-sized canvas, needing scale=1.8 to fill it.
+    const isProjection = series.mprMode === "MIP" || series.mprMode === "MiniMIP";
+    const targetScale = isProjection ? 1.0 : getPaneScale(1);
     const resetTransform = {
       x: 0,
       y: 0,
-      scale: 1,
+      scale: targetScale,
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -529,13 +581,11 @@ export function ViewerLayout() {
       windowCenter: null as number | null,
     };
 
-    // Reset single-view transform so generated MPR opens fit-to-view
     setViewTransform((prev) => ({
       ...prev,
       ...resetTransform,
     }));
 
-    // Immediately show generated MPR in the active pane
     setPaneStates((prev) => {
       const targetPaneIndex = gridLayout === "1x1" ? 0 : activePaneIndex;
       const nextStates = [...prev];
@@ -544,18 +594,12 @@ export function ViewerLayout() {
           ...nextStates[targetPaneIndex],
           seriesId: newId,
           currentImageIndex: 0,
-          viewTransform: {
-            ...nextStates[targetPaneIndex].viewTransform,
-            ...resetTransform,
-          },
+          viewTransform: resetTransform,
         };
       } else if (targetPaneIndex === 0) {
         nextStates[0] = {
           ...createDefaultPaneState(newId),
-          viewTransform: {
-            ...createDefaultPaneState(newId).viewTransform,
-            ...resetTransform,
-          },
+          viewTransform: resetTransform,
         };
       }
       return nextStates;
@@ -600,13 +644,17 @@ export function ViewerLayout() {
     setDownloadedSeriesIds(new Set());
   }, []);
 
-  const createDefaultPaneState = (seriesId: string | null): PaneState => ({
+  // Get number of panes for current layout
+  const getLayoutPaneCount = (layout: GridLayout): number =>
+    getGridLayoutPaneCount(layout);
+
+  const createDefaultPaneState = (seriesId: string | null, paneCount?: number): PaneState => ({
     seriesId,
     currentImageIndex: 0,
     viewTransform: {
       x: 0,
       y: 0,
-      scale: DEFAULT_PANE_SCALE,
+      scale: getPaneScale(paneCount ?? getLayoutPaneCount(gridLayout)),
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -618,86 +666,61 @@ export function ViewerLayout() {
     selectedAnnotationId: null,
   });
 
-  // Get number of panes for current layout
-  const getLayoutPaneCount = (layout: GridLayout): number =>
-    getGridLayoutPaneCount(layout);
-
   const setGridLayout = (layout: GridLayout) => {
     const normalizedLayout = parseGridLayout(layout) ? layout : "1x1";
     if (normalizedLayout === gridLayout) return;
 
-    const previousPaneCount = getLayoutPaneCount(gridLayout);
     const nextPaneCount = getLayoutPaneCount(normalizedLayout);
 
-    if (nextPaneCount > previousPaneCount) {
-      setPaneStates((prev) => {
-        const nextStates = [...prev];
-        const primarySeriesId =
-          selectedTemporarySeriesId ??
-          selectedSeries?._id ??
-          nextStates[0]?.seriesId ??
-          null;
+    // Always reset all pane states with proper default scale when layout changes
+    setPaneStates((prev) => {
+      const primarySeriesId =
+        selectedTemporarySeriesId ??
+        selectedSeries?._id ??
+        prev[0]?.seriesId ??
+        null;
 
-        if (primarySeriesId) {
-          if (nextStates[0]) {
-            nextStates[0] = {
-              ...nextStates[0],
-              seriesId: primarySeriesId,
-              currentImageIndex: 0,
-            };
-          } else {
-            nextStates[0] = createDefaultPaneState(primarySeriesId);
+      const assignedIds = new Set<string>();
+      if (primarySeriesId) assignedIds.add(primarySeriesId);
+
+      const regularSeriesIds = (caseData?.series || [])
+        .filter((series) => series.image_count > 0)
+        .sort((a, b) => a.series_number - b.series_number)
+        .map((series) => series._id);
+      const temporarySeriesIds = temporaryMPRSeries.map((series) => series.id);
+      const candidateSeriesIds = [
+        selectedTemporarySeriesId,
+        selectedSeries?._id,
+        ...regularSeriesIds,
+        ...temporarySeriesIds,
+      ].filter((id): id is string => Boolean(id));
+
+      const nextStates: PaneState[] = [];
+
+      // First pane gets the primary series
+      nextStates[0] = createDefaultPaneState(primarySeriesId);
+
+      // Assign remaining panes with unique series
+      let candidateCursor = 0;
+      for (let i = 1; i < nextPaneCount; i++) {
+        let selectedId: string | null = null;
+        while (candidateCursor < candidateSeriesIds.length && !selectedId) {
+          const candidateId = candidateSeriesIds[candidateCursor];
+          candidateCursor += 1;
+          if (!assignedIds.has(candidateId)) {
+            selectedId = candidateId;
           }
         }
 
-        const assignedIds = new Set(
-          nextStates
-            .slice(0, previousPaneCount)
-            .map((pane) => pane?.seriesId)
-            .filter((id): id is string => Boolean(id)),
-        );
+        nextStates[i] = createDefaultPaneState(selectedId);
 
-        const regularSeriesIds = (caseData?.series || [])
-          .filter((series) => series.image_count > 0)
-          .sort((a, b) => a.series_number - b.series_number)
-          .map((series) => series._id);
-        const temporarySeriesIds = temporaryMPRSeries.map((series) => series.id);
-        const candidateSeriesIds = [
-          selectedTemporarySeriesId,
-          selectedSeries?._id,
-          ...regularSeriesIds,
-          ...temporarySeriesIds,
-        ].filter((id): id is string => Boolean(id));
-
-        let candidateCursor = 0;
-        for (let i = previousPaneCount; i < nextPaneCount; i++) {
-          let selectedId: string | null = null;
-          while (candidateCursor < candidateSeriesIds.length && !selectedId) {
-            const candidateId = candidateSeriesIds[candidateCursor];
-            candidateCursor += 1;
-            if (!assignedIds.has(candidateId)) {
-              selectedId = candidateId;
-            }
-          }
-
-          if (nextStates[i]) {
-            nextStates[i] = {
-              ...nextStates[i],
-              seriesId: selectedId,
-              currentImageIndex: 0,
-            };
-          } else {
-            nextStates[i] = createDefaultPaneState(selectedId);
-          }
-
-          if (selectedId) {
-            assignedIds.add(selectedId);
-          }
+        if (selectedId) {
+          assignedIds.add(selectedId);
         }
+      }
 
-        return nextStates;
-      });
-    }
+      return nextStates;
+    });
 
     setGridLayoutState(normalizedLayout);
   };
@@ -709,19 +732,24 @@ export function ViewerLayout() {
     }
   }, [gridLayout]);
 
-  // Initialize/update pane states when layout or series change
+  // Initialize/update pane states when layout or case identity changes.
+  // Depend on caseId only (not caseData?.series ref) so each pane keeps its own orientation (e.g. Sagittal in one, Coronal in another).
+  const caseId = caseData?._id ?? null;
   useEffect(() => {
     const paneCount = getLayoutPaneCount(gridLayout);
     const series = caseData?.series || [];
+    const validSeriesIds = new Set<string>();
+    series.forEach((s: { _id: string }) => validSeriesIds.add(s._id));
+    temporaryMPRSeries.forEach((t) => validSeriesIds.add(t.id));
 
     setPaneStates((prev) => {
       const newStates: PaneState[] = [];
       for (let i = 0; i < paneCount; i++) {
-        if (prev[i]) {
-          // Keep existing pane state
-          newStates.push(prev[i]);
+        const existingId = prev[i]?.seriesId;
+        if (existingId && validSeriesIds.has(existingId)) {
+          // Keep this pane's assignment (same case) so panes stay independent
+          newStates.push(createDefaultPaneState(existingId));
         } else {
-          // Create new pane state, auto-populate with series if available
           const seriesForPane = series[i] || null;
           newStates.push(createDefaultPaneState(seriesForPane?._id || null));
         }
@@ -729,20 +757,18 @@ export function ViewerLayout() {
       return newStates;
     });
 
-    // Adjust active pane index if it's out of bounds
     if (activePaneIndex >= paneCount) {
       setActivePaneIndex(0);
     }
-  }, [gridLayout, caseData?.series]);
+  }, [gridLayout, caseId]);
 
-  // Set series for the active pane
+  // Set series for the active pane (reset view transform to defaults)
   const setActivePaneSeries = (seriesId: string) => {
     setPaneStates((prev) => {
       const newStates = [...prev];
       if (newStates[activePaneIndex]) {
         newStates[activePaneIndex] = {
-          ...newStates[activePaneIndex],
-          seriesId: seriesId,
+          ...createDefaultPaneState(seriesId),
         };
       }
       return newStates;
@@ -812,17 +838,13 @@ export function ViewerLayout() {
   // Wrapper to reset W/L and view state when switching series
   const handleSetSelectedSeries = (series: Series | null) => {
     setSelectedSeries(series);
-    // Keep pane assignment in sync with selected series.
+    // Keep pane assignment in sync with selected series (reset view transform).
     if (series) {
       setPaneStates((prev) => {
         const newStates = [...prev];
         const targetPaneIndex = gridLayout === "1x1" ? 0 : activePaneIndex;
         if (newStates[targetPaneIndex]) {
-          newStates[targetPaneIndex] = {
-            ...newStates[targetPaneIndex],
-            seriesId: series._id,
-            currentImageIndex: 0,
-          };
+          newStates[targetPaneIndex] = createDefaultPaneState(series._id);
         } else if (targetPaneIndex === 0) {
           newStates[0] = createDefaultPaneState(series._id);
         }
@@ -876,7 +898,7 @@ export function ViewerLayout() {
       setViewTransform({
         x: 0,
         y: 0,
-        scale: 1.2,
+        scale: getPaneScale(1),
         rotation: 0,
         flipH: false,
         flipV: false,
@@ -1012,8 +1034,11 @@ export function ViewerLayout() {
     setIsVRTActive,
     is2DMPRActive,
     setIs2DMPRActive,
+    mprLayoutPreset,
+    setMprLayoutPreset,
     mouseBindings,
     setMouseBinding,
+    assignToolToButton,
   };
 
   if (loading) {
@@ -1042,7 +1067,7 @@ export function ViewerLayout() {
     <ViewerContext.Provider value={contextValue}>
       <div className="min-h-screen w-full bg-black text-white flex flex-col h-screen overflow-hidden">
         <ViewerHeader />
-        {sidebarPosition === "top" && !isVRTActive && !is2DMPRActive && (
+        {sidebarPosition === "top" && !isVRTActive && !is2DMPRActive && !isFullscreen && (
           <ViewerSidebar position="top" columns={sidebarColumns} />
         )}
         <div
@@ -1050,13 +1075,13 @@ export function ViewerLayout() {
             sidebarPosition === "side" ? "" : "flex-col"
           }`}
         >
-          {sidebarPosition === "side" && !isVRTActive && !is2DMPRActive && (
+          {sidebarPosition === "side" && !isVRTActive && !is2DMPRActive && !isFullscreen && (
             <ViewerSidebar position="side" columns={sidebarColumns} />
           )}
           <main className="flex-1 min-w-0 min-h-0">
             <Outlet />
           </main>
-          {sidebarPosition === "bottom" && !isVRTActive && !is2DMPRActive && (
+          {sidebarPosition === "bottom" && !isVRTActive && !is2DMPRActive && !isFullscreen && (
             <ViewerSidebar position="bottom" columns={sidebarColumns} />
           )}
         </div>

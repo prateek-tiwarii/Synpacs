@@ -66,6 +66,8 @@ interface TemporaryMPRSeriesViewerProps {
   onSliceNeeded?: (index: number) => Promise<Int16Array | null>;
   /** Called when user drags the scout line locator circle (ratios 0-1) */
   onCrosshairDrag?: (horizontalRatio: number, verticalRatio: number) => void;
+  /** When set, parent controls the displayed slice index (for 2D MPR linked panes) */
+  controlledIndex?: number;
 }
 
 // Helper to format DICOM date (YYYYMMDD) to readable format
@@ -126,6 +128,7 @@ export function TemporaryMPRSeriesViewer({
   onToggleFullscreenOverride,
   onSliceNeeded,
   onCrosshairDrag,
+  controlledIndex,
 }: TemporaryMPRSeriesViewerProps) {
   const {
     activeTool,
@@ -159,6 +162,8 @@ export function TemporaryMPRSeriesViewer({
   const annotationCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const isControlled = controlledIndex !== undefined;
+  const effectiveIndex = isControlled ? controlledIndex : currentIndex;
   const isDragging = useRef(false);
   const lastY = useRef(0);
   const lastX = useRef(0);
@@ -214,11 +219,16 @@ export function TemporaryMPRSeriesViewer({
   const updateIndexBySteps = useCallback(
     (steps: number) => {
       if (!steps) return;
+      if (isControlled && onImageIndexChange) {
+        const next = Math.max(0, Math.min(series.sliceCount - 1, effectiveIndex + steps));
+        onImageIndexChange(next);
+        return;
+      }
       setCurrentIndex((prev) =>
         Math.max(0, Math.min(series.sliceCount - 1, prev + steps)),
       );
     },
-    [series.sliceCount],
+    [series.sliceCount, isControlled, effectiveIndex, onImageIndexChange],
   );
 
   const getSliceImageData = useCallback(
@@ -361,14 +371,16 @@ export function TemporaryMPRSeriesViewer({
   // Sync current index with global context (skip in compact/2D-MPR mode to avoid cross-pane re-renders)
   useEffect(() => {
     if (!compact) {
-      setCurrentImageIndex(currentIndex);
+      setCurrentImageIndex(effectiveIndex);
     }
-  }, [currentIndex, setCurrentImageIndex, compact]);
+  }, [effectiveIndex, setCurrentImageIndex, compact]);
 
-  // Report index changes to parent
+  // Report index changes to parent (only when uncontrolled; when controlled, parent owns the index)
   useEffect(() => {
-    onImageIndexChange?.(currentIndex);
-  }, [currentIndex, onImageIndexChange]);
+    if (!isControlled) {
+      onImageIndexChange?.(currentIndex);
+    }
+  }, [currentIndex, isControlled, onImageIndexChange]);
 
   // Render current slice
   useEffect(() => {
@@ -376,7 +388,7 @@ export function TemporaryMPRSeriesViewer({
     const container = containerRef.current;
     if (!canvas || !container || !series.slices.length) return;
 
-    const slice = series.slices[currentIndex];
+    const slice = series.slices[effectiveIndex];
     if (!slice) return;
 
     const ctx = canvas.getContext("2d");
@@ -386,14 +398,14 @@ export function TemporaryMPRSeriesViewer({
     if (canvas.width !== slice.width) canvas.width = slice.width;
     if (canvas.height !== slice.height) canvas.height = slice.height;
 
-    const bitmap = bitmapCacheRef.current.get(currentIndex);
+    const bitmap = bitmapCacheRef.current.get(effectiveIndex);
     if (bitmap) {
       ctx.drawImage(bitmap, 0, 0, slice.width, slice.height);
     } else {
-      const imageData = getSliceImageData(currentIndex);
+      const imageData = getSliceImageData(effectiveIndex);
       if (imageData) {
         ctx.putImageData(imageData, 0, 0);
-        ensureBitmapForIndex(currentIndex);
+        ensureBitmapForIndex(effectiveIndex);
       } else if (!onSliceNeeded) {
         // Only clear if not using lazy loading — with lazy loading we keep the
         // last rendered frame visible while the worker computes the next slice.
@@ -404,7 +416,7 @@ export function TemporaryMPRSeriesViewer({
     }
 
     // Pre-warm nearby slices so wheel scrolling feels smooth.
-    const nearby = [currentIndex + 1, currentIndex - 1, currentIndex + 2, currentIndex - 2, currentIndex + 3, currentIndex - 3];
+    const nearby = [effectiveIndex + 1, effectiveIndex - 1, effectiveIndex + 2, effectiveIndex - 2, effectiveIndex + 3, effectiveIndex - 3];
     nearby.forEach((idx) => {
       if (idx >= 0 && idx < series.sliceCount) {
         ensureBitmapForIndex(idx);
@@ -450,7 +462,7 @@ export function TemporaryMPRSeriesViewer({
       canvas.style.height = `${displayHeight}px`;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [series, currentIndex, getSliceImageData, ensureBitmapForIndex, onSliceNeeded, lazyCacheVersion]);
+  }, [series, effectiveIndex, getSliceImageData, ensureBitmapForIndex, onSliceNeeded, lazyCacheVersion]);
 
   // Render scout lines on overlay canvas (CSS-display-sized to avoid scaling issues)
   useEffect(() => {
@@ -523,7 +535,7 @@ export function TemporaryMPRSeriesViewer({
       const iy = hLineY;
       scoutIntersectionRef.current = { x: ix, y: iy, displayW: displayWidth, displayH: displayHeight };
 
-      // Outer circle
+      // Outer circle (crosshair locator)
       ctx.save();
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2;
@@ -532,17 +544,19 @@ export function TemporaryMPRSeriesViewer({
       ctx.arc(ix, iy, 12, 0, 2 * Math.PI);
       ctx.stroke();
 
-      // Inner dot
+      // Center square (toggle/drag handle, matches 3D MPR behavior)
+      const sq = 4;
       ctx.fillStyle = "#ffffff";
-      ctx.globalAlpha = 0.8;
-      ctx.beginPath();
-      ctx.arc(ix, iy, 3, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(ix - sq, iy - sq, sq * 2, sq * 2);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ix - sq, iy - sq, sq * 2, sq * 2);
       ctx.restore();
     } else {
       scoutIntersectionRef.current = null;
     }
-  }, [scoutLines, currentIndex]);
+  }, [scoutLines, effectiveIndex]);
 
   // Convert screen coordinates to image pixel coordinates
   const screenToImage = useCallback(
@@ -603,9 +617,9 @@ export function TemporaryMPRSeriesViewer({
   // Get HU value at image pixel position
   const getHUAtPoint = useCallback(
     (pos: { x: number; y: number }): number | null => {
-      const slice = series.slices[currentIndex];
+      const slice = series.slices[effectiveIndex];
       if (!slice) return null;
-      const rawData = slice.rawData ?? lazyCacheRef.current.get(currentIndex);
+      const rawData = slice.rawData ?? lazyCacheRef.current.get(effectiveIndex);
       if (!rawData) return null;
 
       const px = Math.round(pos.x);
@@ -613,7 +627,7 @@ export function TemporaryMPRSeriesViewer({
       if (px < 0 || px >= slice.width || py < 0 || py >= slice.height) return null;
       return rawData[py * slice.width + px];
     },
-    [series.slices, currentIndex],
+    [series.slices, effectiveIndex],
   );
 
   // Trigger annotation canvas re-render
@@ -648,7 +662,7 @@ export function TemporaryMPRSeriesViewer({
 
     // Get annotations for current slice + in-progress annotation
     const sliceAnnotations = globalAnnotations.filter(
-      (ann) => ann.imageIndex === undefined || ann.imageIndex === currentIndex,
+      (ann) => ann.imageIndex === undefined || ann.imageIndex === effectiveIndex,
     );
     const allAnnotations = [
       ...sliceAnnotations,
@@ -804,7 +818,7 @@ export function TemporaryMPRSeriesViewer({
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalAnnotations, selectedAnnotationId, currentIndex, annotationRenderKey]);
+  }, [globalAnnotations, selectedAnnotationId, effectiveIndex, annotationRenderKey]);
 
   // Convert screen position to scout canvas ratio (for crosshair drag)
   const screenToScoutRatio = useCallback(
@@ -900,7 +914,7 @@ export function TemporaryMPRSeriesViewer({
       const boundTool = mouseBindings[button];
       const tool = boundTool ?? activeTool;
 
-      // Ignore middle/right click if no tool is bound
+      // No tool bound to middle/right → let browser handle it
       if ((button === 1 || button === 2) && !boundTool) return;
       if (boundTool) e.preventDefault();
 
@@ -924,7 +938,7 @@ export function TemporaryMPRSeriesViewer({
             color: "#ffff00",
             huValue,
             index: globalAnnotations.length + 1,
-            imageIndex: currentIndex,
+            imageIndex: effectiveIndex,
           };
           setGlobalAnnotations((prev) => [...prev, newAnnotation]);
           saveToHistory();
@@ -946,7 +960,7 @@ export function TemporaryMPRSeriesViewer({
         const id = Math.random().toString(36).substr(2, 9);
         if (angleClickCount.current === 0) {
           currentAnnotation.current = {
-            id, type: "Angle", points: [pos], color: "#00ff00", imageIndex: currentIndex,
+            id, type: "Angle", points: [pos], color: "#00ff00", imageIndex: effectiveIndex,
           };
           angleClickCount.current = 1;
         } else if (angleClickCount.current === 1) {
@@ -979,7 +993,7 @@ export function TemporaryMPRSeriesViewer({
         const id = Math.random().toString(36).substr(2, 9);
         if (angleClickCount.current === 0) {
           currentAnnotation.current = {
-            id, type: "CobbsAngle", points: [pos], color: "#ffff00", imageIndex: currentIndex,
+            id, type: "CobbsAngle", points: [pos], color: "#ffff00", imageIndex: effectiveIndex,
           };
           angleClickCount.current = 1;
         } else if (angleClickCount.current === 2) {
@@ -1009,12 +1023,12 @@ export function TemporaryMPRSeriesViewer({
           type: tool as Annotation["type"],
           points: [pos],
           color: "#00ff00",
-          imageIndex: currentIndex,
+          imageIndex: effectiveIndex,
         };
         requestAnnotationRender();
       }
     },
-    [activeTool, mouseBindings, screenToImage, getHUAtPoint, getPointerAngleFromCenter, globalAnnotations.length, setGlobalAnnotations, saveToHistory, setSelectedAnnotationId, requestAnnotationRender, currentIndex, onCrosshairDrag, hitTestScoutCircle, screenToScoutRatio],
+    [activeTool, mouseBindings, screenToImage, getHUAtPoint, getPointerAngleFromCenter, globalAnnotations.length, setGlobalAnnotations, saveToHistory, setSelectedAnnotationId, requestAnnotationRender, effectiveIndex, onCrosshairDrag, hitTestScoutCircle, screenToScoutRatio],
   );
 
   const handleMouseMove = useCallback(
@@ -1265,7 +1279,7 @@ export function TemporaryMPRSeriesViewer({
             <>
               {/* Compact mode: only slice counter */}
               <div className="absolute bottom-0 left-0 font-medium">
-                {currentIndex + 1} / {series.sliceCount}
+                {effectiveIndex + 1} / {series.sliceCount}
               </div>
             </>
           ) : (
@@ -1303,7 +1317,7 @@ export function TemporaryMPRSeriesViewer({
 
               {/* Slice Counter - Bottom Left */}
               <div className="absolute bottom-0 left-0 font-medium">
-                {currentIndex + 1} / {series.sliceCount}
+                {effectiveIndex + 1} / {series.sliceCount}
               </div>
             </>
           )}

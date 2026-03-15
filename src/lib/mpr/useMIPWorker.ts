@@ -36,9 +36,9 @@ export function useMIPWorker() {
     }
 
     if (type === "sliceResult") {
-      const { z, slabHalfSize, requestId, buffer } = payload;
+      const { z, slabHalfSize, requestId, projectionMode = "MIP", buffer } = payload;
       const data = new Int16Array(buffer);
-      const key = `${z}_${slabHalfSize}`;
+      const key = `${z}_${slabHalfSize}_${projectionMode}`;
       cacheRef.current.set(key, data);
 
       // LRU eviction
@@ -113,8 +113,12 @@ export function useMIPWorker() {
   );
 
   const computeSlice = useCallback(
-    (z: number, slabHalfSize: number): Promise<Int16Array> => {
-      const key = `${z}_${slabHalfSize}`;
+    (
+      z: number,
+      slabHalfSize: number,
+      projectionMode: "MIP" | "MiniMIP" = "MIP",
+    ): Promise<Int16Array> => {
+      const key = `${z}_${slabHalfSize}_${projectionMode}`;
       const cached = cacheRef.current.get(key);
       if (cached) return Promise.resolve(cached);
 
@@ -128,7 +132,7 @@ export function useMIPWorker() {
         callbackMapRef.current.set(requestId, { resolve, reject });
         worker.postMessage({
           type: "computeSlice",
-          payload: { z, slabHalfSize, requestId },
+          payload: { z, slabHalfSize, requestId, projectionMode },
         });
       });
     },
@@ -136,7 +140,13 @@ export function useMIPWorker() {
   );
 
   const prefetch = useCallback(
-    (centerZ: number, range: number, slabHalfSize: number, totalSliceCount: number) => {
+    (
+      centerZ: number,
+      range: number,
+      slabHalfSize: number,
+      totalSliceCount: number,
+      projectionMode: "MIP" | "MiniMIP" = "MIP",
+    ) => {
       const worker = workerRef.current;
       if (!worker || !isReadyRef.current) return;
 
@@ -144,10 +154,10 @@ export function useMIPWorker() {
       for (let d = 1; d <= range; d++) {
         const above = centerZ + d;
         const below = centerZ - d;
-        if (above < totalSliceCount && !cacheRef.current.has(`${above}_${slabHalfSize}`)) {
+        if (above < totalSliceCount && !cacheRef.current.has(`${above}_${slabHalfSize}_${projectionMode}`)) {
           indices.push(above);
         }
-        if (below >= 0 && !cacheRef.current.has(`${below}_${slabHalfSize}`)) {
+        if (below >= 0 && !cacheRef.current.has(`${below}_${slabHalfSize}_${projectionMode}`)) {
           indices.push(below);
         }
       }
@@ -157,7 +167,7 @@ export function useMIPWorker() {
       const requestId = ++requestIdRef.current;
       worker.postMessage({
         type: "computeBatch",
-        payload: { indices, slabHalfSize, requestId },
+        payload: { indices, slabHalfSize, requestId, projectionMode },
       });
     },
     [],

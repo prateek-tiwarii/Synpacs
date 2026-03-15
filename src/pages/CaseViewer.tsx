@@ -9,6 +9,8 @@ import {
 } from "react";
 import {
   useViewerContext,
+  getPaneScale,
+  type PaneState,
   type TemporaryMPRSeries,
   type MPRSliceData,
   type MPRMode,
@@ -64,17 +66,17 @@ interface InstancesResponse {
   instances: Instance[];
 }
 
-const DEFAULT_PANE_VIEW_TRANSFORM: ViewTransform = {
+const makeDefaultPaneTransform = (paneCount: number): ViewTransform => ({
   x: 0,
   y: 0,
-  scale: 0.65,
+  scale: getPaneScale(paneCount),
   rotation: 0,
   flipH: false,
   flipV: false,
   invert: false,
   windowWidth: null,
   windowCenter: null,
-};
+});
 
 const SERIES_DND_MIME = "application/x-sync-pacs-series";
 
@@ -203,36 +205,20 @@ const PaneViewer = ({
   scoutLines,
   onSliceNeeded,
 }: PaneViewerProps) => {
-  const { caseData, paneStates, setPaneStates, temporaryMPRSeries } = useViewerContext();
+  const { caseData, paneStates, setPaneStates, temporaryMPRSeries, gridLayout, setActivePaneIndex, setSelectedTemporarySeriesId } = useViewerContext();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
+  const paneCount = getGridLayoutPaneCount(gridLayout);
+  const defaultTransform = makeDefaultPaneTransform(paneCount);
+
   const series = caseData?.series?.find((s) => s._id === seriesId);
   const selectedTempMPR = temporaryMPRSeries.find((ts) => ts.id === seriesId);
   const paneTransform =
-    paneStates[paneIndex]?.viewTransform ?? DEFAULT_PANE_VIEW_TRANSFORM;
-
-  // Select a series for this pane
-  const handleSelectSeries = useCallback(
-    (newSeriesId: string) => {
-      setPaneStates((prev) => {
-        const newStates = [...prev];
-        if (newStates[paneIndex]) {
-          newStates[paneIndex] = {
-            ...newStates[paneIndex],
-            seriesId: newSeriesId,
-            currentImageIndex: 0,
-            viewTransform: { ...DEFAULT_PANE_VIEW_TRANSFORM },
-          };
-        }
-        return newStates;
-      });
-    },
-    [paneIndex, setPaneStates],
-  );
+    paneStates[paneIndex]?.viewTransform ?? defaultTransform;
 
   const handlePaneTransformChange = useCallback(
     (
@@ -244,7 +230,7 @@ const PaneViewer = ({
         const newStates = [...prev];
         if (!newStates[paneIndex]) return prev;
         const previousTransform =
-          newStates[paneIndex].viewTransform ?? DEFAULT_PANE_VIEW_TRANSFORM;
+          newStates[paneIndex].viewTransform ?? defaultTransform;
         const nextTransform =
           typeof transform === "function"
             ? transform(previousTransform)
@@ -256,7 +242,7 @@ const PaneViewer = ({
         return newStates;
       });
     },
-    [paneIndex, setPaneStates],
+    [paneIndex, setPaneStates, defaultTransform],
   );
 
   useEffect(() => {
@@ -354,6 +340,7 @@ const PaneViewer = ({
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
   }, []);
@@ -365,15 +352,45 @@ const PaneViewer = ({
   const handleDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      event.stopPropagation();
       setIsDragOver(false);
 
       const droppedSeriesId = parseDroppedSeriesId(event);
       if (!droppedSeriesId) return;
 
-      handleSelectSeries(droppedSeriesId);
-      onActivate();
+      const paneCount = getGridLayoutPaneCount(gridLayout);
+      const emptyPaneState = (sid: string | null): PaneState => ({
+        seriesId: sid,
+        currentImageIndex: 0,
+        viewTransform: makeDefaultPaneTransform(paneCount),
+        annotations: [],
+        selectedAnnotationId: null,
+      });
+      setPaneStates((prev) => {
+        const newStates = [...prev];
+        while (newStates.length <= paneIndex) {
+          newStates.push(emptyPaneState(null));
+        }
+        newStates[paneIndex] = emptyPaneState(droppedSeriesId);
+        return newStates;
+      });
+
+      // Activate this pane directly instead of calling onActivate(), which
+      // would trigger handleActivatePane → handleSetSelectedSeries. That
+      // chain reads paneStates from a stale closure and overwrites the pane
+      // we just updated, reverting it to the old series.
+      setActivePaneIndex(paneIndex);
+
+      // Sync the global selection to match the *dropped* series so the
+      // sidebar / toolbar immediately reflect the new content.
+      const temp = temporaryMPRSeries.find((ts) => ts.id === droppedSeriesId);
+      if (temp) {
+        setSelectedTemporarySeriesId(temp.id);
+      } else {
+        setSelectedTemporarySeriesId(null);
+      }
     },
-    [handleSelectSeries, onActivate],
+    [paneIndex, setPaneStates, gridLayout, setActivePaneIndex, temporaryMPRSeries, setSelectedTemporarySeriesId],
   );
 
   return (
@@ -473,6 +490,7 @@ const CaseViewer = () => {
     clearPendingMPRGeneration,
     addTemporaryMPRSeries,
     viewTransform,
+    crosshairIndices,
     setCrosshairIndices,
     gridLayout,
     paneStates,
@@ -483,7 +501,7 @@ const CaseViewer = () => {
     setIsVRTActive,
     is2DMPRActive,
     setIs2DMPRActive,
-    miniMIPIntensity,
+    mprLayoutPreset,
     mipIntensity,
     removeTemporaryMPRSeries,
   } = useViewerContext();
@@ -530,6 +548,35 @@ const CaseViewer = () => {
       });
     },
     [],
+  );
+
+  // When activating a pane, sync global selection to that pane so toolbar/MPR apply to the correct pane (each pane operates independently)
+  const handleActivatePane = useCallback(
+    (paneIdx: number) => {
+      setActivePaneIndex(paneIdx);
+      const seriesId = paneStates[paneIdx]?.seriesId ?? null;
+      if (!seriesId || !caseData?.series) return;
+      const temp = temporaryMPRSeries.find((ts) => ts.id === seriesId);
+      if (temp) {
+        setSelectedTemporarySeriesId(temp.id);
+        const src = caseData.series.find((s) => s._id === temp.sourceSeriesId);
+        if (src) setSelectedSeries(src);
+      } else {
+        const src = caseData.series.find((s) => s._id === seriesId);
+        if (src) {
+          setSelectedSeries(src);
+          setSelectedTemporarySeriesId(null);
+        }
+      }
+    },
+    [
+      paneStates,
+      caseData?.series,
+      temporaryMPRSeries,
+      setActivePaneIndex,
+      setSelectedSeries,
+      setSelectedTemporarySeriesId,
+    ],
   );
 
   const handleSinglePaneDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
@@ -762,10 +809,27 @@ const CaseViewer = () => {
     selectedTempSeries.description.includes("(2D-MPR)") &&
     selectedTempSeries.sourceSeriesId === selectedSeries?._id;
 
-  // Scout line computation for 2D-MPR layout
+  // Sync 2D MPR pane indices from crosshair once when entering 2D MPR (single voxel across all three planes)
+  const hasSynced2DMPRRef = useRef(false);
+  useEffect(() => {
+    if (!is2DMPRLayout || !mpr2DSeries) {
+      hasSynced2DMPRRef.current = false;
+      return;
+    }
+    if (hasSynced2DMPRRef.current) return;
+    hasSynced2DMPRRef.current = true;
+    const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : 0;
+    const coronalTotal = mpr2DSeries.coronal?.sliceCount ?? 0;
+    const sagittalTotal = mpr2DSeries.sagittal?.sliceCount ?? 0;
+    if (axialTotal > 0) setAxialIndex((prev) => Math.max(0, Math.min(axialTotal - 1, crosshairIndices.z)));
+    if (coronalTotal > 0) setCoronalIndex((prev) => Math.max(0, Math.min(coronalTotal - 1, crosshairIndices.y)));
+    if (sagittalTotal > 0) setSagittalIndex((prev) => Math.max(0, Math.min(sagittalTotal - 1, crosshairIndices.x)));
+  }, [is2DMPRLayout, mpr2DSeries, crosshairIndices.x, crosshairIndices.y, crosshairIndices.z]);
+
+  // Scout line computation for 2D-MPR layout (respect global show-scout toggle so crosshair visible in all 3 planes)
   const get2DMPRScoutLines = useCallback(
     (targetPane: number): ScoutLine[] => {
-      if (!mpr2DSeries) return [];
+      if (!mpr2DSeries || !showScoutLine) return [];
       const lines: ScoutLine[] = [];
 
       // Ratios: position of each pane's current slice as 0-1
@@ -793,7 +857,7 @@ const CaseViewer = () => {
 
       return lines;
     },
-    [mpr2DSeries, instances.length, axialIndex, coronalIndex, sagittalIndex],
+    [mpr2DSeries, instances.length, axialIndex, coronalIndex, sagittalIndex, showScoutLine],
   );
 
   const API_BASE_URL =
@@ -1076,7 +1140,8 @@ const CaseViewer = () => {
           return slices;
         };
 
-        // Handle 2D-MPR: progressive loading via Web Worker
+        // 2D vs 3D MPR: only difference is plane constraint — 2D = orthogonal only; 3D = oblique (free slice rotation).
+        // Handle 2D-MPR: orthogonal planes only, progressive loading via Web Worker
         if (mode === "2D-MPR") {
           let sourcePlane: PlaneOrientation | null = null;
           if (instances[0]?.image_orientation_patient?.length === 6) {
@@ -1089,11 +1154,8 @@ const CaseViewer = () => {
             else if (absX > absY && absX > absZ) sourcePlane = "Sagittal";
           }
 
-          // If source stack is already axial, skip redundant axial MPR generation.
-          const planes: PlaneType[] =
-            sourcePlane === "Axial"
-              ? ["Coronal", "Sagittal"]
-              : ["Axial", "Coronal", "Sagittal"];
+          // Always generate all three planes so 2D MPR has linked crosshair and same behavior for head/abdomen.
+          const planes: PlaneType[] = ["Axial", "Coronal", "Sagittal"];
 
           // Initialize the MPR slice worker with the volume
           await mprSliceWorker.initVolume(volume, selectedSeries._id);
@@ -1142,7 +1204,7 @@ const CaseViewer = () => {
           // Activate dedicated 2D-MPR mode (hides sidebar, shows MPR header)
           setIs2DMPRActive(true);
         }
-        // Handle 3D-MPR: activate CPU oblique reformatted view
+        // Handle 3D-MPR: oblique plane — user can rotate slice plane angle freely (CPU reformat)
         else if (mode === "3D-MPR") {
           if (gridLayout !== "1x1") {
             toast("3D MPR is only available in 1x1 layout");
@@ -1157,10 +1219,7 @@ const CaseViewer = () => {
         else if (mode === "MiniMIP" || mode === "MIP") {
           const plane: PlaneType = "Axial";
           const [cols, rows, totalSlices] = volume.dimensions;
-          const slabHalfSize = Math.max(
-            0,
-            Math.round(mode === "MiniMIP" ? miniMIPIntensity : mipIntensity),
-          );
+          const slabHalfSize = Math.max(0, Math.round(mipIntensity));
 
           // Initialize the MIP worker with the volume data
           await mipWorker.initVolume(volume, selectedSeries._id);
@@ -1176,7 +1235,7 @@ const CaseViewer = () => {
 
           const sampleSlices: MPRSliceData[] = [];
           for (const z of sampleIndices) {
-            const rawData = await mipWorker.computeSlice(z, slabHalfSize);
+            const rawData = await mipWorker.computeSlice(z, slabHalfSize, mode);
             sampleSlices.push({ index: z, rawData, width: cols, height: rows });
           }
 
@@ -1270,7 +1329,6 @@ const CaseViewer = () => {
     mipWorker,
     viewTransform.windowWidth,
     viewTransform.windowCenter,
-    miniMIPIntensity,
     mipIntensity,
     setCrosshairIndices,
     mprSliceWorker,
@@ -1294,12 +1352,7 @@ const CaseViewer = () => {
     }
 
     const activeProjectionMode = selectedTempSeries.mprMode;
-    const slabHalfSize = Math.max(
-      0,
-      Math.round(
-        activeProjectionMode === "MiniMIP" ? miniMIPIntensity : mipIntensity,
-      ),
-    );
+    const slabHalfSize = Math.max(0, Math.round(mipIntensity));
     if (selectedTempSeries.projectionSlabHalfSize === slabHalfSize) {
       return;
     }
@@ -1314,15 +1367,27 @@ const CaseViewer = () => {
     const baselineWindowWidth =
       selectedTempSeries.initialProjectionWindowWidth ??
       selectedTempSeries.windowWidth;
-    const adjustedProjectionWindow = adjustProjectionWindowForSlab(
-      {
-        windowCenter: baselineWindowCenter,
-        windowWidth: baselineWindowWidth,
-      },
-      baselineSlabHalfSize,
-      slabHalfSize,
-      activeProjectionMode,
-    );
+
+    let adjustedWC: number;
+    let adjustedWW: number;
+
+    if (slabHalfSize === 0) {
+      const volume = volumeCache.current.get(selectedSeries._id);
+      adjustedWC = volume?.windowCenter ?? baselineWindowCenter;
+      adjustedWW = volume?.windowWidth ?? baselineWindowWidth;
+    } else {
+      const adjustedProjectionWindow = adjustProjectionWindowForSlab(
+        {
+          windowCenter: baselineWindowCenter,
+          windowWidth: baselineWindowWidth,
+        },
+        baselineSlabHalfSize,
+        slabHalfSize,
+        activeProjectionMode,
+      );
+      adjustedWC = adjustedProjectionWindow.windowCenter;
+      adjustedWW = adjustedProjectionWindow.windowWidth;
+    }
 
     // Create placeholder slices (rawData will be loaded on demand by the viewer)
     const [cols, rows, totalSlices] = selectedTempSeries.slices.length > 0
@@ -1333,15 +1398,14 @@ const CaseViewer = () => {
       slices[z] = { index: z, width: cols, height: rows };
     }
 
-    // Update the series with new slab size — viewer will request slices via onSliceNeeded
     addTemporaryMPRSeries(
       {
         ...selectedTempSeries,
         slices,
         sliceCount: totalSlices,
         createdAt: Date.now(),
-        windowCenter: adjustedProjectionWindow.windowCenter,
-        windowWidth: adjustedProjectionWindow.windowWidth,
+        windowCenter: adjustedWC,
+        windowWidth: adjustedWW,
         projectionSlabHalfSize: slabHalfSize,
         initialProjectionSlabHalfSize: baselineSlabHalfSize,
         initialProjectionWindowCenter: baselineWindowCenter,
@@ -1354,12 +1418,11 @@ const CaseViewer = () => {
     isGeneratingProjection,
     selectedSeries,
     selectedTempSeries,
-    miniMIPIntensity,
     mipIntensity,
     addTemporaryMPRSeries,
   ]);
 
-  // On-demand MIP slice provider for TemporaryMPRSeriesViewer lazy loading
+  // On-demand MIP/MiniMIP slice provider for TemporaryMPRSeriesViewer lazy loading
   const handleMIPSliceNeeded = useCallback(
     async (index: number): Promise<Int16Array | null> => {
       if (
@@ -1370,8 +1433,9 @@ const CaseViewer = () => {
         return null;
       }
       const slabHalfSize = selectedTempSeries.projectionSlabHalfSize ?? 0;
+      const mode = selectedTempSeries.mprMode;
       try {
-        return await mipWorker.computeSlice(index, slabHalfSize);
+        return await mipWorker.computeSlice(index, slabHalfSize, mode);
       } catch {
         return null;
       }
@@ -1414,44 +1478,59 @@ const CaseViewer = () => {
     [mprSliceWorker],
   );
 
-  // Stable callbacks for 2D-MPR pane index changes (avoid re-render cascades)
-  const handleAxialIndexChange = useCallback((idx: number) => setAxialIndex(idx), []);
-  const handleCoronalIndexChange = useCallback((idx: number) => setCoronalIndex(idx), []);
-  const handleSagittalIndexChange = useCallback((idx: number) => setSagittalIndex(idx), []);
+  // Stable callbacks for 2D-MPR pane index changes — keep crosshair at same voxel
+  const handleAxialIndexChange = useCallback((idx: number) => {
+    setAxialIndex(idx);
+    setCrosshairIndices((prev) => ({ ...prev, z: idx }));
+  }, [setCrosshairIndices]);
+  const handleCoronalIndexChange = useCallback((idx: number) => {
+    setCoronalIndex(idx);
+    setCrosshairIndices((prev) => ({ ...prev, y: idx }));
+  }, [setCrosshairIndices]);
+  const handleSagittalIndexChange = useCallback((idx: number) => {
+    setSagittalIndex(idx);
+    setCrosshairIndices((prev) => ({ ...prev, x: idx }));
+  }, [setCrosshairIndices]);
 
-  // Crosshair drag handlers — update other panes when the locator circle is dragged
+  // Crosshair drag handlers — update other panes when the locator circle is dragged (other planes scroll to same voxel)
   const handleAxialCrosshairDrag = useCallback(
     (hRatio: number, vRatio: number) => {
       if (!mpr2DSeries) return;
-      // Axial pane: horizontal scout line = coronal position, vertical = sagittal position
       const coronalTotal = mpr2DSeries.coronal.sliceCount;
       const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
-      setCoronalIndex(Math.round(vRatio * (coronalTotal - 1)));
-      setSagittalIndex(Math.round(hRatio * (sagittalTotal - 1)));
+      const newCoronal = Math.round(vRatio * (coronalTotal - 1));
+      const newSagittal = Math.round(hRatio * (sagittalTotal - 1));
+      setCoronalIndex(newCoronal);
+      setSagittalIndex(newSagittal);
+      setCrosshairIndices((prev) => ({ ...prev, y: newCoronal, x: newSagittal }));
     },
-    [mpr2DSeries],
+    [mpr2DSeries, setCrosshairIndices],
   );
   const handleCoronalCrosshairDrag = useCallback(
     (hRatio: number, vRatio: number) => {
       if (!mpr2DSeries) return;
-      // Coronal pane: horizontal scout line = axial position (inverted), vertical = sagittal position
       const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : instances.length;
       const sagittalTotal = mpr2DSeries.sagittal.sliceCount;
-      setAxialIndex(Math.round((1 - vRatio) * (axialTotal - 1)));
-      setSagittalIndex(Math.round(hRatio * (sagittalTotal - 1)));
+      const newAxial = Math.round((1 - vRatio) * (axialTotal - 1));
+      const newSagittal = Math.round(hRatio * (sagittalTotal - 1));
+      setAxialIndex(newAxial);
+      setSagittalIndex(newSagittal);
+      setCrosshairIndices((prev) => ({ ...prev, z: newAxial, x: newSagittal }));
     },
-    [mpr2DSeries, instances.length],
+    [mpr2DSeries, instances.length, setCrosshairIndices],
   );
   const handleSagittalCrosshairDrag = useCallback(
     (hRatio: number, vRatio: number) => {
       if (!mpr2DSeries) return;
-      // Sagittal pane: horizontal scout line = axial position (inverted), vertical = coronal position
       const axialTotal = mpr2DSeries.axial ? mpr2DSeries.axial.sliceCount : instances.length;
       const coronalTotal = mpr2DSeries.coronal.sliceCount;
-      setAxialIndex(Math.round((1 - vRatio) * (axialTotal - 1)));
-      setCoronalIndex(Math.round(hRatio * (coronalTotal - 1)));
+      const newAxial = Math.round((1 - vRatio) * (axialTotal - 1));
+      const newCoronal = Math.round(hRatio * (coronalTotal - 1));
+      setAxialIndex(newAxial);
+      setCoronalIndex(newCoronal);
+      setCrosshairIndices((prev) => ({ ...prev, z: newAxial, y: newCoronal }));
     },
-    [mpr2DSeries, instances.length],
+    [mpr2DSeries, instances.length, setCrosshairIndices],
   );
 
   // Memoized scout lines for each 2D-MPR pane
@@ -1665,8 +1744,9 @@ const CaseViewer = () => {
     const renderPane = (
       cfg: typeof major,
       isCompact: boolean,
+      controlledIdx: number,
     ) => {
-      // If no temp series for this plane (e.g. source is already axial), use DicomViewer
+      // If no temp series for this plane, use DicomViewer (fallback; normally all three planes exist)
       if (!cfg.series) {
         return (
           <DicomViewer
@@ -1689,48 +1769,106 @@ const CaseViewer = () => {
           onSliceNeeded={cfg.onSliceNeeded}
           onCrosshairDrag={cfg.onCrosshairDrag}
           compact={isCompact}
+          controlledIndex={controlledIdx}
         />
       );
     };
 
-    return (
-      <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
-        {/* Left column — Major pane with view type dropdown */}
-        <div
-          className={`w-1/2 min-h-0 min-w-0 overflow-hidden relative bg-black ${active2DMPRPane === major.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-          onClick={() => setActive2DMPRPane(major.paneId)}
+    const paneClass = (paneId: number) =>
+      `min-h-0 min-w-0 overflow-hidden relative bg-black flex-1 ${active2DMPRPane === paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`;
+    const majorDropdown = (
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
+        <select
+          value={majorPane2DMPR}
+          onChange={(e) => setMajorPane2DMPR(e.target.value as PlaneOrientation)}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-black/80 text-white text-xs px-2 py-1 rounded border border-gray-600 hover:border-gray-400 cursor-pointer outline-none focus:border-green-500 appearance-auto"
         >
-          {renderPane(major, false)}
-          {/* View type dropdown */}
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20">
-            <select
-              value={majorPane2DMPR}
-              onChange={(e) => setMajorPane2DMPR(e.target.value as PlaneOrientation)}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-black/80 text-white text-xs px-2 py-1 rounded border border-gray-600 hover:border-gray-400 cursor-pointer outline-none focus:border-green-500 appearance-auto"
-            >
-              <option value="Axial">Axial</option>
-              <option value="Coronal">Coronal</option>
-              <option value="Sagittal">Sagittal</option>
-            </select>
+          <option value="Axial">Axial</option>
+          <option value="Coronal">Coronal</option>
+          <option value="Sagittal">Sagittal</option>
+        </select>
+      </div>
+    );
+
+    // Layout presets: left-large (default), right-large, top-large, bottom-large, 1x3, 3x1
+    if (mprLayoutPreset === "1x3") {
+      return (
+        <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
+          {(["Axial", "Coronal", "Sagittal"] as const).map((plane, i) => (
+            <div key={plane} className={paneClass(planeConfig[plane].paneId)} onClick={() => setActive2DMPRPane(planeConfig[plane].paneId)}>
+              {renderPane(planeConfig[plane], true, plane === "Axial" ? axialIndex : plane === "Coronal" ? coronalIndex : sagittalIndex)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    if (mprLayoutPreset === "3x1") {
+      return (
+        <div className="flex-1 flex flex-col bg-black h-full divide-y divide-gray-800">
+          {(["Axial", "Coronal", "Sagittal"] as const).map((plane) => (
+            <div key={plane} className={paneClass(planeConfig[plane].paneId)} onClick={() => setActive2DMPRPane(planeConfig[plane].paneId)}>
+              {renderPane(planeConfig[plane], true, plane === "Axial" ? axialIndex : plane === "Coronal" ? coronalIndex : sagittalIndex)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    if (mprLayoutPreset === "right-large") {
+      return (
+        <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
+          <div className="w-1/2 flex flex-col min-w-0 divide-y divide-gray-800">
+            <div className={paneClass(minor0.paneId)} onClick={() => setActive2DMPRPane(minor0.paneId)}>{renderPane(minor0, true, minorPlanes[0] === "Axial" ? axialIndex : minorPlanes[0] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+            <div className={paneClass(minor1.paneId)} onClick={() => setActive2DMPRPane(minor1.paneId)}>{renderPane(minor1, true, minorPlanes[1] === "Axial" ? axialIndex : minorPlanes[1] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+          </div>
+          <div className={`w-1/2 min-w-0 ${paneClass(major.paneId)}`} onClick={() => setActive2DMPRPane(major.paneId)}>
+            {renderPane(major, false, majorPane2DMPR === "Axial" ? axialIndex : majorPane2DMPR === "Coronal" ? coronalIndex : sagittalIndex)}
+            {majorDropdown}
           </div>
         </div>
-
-        {/* Right column — 2 minor panes stacked */}
-        <div className="w-1/2 flex flex-col min-w-0 divide-y divide-gray-800">
-          {/* Minor pane 0 — top */}
-          <div
-            className={`flex-1 min-h-0 relative overflow-hidden bg-black ${active2DMPRPane === minor0.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-            onClick={() => setActive2DMPRPane(minor0.paneId)}
-          >
-            {renderPane(minor0, true)}
+      );
+    }
+    if (mprLayoutPreset === "top-large") {
+      return (
+        <div className="flex-1 flex flex-col bg-black h-full divide-y divide-gray-800">
+          <div className={`h-1/2 min-h-0 ${paneClass(major.paneId)}`} onClick={() => setActive2DMPRPane(major.paneId)}>
+            {renderPane(major, false, majorPane2DMPR === "Axial" ? axialIndex : majorPane2DMPR === "Coronal" ? coronalIndex : sagittalIndex)}
+            {majorDropdown}
           </div>
-          {/* Minor pane 1 — bottom */}
-          <div
-            className={`flex-1 min-h-0 relative overflow-hidden bg-black ${active2DMPRPane === minor1.paneId ? "ring-2 ring-green-500 ring-inset" : "ring-1 ring-gray-700 ring-inset"}`}
-            onClick={() => setActive2DMPRPane(minor1.paneId)}
-          >
-            {renderPane(minor1, true)}
+          <div className="h-1/2 flex min-h-0 divide-x divide-gray-800">
+            <div className={paneClass(minor0.paneId)} onClick={() => setActive2DMPRPane(minor0.paneId)}>{renderPane(minor0, true, minorPlanes[0] === "Axial" ? axialIndex : minorPlanes[0] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+            <div className={paneClass(minor1.paneId)} onClick={() => setActive2DMPRPane(minor1.paneId)}>{renderPane(minor1, true, minorPlanes[1] === "Axial" ? axialIndex : minorPlanes[1] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+          </div>
+        </div>
+      );
+    }
+    if (mprLayoutPreset === "bottom-large") {
+      return (
+        <div className="flex-1 flex flex-col bg-black h-full divide-y divide-gray-800">
+          <div className="h-1/2 flex min-h-0 divide-x divide-gray-800">
+            <div className={paneClass(minor0.paneId)} onClick={() => setActive2DMPRPane(minor0.paneId)}>{renderPane(minor0, true, minorPlanes[0] === "Axial" ? axialIndex : minorPlanes[0] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+            <div className={paneClass(minor1.paneId)} onClick={() => setActive2DMPRPane(minor1.paneId)}>{renderPane(minor1, true, minorPlanes[1] === "Axial" ? axialIndex : minorPlanes[1] === "Coronal" ? coronalIndex : sagittalIndex)}</div>
+          </div>
+          <div className={`h-1/2 min-h-0 ${paneClass(major.paneId)}`} onClick={() => setActive2DMPRPane(major.paneId)}>
+            {renderPane(major, false, majorPane2DMPR === "Axial" ? axialIndex : majorPane2DMPR === "Coronal" ? coronalIndex : sagittalIndex)}
+            {majorDropdown}
+          </div>
+        </div>
+      );
+    }
+    // left-large (default)
+    return (
+      <div className="flex-1 flex bg-black h-full divide-x divide-gray-800">
+        <div className={`w-1/2 min-w-0 ${paneClass(major.paneId)}`} onClick={() => setActive2DMPRPane(major.paneId)}>
+          {renderPane(major, false, majorPane2DMPR === "Axial" ? axialIndex : majorPane2DMPR === "Coronal" ? coronalIndex : sagittalIndex)}
+          {majorDropdown}
+        </div>
+        <div className="w-1/2 flex flex-col min-w-0 divide-y divide-gray-800">
+          <div className={paneClass(minor0.paneId)} onClick={() => setActive2DMPRPane(minor0.paneId)}>
+            {renderPane(minor0, true, minorPlanes[0] === "Axial" ? axialIndex : minorPlanes[0] === "Coronal" ? coronalIndex : sagittalIndex)}
+          </div>
+          <div className={paneClass(minor1.paneId)} onClick={() => setActive2DMPRPane(minor1.paneId)}>
+            {renderPane(minor1, true, minorPlanes[1] === "Axial" ? axialIndex : minorPlanes[1] === "Coronal" ? coronalIndex : sagittalIndex)}
           </div>
         </div>
       </div>
@@ -1742,7 +1880,7 @@ const CaseViewer = () => {
     const config = parseGridLayout(gridLayout) ?? { rows: 1, cols: 1 };
     const paneCount = config.rows * config.cols;
 
-    if (fullscreenPaneIndex !== null) {
+        if (fullscreenPaneIndex !== null) {
       const paneIdx = fullscreenPaneIndex;
       return (
         <div className="flex-1 flex flex-col bg-black h-full min-h-0">
@@ -1751,7 +1889,7 @@ const CaseViewer = () => {
             seriesId={paneStates[paneIdx]?.seriesId || null}
             isActive={activePaneIndex === paneIdx}
             isFullscreen={true}
-            onActivate={() => setActivePaneIndex(paneIdx)}
+            onActivate={() => handleActivatePane(paneIdx)}
             onToggleFullscreen={() => setFullscreenPaneIndex(null)}
             onImageIndexChange={handlePaneImageIndexChange}
             scoutLines={getScoutLinesForPane(paneIdx)}
@@ -1777,7 +1915,7 @@ const CaseViewer = () => {
               seriesId={paneStates[idx]?.seriesId || null}
               isActive={activePaneIndex === idx}
               isFullscreen={false}
-              onActivate={() => setActivePaneIndex(idx)}
+              onActivate={() => handleActivatePane(idx)}
               onToggleFullscreen={() =>
                 setFullscreenPaneIndex((prev) => (prev === idx ? null : idx))
               }

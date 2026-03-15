@@ -325,6 +325,24 @@ class ApiService {
     })
   }
 
+  /** Download case DICOM as ZIP (original images only; excludes generated MPR/MIP). Returns blob and filename (patient name + date from server). */
+  async exportCaseDicomZip(caseId: string): Promise<{ blob: Blob; filename: string }> {
+    const token = getCookie('jwt')
+    const res = await fetch(`${this.baseUrl}/api/v1/cases/${caseId}/export-dicom-zip`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Export failed' }))
+      throw new Error(err?.error || err?.message || 'Export failed')
+    }
+    const disposition = res.headers.get('Content-Disposition')
+    const match = disposition?.match(/filename="?([^"]+)"?/)
+    const filename = match?.[1]?.trim() || `export_${caseId}_${new Date().toISOString().slice(0, 10)}.zip`
+    const blob = await res.blob()
+    return { blob, filename }
+  }
+
   async getSeriesImages(seriesId: string) {
     return this.request(`/api/v1/series/${seriesId}/instances`, {
       method: 'GET',

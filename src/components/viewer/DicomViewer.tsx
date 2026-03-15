@@ -295,6 +295,7 @@ export function DicomViewer({
     undo,
     canUndo,
     mouseBindings,
+    assignToolToButton,
   } = useViewerContext();
   const viewTransform = paneViewTransform ?? globalViewTransform;
   const setViewTransform =
@@ -1483,9 +1484,11 @@ export function DicomViewer({
 
     renderAnnotations(ctx);
 
-    // Draw scout lines
+    // Draw scout lines and crosshair center (circle + square) so crosshair is visible in all planes
     if (scoutLines && scoutLines.length > 0 && currentBitmap.current) {
       const img = currentBitmap.current;
+      let vLineX: number | null = null;
+      let hLineY: number | null = null;
       scoutLines.forEach((sl) => {
         const isVertical = sl.orientation === "vertical";
         ctx.save();
@@ -1496,6 +1499,7 @@ export function DicomViewer({
 
         if (isVertical) {
           const x = -img.width / 2 + sl.ratio * img.width;
+          vLineX = x;
           ctx.moveTo(x, -img.height / 2);
           ctx.lineTo(x, img.height / 2);
           ctx.stroke();
@@ -1507,6 +1511,7 @@ export function DicomViewer({
           }
         } else {
           const y = -img.height / 2 + sl.ratio * img.height;
+          hLineY = y;
           ctx.moveTo(-img.width / 2, y);
           ctx.lineTo(img.width / 2, y);
           ctx.stroke();
@@ -1519,6 +1524,23 @@ export function DicomViewer({
         }
         ctx.restore();
       });
+      // Center crosshair: circle + square (matches 2D MPR / 3D MPR behavior)
+      if (vLineX !== null && hLineY !== null) {
+        const scale = viewTransform.scale;
+        ctx.save();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2 / scale;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(vLineX, hLineY, 12 / scale, 0, 2 * Math.PI);
+        ctx.stroke();
+        const sq = 4 / scale;
+        ctx.fillStyle = "#ffffff";
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(vLineX - sq, hLineY - sq, sq * 2, sq * 2);
+        ctx.strokeRect(vLineX - sq, hLineY - sq, sq * 2, sq * 2);
+        ctx.restore();
+      }
     }
 
     ctx.restore();
@@ -2024,14 +2046,13 @@ export function DicomViewer({
       const boundTool = mouseBindings[button];
       const tool = boundTool ?? activeTool;
 
-      // Ignore middle/right click if no tool is bound (allow default context menu)
+      // No tool bound to middle/right → let the browser handle it (context menu, etc.)
       if ((button === 1 || button === 2) && !boundTool) {
         return;
       }
 
       if (button === 2) {
-        // If the right button is bound to a tool, suppress the context menu.
-        suppressContextMenuRef.current = Boolean(boundTool);
+        suppressContextMenuRef.current = true;
       }
 
       activeMouseButtonRef.current = button;
@@ -2819,7 +2840,6 @@ export function DicomViewer({
     }
   }, []);
 
-  // Suppress Radix ContextMenu when the right button is bound to a tool.
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if (suppressContextMenuRef.current) {
       e.preventDefault();
@@ -3217,7 +3237,7 @@ export function DicomViewer({
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48 bg-gray-900 border-gray-700 text-gray-200">
         <ContextMenuItem
-          onClick={() => setActiveTool("Stack")}
+          onClick={() => assignToolToButton(0, "Stack")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Layers size={16} />
@@ -3225,7 +3245,7 @@ export function DicomViewer({
           {activeTool === "Stack" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("Zoom")}
+          onClick={() => assignToolToButton(0, "Zoom")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <ZoomIn size={16} />
@@ -3233,7 +3253,7 @@ export function DicomViewer({
           {activeTool === "Zoom" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("Contrast")}
+          onClick={() => assignToolToButton(0, "Contrast")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Contrast size={16} />
@@ -3241,7 +3261,7 @@ export function DicomViewer({
           {activeTool === "Contrast" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("Pan")}
+          onClick={() => assignToolToButton(0, "Pan")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Move size={16} />
@@ -3249,7 +3269,7 @@ export function DicomViewer({
           {activeTool === "Pan" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("HU")}
+          onClick={() => assignToolToButton(0, "HU")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Crosshair size={16} />
@@ -3257,7 +3277,7 @@ export function DicomViewer({
           {activeTool === "HU" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("FreeRotate")}
+          onClick={() => assignToolToButton(0, "FreeRotate")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <RotateCw size={16} />
@@ -3266,7 +3286,7 @@ export function DicomViewer({
         </ContextMenuItem>
         <ContextMenuSeparator className="bg-gray-700" />
         <ContextMenuItem
-          onClick={() => setActiveTool("Length")}
+          onClick={() => assignToolToButton(0, "Length")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Ruler size={16} />
@@ -3274,7 +3294,7 @@ export function DicomViewer({
           {activeTool === "Length" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("Ellipse")}
+          onClick={() => assignToolToButton(0, "Ellipse")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Circle size={16} />
@@ -3282,7 +3302,7 @@ export function DicomViewer({
           {activeTool === "Ellipse" && <span className="ml-auto text-blue-400 text-xs">●</span>}
         </ContextMenuItem>
         <ContextMenuItem
-          onClick={() => setActiveTool("SpineLabeling")}
+          onClick={() => assignToolToButton(0, "SpineLabeling")}
           className="gap-2 focus:bg-gray-800 focus:text-white cursor-pointer"
         >
           <Ruler size={16} />

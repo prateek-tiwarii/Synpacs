@@ -12,8 +12,6 @@ import {
   FlipVertical,
   Maximize2,
   Download,
-  Share2,
-  Printer,
   Undo2,
   Redo2,
   Pencil,
@@ -36,6 +34,8 @@ import {
   ChevronDown,
   ScanLine,
   Copy,
+  RectangleVertical,
+  RectangleHorizontal,
 } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -72,9 +72,10 @@ interface ToolButtonProps {
   label: string;
   active?: boolean;
   onClick?: () => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
   disabled?: boolean;
   description?: string;
-  isToggle?: boolean; // Toggle style: no bg, dull when off
+  isToggle?: boolean;
 }
 
 const ToolButton = ({
@@ -82,6 +83,7 @@ const ToolButton = ({
   label,
   active = false,
   onClick,
+  onMouseDown,
   disabled = false,
   description,
   isToggle = false,
@@ -91,12 +93,10 @@ const ToolButton = ({
       return "opacity-30 cursor-not-allowed text-gray-500";
     }
     if (isToggle) {
-      // Toggle style: no background, just dull when inactive
       return active
         ? "text-white hover:bg-gray-700/50"
         : "text-gray-500 opacity-50 hover:opacity-75";
     }
-    // Default style: blue bg when active
     return active
       ? "bg-blue-600 text-white"
       : "text-gray-300 hover:bg-gray-700";
@@ -107,6 +107,8 @@ const ToolButton = ({
       <TooltipTrigger asChild>
         <button
           onClick={disabled ? undefined : onClick}
+          onMouseDown={disabled ? undefined : onMouseDown}
+          onContextMenu={onMouseDown ? (e) => e.preventDefault() : undefined}
           disabled={disabled}
           className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${getButtonClass()}`}
         >
@@ -129,10 +131,11 @@ const ToolButton = ({
 const ToolDivider = () => <div className="w-px h-10 bg-gray-600 mx-1" />;
 
 import {
-  DEFAULT_MINI_MIP_INTENSITY,
   DEFAULT_MIP_INTENSITY,
+  getPaneScale,
   useViewerContext,
 } from "../ViewerLayout";
+import { apiService } from "@/lib/api";
 import type { MPRMode, ViewerTool, MouseButton, MouseButtonBindings } from "../ViewerLayout";
 
 const VIEWER_TOOL_IDS = new Set<string>([
@@ -152,44 +155,27 @@ const MOUSE_BUTTON_LABELS: { button: MouseButton; label: string; color: string }
 const getMouseButtonsForTool = (toolId: ViewerTool) =>
   toolId === "SpineLabeling" ? [] : MOUSE_BUTTON_LABELS;
 
-const MouseBindingBar = memo(({ toolId, mouseBindings, onToggle }: {
+const MouseBindingBar = memo(({ toolId, mouseBindings }: {
   toolId: ViewerTool;
   mouseBindings: MouseButtonBindings;
-  onToggle: (button: MouseButton, tool: ViewerTool) => void;
 }) => {
   const buttons = getMouseButtonsForTool(toolId);
+  if (buttons.length === 0) return null;
 
-  if (buttons.length === 0) {
-    return null;
-  }
+  const boundButtons = buttons.filter(({ button }) => mouseBindings[button] === toolId);
+  if (boundButtons.length === 0) return null;
 
   return (
-    <div
-      className="flex w-full justify-center gap-[2px] px-1 mt-0.5"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {buttons.map(({ button, label, color }) => {
-        const isActive = mouseBindings[button] === toolId;
-        return (
-          <button
-            key={button}
-            type="button"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onToggle(button, toolId);
-            }}
-            className={`h-[10px] flex-1 rounded-sm transition-colors cursor-pointer text-[6px] leading-[10px] font-bold select-none ${
-              isActive
-                ? `${color} text-gray-900`
-                : "bg-gray-700/60 hover:bg-gray-500 text-gray-500"
-            }`}
-            title={`Assign ${label === "L" ? "Left" : label === "M" ? "Middle" : "Right"} click → ${toolId}`}
-          >
-            {label}
-          </button>
-        );
-      })}
+    <div className="flex w-full justify-center gap-[2px] px-1 mt-0.5">
+      {boundButtons.map(({ button, label, color }) => (
+        <span
+          key={button}
+          className={`h-[10px] flex-1 rounded-sm text-[6px] leading-[10px] font-bold select-none text-center ${color} text-gray-900`}
+          title={`${label === "L" ? "Left" : label === "M" ? "Middle" : "Right"} click → ${toolId}`}
+        >
+          {label}
+        </span>
+      ))}
     </div>
   );
 });
@@ -199,18 +185,16 @@ import { buildGridLayoutId, parseGridLayout } from "@/lib/gridLayout";
 const LAYOUT_PICKER_MAX_ROWS = 5;
 const LAYOUT_PICKER_MAX_COLS = 5;
 
-// MPR mode options
-const MPR_MODES: {
+// MPR dropdown: only 2D MPR and 3D MPR (Axial/Coronal/Sagittal are separate toolbar buttons).
+// Sole difference: 2D = orthogonal planes only; 3D = allows oblique plane rotation (user can rotate slice angle freely).
+const MPR_DROPDOWN_MODES: {
   id: MPRMode;
   label: string;
   description: string;
 }[] = [
-    { id: "Axial", label: "Axial", description: "Top-down view" },
-    { id: "Coronal", label: "Coronal", description: "Front-to-back view" },
-    { id: "Sagittal", label: "Sagittal", description: "Side view" },
-    { id: "2D-MPR", label: "2D MPR", description: "Three linked views" },
-    { id: "3D-MPR", label: "3D MPR", description: "Oblique plane" },
-  ];
+  { id: "2D-MPR", label: "2D MPR", description: "Orthogonal planes only (Axial, Coronal, Sagittal)" },
+  { id: "3D-MPR", label: "3D MPR", description: "Free oblique plane rotation" },
+];
 
 const ViewerHeader = () => {
   const {
@@ -228,19 +212,21 @@ const ViewerHeader = () => {
     saveToHistory,
     gridLayout,
     setGridLayout,
+    paneStates,
     setPaneStates,
+    activePaneIndex,
+    setActivePaneSeries,
     temporaryMPRSeries,
     selectedTemporarySeriesId,
     setSelectedTemporarySeriesId,
     selectedSeries,
     requestMPRGeneration,
+    pendingMPRGeneration,
     showOverlays,
     setShowOverlays,
     shortcuts,
     stackSpeed,
     setStackSpeed,
-    miniMIPIntensity,
-    setMiniMIPIntensity,
     mipIntensity,
     setMIPIntensity,
     showScoutLine,
@@ -249,17 +235,27 @@ const ViewerHeader = () => {
     setIsVRTActive,
     is2DMPRActive,
     setIs2DMPRActive,
+    mprLayoutPreset,
+    setMprLayoutPreset,
     mouseBindings,
     setMouseBinding,
+    assignToolToButton,
   } = useViewerContext();
 
-  const toggleMouseBinding = useCallback((button: MouseButton, tool: ViewerTool) => {
-    if (mouseBindings[button] === tool) {
-      setMouseBinding(button, null);
-    } else {
-      setMouseBinding(button, tool);
+  const handleExportDicomZip = useCallback(async () => {
+    if (!caseData?._id) {
+      toast.error("No case loaded to export");
+      return;
     }
-  }, [mouseBindings, setMouseBinding]);
+    try {
+      toast.loading("Preparing DICOM ZIP…", { id: "export-dicom" });
+      const { blob, filename } = await apiService.exportCaseDicomZip(caseData._id);
+      apiService.downloadBlob(blob, filename);
+      toast.success("Download started", { id: "export-dicom" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed", { id: "export-dicom" });
+    }
+  }, [caseData?._id]);
 
   const handleCopyCurrentFrame = useCallback(async () => {
     const activeCanvas =
@@ -300,8 +296,7 @@ const ViewerHeader = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
-  const [isMiniMIPMenuOpen, setIsMiniMIPMenuOpen] = useState(false);
-  const [isMIPMenuOpen, setIsMIPMenuOpen] = useState(false);
+  const [isProjectionMenuOpen, setIsProjectionMenuOpen] = useState(false);
   const [layoutHover, setLayoutHover] = useState<{
     rows: number;
     cols: number;
@@ -369,11 +364,41 @@ const ViewerHeader = () => {
     saveToHistory();
   };
 
+  const handleMPROrientation = useCallback(
+    (mode: "Axial" | "Coronal" | "Sagittal") => {
+      const existingTempSeries = temporaryMPRSeries.find(
+        (ts) => ts.sourceSeriesId === selectedSeries?._id && ts.mprMode === mode,
+      );
+      const activePaneSeriesId = paneStates[activePaneIndex]?.seriesId ?? null;
+      const isActivePaneAlreadyThis =
+        existingTempSeries && activePaneSeriesId === existingTempSeries.id;
+      if (isActivePaneAlreadyThis) {
+        toast(`This pane is already in ${mode} orientation`);
+        return;
+      }
+      if (existingTempSeries) {
+        setSelectedTemporarySeriesId(existingTempSeries.id);
+        setActivePaneSeries(existingTempSeries.id);
+      } else {
+        requestMPRGeneration(mode);
+      }
+    },
+    [
+      temporaryMPRSeries,
+      selectedSeries?._id,
+      paneStates,
+      activePaneIndex,
+      setSelectedTemporarySeriesId,
+      setActivePaneSeries,
+      requestMPRGeneration,
+    ],
+  );
+
   const handleReset = () => {
     setViewTransform({
       x: 0,
       y: 0,
-      scale: 1.2,
+      scale: getPaneScale(1),
       rotation: 0,
       flipH: false,
       flipV: false,
@@ -394,7 +419,7 @@ const ViewerHeader = () => {
         viewTransform: {
           x: 0,
           y: 0,
-          scale: 0.65,
+          scale: getPaneScale(1),
           rotation: 0,
           flipH: false,
           flipV: false,
@@ -432,7 +457,11 @@ const ViewerHeader = () => {
         return;
       }
 
-      const shortcut = shortcuts.find((s) => s.key === e.key);
+      // Match shortcut key case-insensitively so "S" and "s" both work
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const shortcut = shortcuts.find(
+        (s) => (s.key.length === 1 ? s.key.toLowerCase() : s.key) === key,
+      );
       if (shortcut) {
         e.preventDefault();
 
@@ -444,18 +473,18 @@ const ViewerHeader = () => {
           case "Window5": applyPreset(CT_PRESETS[4]); break;
           case "Window6": applyPreset(CT_PRESETS[5]); break;
           case "Window7": applyPreset(CT_PRESETS[6]); break;
-          case "ToolLine": setActiveTool("Length"); break;
-          case "ToolDistance": setActiveTool("Length"); break;
-          case "ToolAngle": setActiveTool("Angle"); break;
-          case "ToolEllipse": setActiveTool("Ellipse"); break;
-          case "ToolCircle": setActiveTool("Ellipse"); break;
-          case "ToolFreehand": setActiveTool("Freehand"); break;
-          case "ToolHU": setActiveTool("HU"); break;
-          case "ToolSpineLabeling": setActiveTool("SpineLabeling"); break;
-          case "NavZoom": setActiveTool("Zoom"); break;
-          case "NavPan": setActiveTool("Pan"); break;
-          case "NavScroll": setActiveTool("Stack"); break;
-          case "NavContrast": setActiveTool("Contrast"); break;
+          case "ToolLine": assignToolToButton(0, "Length"); break;
+          case "ToolDistance": assignToolToButton(0, "Length"); break;
+          case "ToolAngle": assignToolToButton(0, "Angle"); break;
+          case "ToolEllipse": assignToolToButton(0, "Ellipse"); break;
+          case "ToolCircle": assignToolToButton(0, "Ellipse"); break;
+          case "ToolFreehand": assignToolToButton(0, "Freehand"); break;
+          case "ToolHU": assignToolToButton(0, "HU"); break;
+          case "ToolSpineLabeling": assignToolToButton(0, "SpineLabeling"); break;
+          case "NavZoom": assignToolToButton(0, "Zoom"); break;
+          case "NavPan": assignToolToButton(0, "Pan"); break;
+          case "NavScroll": assignToolToButton(0, "Stack"); break;
+          case "NavContrast": assignToolToButton(0, "Contrast"); break;
           case "NavReset": handleReset(); break;
           case "TransRotateCW": handleRotateCw(); break;
           case "TransRotateCCW": handleRotateCcw(); break;
@@ -469,7 +498,7 @@ const ViewerHeader = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     shortcuts,
-    setActiveTool,
+    assignToolToButton,
     handleReset,
     handleRotateCw,
     handleRotateCcw,
@@ -548,7 +577,7 @@ const ViewerHeader = () => {
         category: "Tools",
         type: "action",
         onClick: () =>
-          setViewTransform((prev) => ({ ...prev, x: 0, y: 0, scale: 1.2 })),
+          setViewTransform((prev) => ({ ...prev, x: 0, y: 0, scale: getPaneScale(1) })),
         description: "Reset zoom to fit container",
       },
       {
@@ -586,28 +615,47 @@ const ViewerHeader = () => {
         description: "Change the grid layout (e.g., 2x3, 4x4)",
       },
       {
+        id: "MPR-Axial",
+        label: "Axial",
+        icon: <Circle size={18} />,
+        category: "Tools",
+        type: "action",
+        onClick: () => handleMPROrientation("Axial"),
+        description: "Top-down view (MPR)",
+      },
+      {
+        id: "MPR-Coronal",
+        label: "Coronal",
+        icon: <RectangleVertical size={18} />,
+        category: "Tools",
+        type: "action",
+        onClick: () => handleMPROrientation("Coronal"),
+        description: "Front-to-back view (MPR)",
+      },
+      {
+        id: "MPR-Sagittal",
+        label: "Sagittal",
+        icon: <RectangleHorizontal size={18} />,
+        category: "Tools",
+        type: "action",
+        onClick: () => handleMPROrientation("Sagittal"),
+        description: "Side view (MPR)",
+      },
+      {
         id: "MPR",
         label: "MPR",
         icon: <Box size={18} />,
         category: "Tools",
         type: "dropdown",
-        description: "Generate Multi-Planar Reconstruction views",
+        description: "2D MPR (orthogonal planes only) or 3D MPR (free oblique rotation)",
       },
       {
-        id: "MiniMIP",
-        label: "MiniMIP",
-        icon: <Layers size={18} />,
-        category: "Tools",
-        type: "dropdown",
-        description: "Thin-slab MIP with adjustable intensity",
-      },
-      {
-        id: "MIP",
-        label: "MIP",
+        id: "Projection",
+        label: "Projection",
         icon: <ScanLine size={18} />,
         category: "Tools",
         type: "dropdown",
-        description: "Thick-slab MIP with adjustable intensity",
+        description: "MIP / MiniMIP intensity projection — slab thickness control",
       },
       {
         id: "SpineLabeling",
@@ -778,6 +826,7 @@ const ViewerHeader = () => {
       handleInvert,
       viewTransform.invert,
       handleReset,
+      handleMPROrientation,
       setViewTransform,
       showOverlays,
       setShowOverlays,
@@ -790,11 +839,20 @@ const ViewerHeader = () => {
   const handleToolClick = (tool: ViewerToolConfigItem) => {
     if (tool.disabled) return;
     if (tool.type === "tool") {
-      setActiveTool(tool.id);
+      // Assign tool to LEFT so highlight and actual binding stay in sync
+      assignToolToButton(0, tool.id);
     } else if (tool.onClick) {
       tool.onClick();
     }
   };
+
+  const handleToolMouseDown = useCallback((e: React.MouseEvent, tool: ViewerToolConfigItem) => {
+    if (tool.disabled) return;
+    if (tool.type !== "tool") return;
+    e.preventDefault();
+    const button = e.button as MouseButton;
+    assignToolToButton(button, tool.id);
+  }, [assignToolToButton]);
 
   const toggleFavourite = (toolId: string) => {
     setFavourites((prev) =>
@@ -804,84 +862,61 @@ const ViewerHeader = () => {
     );
   };
 
-  type ProjectionMode = "MiniMIP" | "MIP";
+  type ProjectionModeType = "none" | "MIP" | "MiniMIP";
 
-  const getProjectionIntensity = (mode: ProjectionMode) =>
-    mode === "MiniMIP" ? miniMIPIntensity : mipIntensity;
-
-  const setProjectionIntensity = (mode: ProjectionMode, value: number) => {
-    if (mode === "MiniMIP") {
-      setMiniMIPIntensity(value);
-      return;
-    }
-    setMIPIntensity(value);
-  };
-
-  const getProjectionRange = (mode: ProjectionMode) =>
-    mode === "MiniMIP"
-      ? { min: 1, max: 20, hint: "Thin slab for local vessel emphasis" }
-      : { min: 8, max: 80, hint: "Thick slab for angiographic overview" };
-
-  const getProjectionDefault = (mode: ProjectionMode) => {
-    const series = getProjectionSeries(mode);
-    const baseline =
-      series?.initialProjectionSlabHalfSize ?? series?.projectionSlabHalfSize;
-    if (typeof baseline === "number") {
-      return baseline;
-    }
-    return mode === "MiniMIP" ? DEFAULT_MINI_MIP_INTENSITY : DEFAULT_MIP_INTENSITY;
-  };
+  const activeProjectionMode: ProjectionModeType = (() => {
+    if (!selectedTemporarySeriesId) return "none";
+    const ts = temporaryMPRSeries.find((s) => s.id === selectedTemporarySeriesId);
+    if (ts?.mprMode === "MIP") return "MIP";
+    if (ts?.mprMode === "MiniMIP") return "MiniMIP";
+    return "none";
+  })();
 
   const projectionSliderBaseClassName =
     "w-full appearance-none rounded-full outline-none cursor-pointer transition-[filter] duration-150 hover:brightness-110 active:brightness-125 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.35)] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2";
 
-  const getProjectionTheme = () => ({
-    chipClassName: "text-amber-100 border-amber-400/60 bg-amber-400/20",
-    sliderClassName: `${projectionSliderBaseClassName} h-2 [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-moz-range-track]:h-2 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-webkit-slider-thumb]:bg-amber-300 [&::-webkit-slider-thumb]:border-amber-100 [&::-moz-range-thumb]:bg-amber-300 [&::-moz-range-thumb]:border-amber-100`,
-    fillColor: "#f59e0b",
-    trackColor: "#334155",
-    resetClassName: "border-amber-400/40 text-amber-200 hover:bg-amber-500/10",
-  });
+  const projectionSliderClassName = `${projectionSliderBaseClassName} h-2 [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-moz-range-track]:h-2 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-webkit-slider-thumb]:bg-amber-300 [&::-webkit-slider-thumb]:border-amber-100 [&::-moz-range-thumb]:bg-amber-300 [&::-moz-range-thumb]:border-amber-100`;
 
-  const getProjectionSeries = (mode: ProjectionMode) =>
-    selectedSeries
-      ? temporaryMPRSeries.find(
-          (ts) =>
-            ts.sourceSeriesId === selectedSeries._id && ts.mprMode === mode,
-        ) ?? null
-      : null;
+  const handleProjectionModeSelect = useCallback(
+    (mode: ProjectionModeType) => {
+      if (mode === "none") {
+        setSelectedTemporarySeriesId(null);
+        setMIPIntensity(0);
+        setViewTransform((prev) => ({
+          ...prev,
+          x: 0,
+          y: 0,
+          scale: getPaneScale(1),
+        }));
+        return;
+      }
 
-  const getProjectionSelected = (mode: ProjectionMode) => {
-    const series = getProjectionSeries(mode);
-    return !!series && series.id === selectedTemporarySeriesId;
-  };
+      const existing = selectedSeries
+        ? temporaryMPRSeries.find(
+            (ts) => ts.sourceSeriesId === selectedSeries._id && ts.mprMode === mode,
+          )
+        : null;
 
-  const getProjectionMenuOpen = (mode: ProjectionMode) =>
-    mode === "MiniMIP" ? isMiniMIPMenuOpen : isMIPMenuOpen;
+      if (mipIntensity === 0) {
+        setMIPIntensity(DEFAULT_MIP_INTENSITY);
+      }
 
-  const setProjectionMenuOpen = (mode: ProjectionMode, open: boolean) => {
-    if (mode === "MiniMIP") {
-      setIsMiniMIPMenuOpen(open);
-      return;
-    }
-    setIsMIPMenuOpen(open);
-  };
-
-  const handleProjectionMenuOpenChange = (
-    mode: ProjectionMode,
-    open: boolean,
-  ) => {
-    setProjectionMenuOpen(mode, open);
-    if (!open) return;
-
-    const projectionSeries = getProjectionSeries(mode);
-    if (projectionSeries) {
-      setSelectedTemporarySeriesId(projectionSeries.id);
-      return;
-    }
-
-    requestMPRGeneration(mode);
-  };
+      if (existing) {
+        setSelectedTemporarySeriesId(existing.id);
+      } else {
+        requestMPRGeneration(mode);
+      }
+    },
+    [
+      selectedSeries,
+      temporaryMPRSeries,
+      setSelectedTemporarySeriesId,
+      setViewTransform,
+      requestMPRGeneration,
+      mipIntensity,
+      setMIPIntensity,
+    ],
+  );
 
   const renderLayoutDropdownContent = () => (
     <DropdownMenuContent
@@ -924,60 +959,104 @@ const ViewerHeader = () => {
     </DropdownMenuContent>
   );
 
-  const renderProjectionDropdownContent = (mode: ProjectionMode) => {
-    const config = getProjectionRange(mode);
-    const intensity = getProjectionIntensity(mode);
-    const defaultIntensity = getProjectionDefault(mode);
-    const isDefault = intensity === defaultIntensity;
-    const theme = getProjectionTheme();
-    const fillPercent =
-      ((intensity - config.min) / (config.max - config.min)) * 100;
+  const isProjectionGenerating =
+    pendingMPRGeneration !== null &&
+    (pendingMPRGeneration.mode === "MIP" || pendingMPRGeneration.mode === "MiniMIP");
+
+  const renderProjectionDropdownContent = () => {
+    const slabValue = mipIntensity;
+    const fillPercent = (slabValue / 50) * 100;
+    const fillColor = "#f59e0b";
+    const trackColor = "#334155";
+    const showSlab = activeProjectionMode !== "none";
 
     return (
       <DropdownMenuContent
         align="start"
-        className="w-64 bg-gray-900 border-gray-700 text-gray-200 p-2"
+        className="w-72 bg-gray-900 border-gray-700 text-gray-200 p-3"
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <div className="flex items-center justify-between mb-2">
-          <button
-            type="button"
-            onClick={() => setProjectionIntensity(mode, defaultIntensity)}
-            disabled={isDefault}
-            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${theme.resetClassName} ${
-              isDefault ? "opacity-40 cursor-not-allowed hover:bg-transparent" : ""
-            }`}
-          >
-            Reset
-          </button>
-          <span
-            className={`text-[11px] px-1.5 py-0.5 rounded border font-medium ${theme.chipClassName}`}
-          >
-            {intensity}
-          </span>
+        <div className="text-[11px] text-gray-400 mb-2 font-medium uppercase tracking-wider">
+          Projection Mode
         </div>
-        <input
-          type="range"
-          min={config.min}
-          max={config.max}
-          step={1}
-          value={intensity}
-          onInput={(e) =>
-            setProjectionIntensity(
-              mode,
-              Number((e.target as HTMLInputElement).value),
-            )
-          }
-          onChange={(e) =>
-            setProjectionIntensity(
-              mode,
-              Number((e.target as HTMLInputElement).value),
-            )
-          }
-          style={{
-            background: `linear-gradient(90deg, ${theme.fillColor} 0%, ${theme.fillColor} ${fillPercent}%, ${theme.trackColor} ${fillPercent}%, ${theme.trackColor} 100%)`,
-          }}
-          className={theme.sliderClassName}
-        />
+        <div className="flex gap-1 mb-1">
+          {(["none", "MIP", "MiniMIP"] as const).map((mode) => {
+            const label = mode === "none" ? "Normal" : mode;
+            const isActive = activeProjectionMode === mode;
+            const isPending =
+              isProjectionGenerating && pendingMPRGeneration?.mode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                disabled={isPending}
+                onClick={() => handleProjectionModeSelect(mode)}
+                className={`flex-1 text-xs py-1.5 px-2 rounded font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                  isActive
+                    ? "bg-amber-500/90 text-gray-900"
+                    : isPending
+                    ? "bg-gray-700 text-gray-300"
+                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                }`}
+              >
+                {isPending && (
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {showSlab && (
+          <>
+            <div className="text-[11px] text-gray-400 mb-1.5 mt-3 font-medium">Slab Thickness</div>
+            <div className="flex items-center justify-between mb-1.5">
+              <button
+                type="button"
+                onClick={() => setMIPIntensity(DEFAULT_MIP_INTENSITY)}
+                disabled={slabValue === DEFAULT_MIP_INTENSITY}
+                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors border-amber-400/40 text-amber-200 hover:bg-amber-500/10 ${
+                  slabValue === DEFAULT_MIP_INTENSITY
+                    ? "opacity-40 cursor-not-allowed hover:bg-transparent"
+                    : ""
+                }`}
+              >
+                Reset
+              </button>
+              <span className="text-[11px] px-1.5 py-0.5 rounded border font-medium text-amber-100 border-amber-400/60 bg-amber-400/20">
+                {slabValue}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={50}
+              step={1}
+              value={slabValue}
+              onInput={(e) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                setMIPIntensity(v);
+              }}
+              onChange={(e) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                setMIPIntensity(v);
+              }}
+              style={{
+                background: `linear-gradient(90deg, ${fillColor} 0%, ${fillColor} ${fillPercent}%, ${trackColor} ${fillPercent}%, ${trackColor} 100%)`,
+              }}
+              className={projectionSliderClassName}
+            />
+            <div className="text-[10px] text-gray-500 mt-2">
+              {activeProjectionMode === "MIP"
+                ? "Max intensity — vessels, angiography"
+                : "Min intensity — airways, lung"}
+            </div>
+          </>
+        )}
       </DropdownMenuContent>
     );
   };
@@ -1014,7 +1093,11 @@ const ViewerHeader = () => {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
-                          onClick={() => setActiveTool(tool)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            assignToolToButton(e.button as MouseButton, tool);
+                          }}
+                          onContextMenu={(e) => e.preventDefault()}
                           className={`flex items-center gap-1 px-2 py-1.5 rounded text-xs transition-colors ${
                             activeTool === tool
                               ? "bg-blue-600 text-white"
@@ -1029,7 +1112,7 @@ const ViewerHeader = () => {
                         <p>{label}</p>
                       </TooltipContent>
                     </Tooltip>
-                    <MouseBindingBar toolId={tool} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    <MouseBindingBar toolId={tool} mouseBindings={mouseBindings} />
                   </div>
                 ))}
               </div>
@@ -1064,6 +1147,37 @@ const ViewerHeader = () => {
               </DropdownMenu>
             </div>
             <div className="flex items-center gap-2">
+              {/* Crosshair / Scout line toggle — visible in all 3 planes */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setShowScoutLine(!showScoutLine)}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded text-xs transition-colors ${
+                      showScoutLine ? "bg-green-600/80 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800"
+                    }`}
+                  >
+                    <Crosshair size={14} />
+                    <span>Crosshair</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-gray-800 border-gray-700 text-gray-200">
+                  <p>Toggle crosshair in all 3 planes</p>
+                </TooltipContent>
+              </Tooltip>
+              {/* MPR layout arrangement */}
+              <select
+                value={mprLayoutPreset}
+                onChange={(e) => setMprLayoutPreset(e.target.value as typeof mprLayoutPreset)}
+                className="bg-black/80 text-white text-xs px-2 py-1.5 rounded border border-gray-600 hover:border-gray-400 cursor-pointer outline-none focus:border-green-500"
+                title="MPR layout"
+              >
+                <option value="left-large">Left large</option>
+                <option value="right-large">Right large</option>
+                <option value="top-large">Top large</option>
+                <option value="bottom-large">Bottom large</option>
+                <option value="1x3">1×3 row</option>
+                <option value="3x1">3×1 column</option>
+              </select>
               <span className="text-xs text-gray-500">Press Escape to exit</span>
               <button
                 onClick={() => setIs2DMPRActive(false)}
@@ -1105,13 +1219,13 @@ const ViewerHeader = () => {
     <TooltipProvider>
       <header className="bg-gray-900 border-b border-gray-700">
         {/* Tab Navigation */}
-        <div className="flex items-center justify-between gap-1 px-4 border-b border-gray-800 bg-gray-900/50">
-          <div>
+        <div className="flex items-center justify-between gap-1 px-4 py-0.5 border-b border-gray-800 bg-gray-900/50">
+          <div className="flex gap-4">
             {(["Favourites", "Tools", "Measurement"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${activeTab === tab
+                className={`px-4 py-1.5 text-xs font-medium transition-colors border-b-2 -mb-px ${activeTab === tab
                   ? "text-blue-500 border-blue-500 bg-blue-500/5"
                   : "text-gray-400 border-transparent hover:text-gray-300 hover:bg-gray-800/50"
                   }`}
@@ -1146,7 +1260,7 @@ const ViewerHeader = () => {
         />
 
         {/* Toolbar Content */}
-        <div className="flex items-center gap-1 px-4 py-1 overflow-x-auto min-h-[56px]">
+        <div className="flex items-center gap-1 px-4 py-0.5 overflow-x-auto min-h-[44px]">
           {activeTab === "Tools" && (
             <div className="flex items-center gap-1">
               {AVAILABLE_TOOLS.filter((t) => t.category === "Tools").map(
@@ -1157,12 +1271,12 @@ const ViewerHeader = () => {
                       <TooltipTrigger asChild>
                         <DropdownMenu
                           onOpenChange={(open) => {
-                            if (open) setActiveTool("Stack");
+                            if (open) assignToolToButton(0, "Stack");
                           }}
                         >
                           <DropdownMenuTrigger asChild>
                             <button
-                              onClick={() => setActiveTool("Stack")}
+                              onClick={() => assignToolToButton(0, "Stack")}
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
                                 activeTool === "Stack"
                                   ? "bg-blue-600 text-white"
@@ -1208,7 +1322,7 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
-                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} />
                     </div>
                   ) : tool.type === "dropdown" && tool.id === "Presets" ? (
                     <Tooltip key={tool.id}>
@@ -1338,9 +1452,9 @@ const ViewerHeader = () => {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator className="bg-gray-800" />
                             <DropdownMenuLabel className="text-gray-400 text-xs px-3 py-1.5">
-                              MPR Modes
+                              MPR (2D or 3D only)
                             </DropdownMenuLabel>
-                            {MPR_MODES.map((mode) => {
+                            {MPR_DROPDOWN_MODES.map((mode) => {
                               const existingTempSeries = temporaryMPRSeries.find(
                                 (ts) =>
                                   ts.sourceSeriesId === selectedSeries?._id &&
@@ -1394,36 +1508,31 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
-                  ) : tool.type === "dropdown" &&
-                    (tool.id === "MiniMIP" || tool.id === "MIP") ? (
+                  ) : tool.type === "dropdown" && tool.id === "Projection" ? (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
                         <DropdownMenu
-                          open={getProjectionMenuOpen(tool.id as ProjectionMode)}
-                          onOpenChange={(open) =>
-                            handleProjectionMenuOpenChange(
-                              tool.id as ProjectionMode,
-                              open,
-                            )
-                          }
+                          open={isProjectionMenuOpen}
+                          onOpenChange={setIsProjectionMenuOpen}
                         >
                           <DropdownMenuTrigger asChild>
                             <button
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
-                                getProjectionSelected(tool.id as ProjectionMode)
-                                  ? "bg-blue-600 text-white"
+                                activeProjectionMode !== "none"
+                                  ? "bg-amber-600 text-white"
                                   : "text-gray-300 hover:bg-gray-700"
                               }`}
                             >
-                              {tool.icon}
+                              <div className="flex items-center gap-0.5">
+                                {tool.icon}
+                                <ChevronDown size={12} className="opacity-60" />
+                              </div>
                               <span className="text-[10px] mt-1 whitespace-nowrap">
-                                {tool.label}
+                                {activeProjectionMode === "none" ? "Projection" : activeProjectionMode}
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          {renderProjectionDropdownContent(
-                            tool.id as ProjectionMode,
-                          )}
+                          {renderProjectionDropdownContent()}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (
@@ -1444,9 +1553,10 @@ const ViewerHeader = () => {
                         disabled={tool.disabled}
                         description={tool.description}
                         onClick={() => handleToolClick(tool)}
+                        onMouseDown={(e) => handleToolMouseDown(e, tool)}
                         isToggle={tool.isToggle}
                       />
-                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} />
                     </div>
                   ) : (
                     <ToolButton
@@ -1457,6 +1567,7 @@ const ViewerHeader = () => {
                       disabled={tool.disabled}
                       description={tool.description}
                       onClick={() => handleToolClick(tool)}
+                      onMouseDown={(e) => handleToolMouseDown(e, tool)}
                       isToggle={tool.isToggle}
                     />
                   ),
@@ -1476,10 +1587,11 @@ const ViewerHeader = () => {
                       disabled={!!tool.disabled}
                       description={tool.description}
                       onClick={() => handleToolClick(tool)}
+                      onMouseDown={(e) => handleToolMouseDown(e, tool)}
                       isToggle={tool.isToggle}
                     />
                     {isBindableTool(tool.id) && (
-                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} />
                     )}
                   </div>
                 ),
@@ -1499,12 +1611,12 @@ const ViewerHeader = () => {
                       <TooltipTrigger asChild>
                         <DropdownMenu
                           onOpenChange={(open) => {
-                            if (open) setActiveTool("Stack");
+                            if (open) assignToolToButton(0, "Stack");
                           }}
                         >
                           <DropdownMenuTrigger asChild>
                             <button
-                              onClick={() => setActiveTool("Stack")}
+                              onClick={() => assignToolToButton(0, "Stack")}
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
                                 activeTool === "Stack"
                                   ? "bg-blue-600 text-white"
@@ -1550,7 +1662,7 @@ const ViewerHeader = () => {
                         </TooltipContent>
                       )}
                     </Tooltip>
-                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                    <MouseBindingBar toolId="Stack" mouseBindings={mouseBindings} />
                     </div>
                   );
                 }
@@ -1689,9 +1801,9 @@ const ViewerHeader = () => {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator className="bg-gray-800" />
                             <DropdownMenuLabel className="text-gray-400 text-xs px-3 py-1.5">
-                              MPR Modes
+                              MPR (2D or 3D only)
                             </DropdownMenuLabel>
-                            {MPR_MODES.map((mode) => {
+                            {MPR_DROPDOWN_MODES.map((mode) => {
                               const existingTempSeries = temporaryMPRSeries.find(
                                 (ts) =>
                                   ts.sourceSeriesId === selectedSeries?._id &&
@@ -1747,35 +1859,32 @@ const ViewerHeader = () => {
                     </Tooltip>
                   );
                 }
-                if (
-                  tool.type === "dropdown" &&
-                  (tool.id === "MiniMIP" || tool.id === "MIP")
-                ) {
-                  const projectionMode = tool.id as ProjectionMode;
+                if (tool.type === "dropdown" && tool.id === "Projection") {
                   return (
                     <Tooltip key={tool.id}>
                       <TooltipTrigger asChild>
                         <DropdownMenu
-                          open={getProjectionMenuOpen(projectionMode)}
-                          onOpenChange={(open) =>
-                            handleProjectionMenuOpenChange(projectionMode, open)
-                          }
+                          open={isProjectionMenuOpen}
+                          onOpenChange={setIsProjectionMenuOpen}
                         >
                           <DropdownMenuTrigger asChild>
                             <button
                               className={`flex flex-col items-center justify-center p-2 rounded transition-colors min-w-[48px] ${
-                                getProjectionSelected(projectionMode)
-                                  ? "bg-blue-600 text-white"
+                                activeProjectionMode !== "none"
+                                  ? "bg-amber-600 text-white"
                                   : "text-gray-300 hover:bg-gray-700"
                               }`}
                             >
-                              {tool.icon}
+                              <div className="flex items-center gap-0.5">
+                                {tool.icon}
+                                <ChevronDown size={12} className="opacity-60" />
+                              </div>
                               <span className="text-[10px] mt-1 whitespace-nowrap">
-                                {tool.label}
+                                {activeProjectionMode === "none" ? "Projection" : activeProjectionMode}
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          {renderProjectionDropdownContent(projectionMode)}
+                          {renderProjectionDropdownContent()}
                         </DropdownMenu>
                       </TooltipTrigger>
                       {tool.description && (
@@ -1799,9 +1908,10 @@ const ViewerHeader = () => {
                         disabled={!!tool.disabled}
                         description={tool.description}
                         onClick={() => handleToolClick(tool)}
+                        onMouseDown={(e) => handleToolMouseDown(e, tool)}
                         isToggle={tool.isToggle}
                       />
-                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} onToggle={toggleMouseBinding} />
+                      <MouseBindingBar toolId={tool.id} mouseBindings={mouseBindings} />
                     </div>
                   );
                 }
@@ -1814,6 +1924,7 @@ const ViewerHeader = () => {
                     disabled={!!tool.disabled}
                     description={tool.description}
                     onClick={() => handleToolClick(tool)}
+                    onMouseDown={(e) => handleToolMouseDown(e, tool)}
                     isToggle={tool.isToggle}
                   />
                 );
@@ -1928,9 +2039,12 @@ const ViewerHeader = () => {
               description="Copy current frame to clipboard (PNG)"
               onClick={handleCopyCurrentFrame}
             />
-            <ToolButton icon={<Download size={18} />} label="Export" description="Download image as DICOM, JPEG or BMP" />
-            <ToolButton icon={<Printer size={18} />} label="Print" description="Print the current view" />
-            <ToolButton icon={<Share2 size={18} />} label="Share" description="Share the case with other users" />
+            <ToolButton
+              icon={<Download size={18} />}
+              label="Export"
+              description="Download case as DICOM ZIP (original images only; excludes MPR/MIP)"
+              onClick={handleExportDicomZip}
+            />
           </div>
         </div>
       </header>

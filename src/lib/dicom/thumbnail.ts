@@ -206,25 +206,21 @@ export async function generateDicomInstanceThumbnail(
   }
   sourceCtx.putImageData(new ImageData(rgbaData, columns, rows), 0, 0);
 
+  const aspect = columns / rows;
+  const targetW = aspect >= 1 ? size : Math.round(size * aspect);
+  const targetH = aspect >= 1 ? Math.round(size / aspect) : size;
+
   const targetCanvas = document.createElement("canvas");
-  targetCanvas.width = size;
-  targetCanvas.height = size;
+  targetCanvas.width = targetW;
+  targetCanvas.height = targetH;
   const targetCtx = targetCanvas.getContext("2d");
   if (!targetCtx) {
     throw new Error("Failed to create thumbnail target context");
   }
 
-  targetCtx.fillStyle = "#111827";
-  targetCtx.fillRect(0, 0, size, size);
+  targetCtx.imageSmoothingEnabled = true;
+  targetCtx.imageSmoothingQuality = "high";
+  targetCtx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
 
-  const scale = Math.min(size / columns, size / rows);
-  const drawWidth = columns * scale;
-  const drawHeight = rows * scale;
-  const offsetX = (size - drawWidth) / 2;
-  const offsetY = (size - drawHeight) / 2;
-
-  targetCtx.imageSmoothingEnabled = false;
-  targetCtx.drawImage(sourceCanvas, offsetX, offsetY, drawWidth, drawHeight);
-
-  return targetCanvas.toDataURL("image/jpeg", 0.8);
+  return targetCanvas.toDataURL("image/jpeg", 0.85);
 }
