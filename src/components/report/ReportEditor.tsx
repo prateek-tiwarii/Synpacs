@@ -161,6 +161,7 @@ interface ReportEditorProps {
     initialContent?: string;
     onChange?: (content: string) => void;
     placeholder?: string;
+    readOnly?: boolean;
 }
 
 // Inner editor component that has access to the Lexical context
@@ -168,11 +169,16 @@ interface EditorCoreProps {
     initialContent?: string;
     onChange?: (content: string) => void;
     placeholder?: string;
+    readOnly?: boolean;
 }
 
 const EditorCore = forwardRef<ReportEditorRef, EditorCoreProps>(
-    ({ initialContent = '', onChange, placeholder = 'Start typing your report...' }, ref) => {
+    ({ initialContent = '', onChange, placeholder = 'Start typing your report...', readOnly = false }, ref) => {
         const [editor] = useLexicalComposerContext();
+
+        useEffect(() => {
+            editor.setEditable(!readOnly);
+        }, [editor, readOnly]);
 
         const handleChange = useCallback(
             (editorState: EditorState, _editor: LexicalEditor) => {
@@ -229,7 +235,7 @@ const EditorCore = forwardRef<ReportEditorRef, EditorCoreProps>(
 
         return (
             <>
-                <ToolbarPlugin />
+                <ToolbarPlugin readOnly={readOnly} />
                 <SetContentPlugin content={initialContent} />
                 <OnChangePlugin onChange={handleChange} />
                 <HistoryPlugin />
@@ -268,7 +274,7 @@ EditorCore.displayName = 'EditorCore';
 
 // Main ReportEditor component
 export const ReportEditor = forwardRef<ReportEditorRef, ReportEditorProps>(
-    ({ initialContent = '', onChange, placeholder }, ref) => {
+    ({ initialContent = '', onChange, placeholder, readOnly = false }, ref) => {
         const editorConfig = getEditorConfig('ReportEditor');
 
         return (
@@ -279,6 +285,7 @@ export const ReportEditor = forwardRef<ReportEditorRef, ReportEditorProps>(
                         initialContent={initialContent}
                         onChange={onChange}
                         placeholder={placeholder}
+                        readOnly={readOnly}
                     />
                 </div>
             </LexicalComposer>

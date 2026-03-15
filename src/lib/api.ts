@@ -400,6 +400,12 @@ class ApiService {
     })
   }
 
+  async getReportsByCaseAll(caseId: string) {
+    return this.request(`/api/v1/reports/case/${caseId}/all`, {
+      method: 'GET',
+    })
+  }
+
   async getReportById(reportId: string) {
     return this.request(`/api/v1/reports/${reportId}`, {
       method: 'GET',
@@ -409,6 +415,24 @@ class ApiService {
   async getReportsByPatient(patientId: string) {
     return this.request(`/api/v1/reports/patient/${patientId}`, {
       method: 'GET',
+    })
+  }
+
+  async signOffReport(reportId: string) {
+    return this.request(`/api/v1/reports/${reportId}/signoff`, {
+      method: 'PUT',
+    })
+  }
+
+  async addAddendum(reportId: string, addendumData: {
+    addendum_text: string;
+    content?: Record<string, any>;
+    content_html?: string;
+    content_plain_text?: string;
+  }) {
+    return this.request(`/api/v1/reports/${reportId}/addendum`, {
+      method: 'POST',
+      body: JSON.stringify(addendumData),
     })
   }
 

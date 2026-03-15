@@ -13,6 +13,7 @@ import { apiService } from '@/lib/api';
 interface PatientDetailsProps {
     patientName: string;
     patientId: string;
+    patientLookupId?: string;
     age: string;
     sex: string;
     referredBy: string;
@@ -78,6 +79,7 @@ function LoadReportModal({ isOpen, onClose, onReplace, onAppend, studyName }: Lo
 export function PatientDetailsSection({ 
     patientName, 
     patientId, 
+    patientLookupId,
     age, 
     sex, 
     referredBy, 
@@ -93,12 +95,12 @@ export function PatientDetailsSection({
 
     useEffect(() => {
         const fetchPreviousStudies = async () => {
-            if (!patientId || patientId === 'N/A') return;
+            const lookupId = patientLookupId || patientId;
+            if (!lookupId || lookupId === 'N/A') return;
             
             try {
                 setLoading(true);
-                // This API endpoint needs to be implemented in the backend
-                const response: any = await apiService.request(`/api/v1/reports/patient/${patientId}`, {
+                const response: any = await apiService.request(`/api/v1/reports/patient/${lookupId}`, {
                     method: 'GET',
                 });
                 
@@ -117,13 +119,39 @@ export function PatientDetailsSection({
         };
 
         fetchPreviousStudies();
-    }, [patientId]);
+    }, [patientId, patientLookupId]);
 
     const handleOpenPdf = async (reportId: string) => {
         try {
-            await apiService.downloadReport(reportId);
-            // PDF download is handled by the API
-            console.log('PDF download initiated for report:', reportId);
+            const response: any = await apiService.downloadReport(reportId);
+            if (!response?.success || !response?.data?.report) {
+                throw new Error('Failed to load report preview');
+            }
+
+            const report = response.data.report;
+            const html = report.content_html || `<pre>${report.content_plain_text || ''}</pre>`;
+            const previewWindow = window.open('', '_blank', 'noopener,noreferrer');
+
+            if (!previewWindow) {
+                throw new Error('Popup blocked. Please allow popups for report preview.');
+            }
+
+            previewWindow.document.write(`
+                <!doctype html>
+                <html>
+                  <head>
+                    <title>Report Preview</title>
+                    <style>
+                      body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.45; color: #111; }
+                      .container { max-width: 900px; margin: 0 auto; }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="container">${html}</div>
+                  </body>
+                </html>
+            `);
+            previewWindow.document.close();
         } catch (error) {
             console.error('Failed to open PDF:', error);
         }

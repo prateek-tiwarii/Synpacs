@@ -184,7 +184,19 @@ export function ReportLayout() {
                 const response = await apiService.getReportByCase(id) as { success: boolean; data: ReportData };
                 if (response.success && response.data) {
                     setReportData(response.data);
-                    setCaseData(response.data.case_id || null);
+                    const reportCase = response.data.case_id;
+                    // Backend often returns case_id unpopulated (just id), so we need full case for Patient Details sidebar
+                    const hasFullCase = reportCase && typeof reportCase === 'object' && (reportCase as CaseData).patient != null;
+                    if (hasFullCase) {
+                        setCaseData(reportCase as CaseData);
+                    } else {
+                        const caseResponse = await apiService.getCaseById(id) as { success?: boolean; data?: CaseData };
+                        if (caseResponse.success && caseResponse.data) {
+                            setCaseData(caseResponse.data);
+                        } else {
+                            setCaseData(reportCase as CaseData || null);
+                        }
+                    }
                 }
             } catch (err: any) {
                 // If report not found (404), fetch case data instead to allow creating a new report

@@ -69,7 +69,11 @@ const FONT_FAMILIES = [
     'Calibri',
 ];
 
-export function ToolbarPlugin() {
+interface ToolbarPluginProps {
+    readOnly?: boolean;
+}
+
+export function ToolbarPlugin({ readOnly = false }: ToolbarPluginProps) {
     const [editor] = useLexicalComposerContext();
     const [isBold, setIsBold] = useState(false);
     const [isItalic, setIsItalic] = useState(false);
@@ -126,6 +130,7 @@ export function ToolbarPlugin() {
 
     const applyFontSize = useCallback(
         (size: string) => {
+            if (readOnly) return;
             editor.update(() => {
                 const selection = $getSelection();
                 if ($isRangeSelection(selection)) {
@@ -134,11 +139,12 @@ export function ToolbarPlugin() {
             });
             setFontSize(size);
         },
-        [editor]
+        [editor, readOnly]
     );
 
     const applyFontFamily = useCallback(
         (family: string) => {
+            if (readOnly) return;
             editor.update(() => {
                 const selection = $getSelection();
                 if ($isRangeSelection(selection)) {
@@ -147,7 +153,7 @@ export function ToolbarPlugin() {
             });
             setFontFamily(family);
         },
-        [editor]
+        [editor, readOnly]
     );
 
     return (
@@ -156,13 +162,13 @@ export function ToolbarPlugin() {
             <div className="flex items-center gap-0.5">
                 <ToolbarButton
                     icon={<Undo2 size={14} />}
-                    disabled={!canUndo}
+                    disabled={readOnly || !canUndo}
                     onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
                     title="Undo (Ctrl+Z)"
                 />
                 <ToolbarButton
                     icon={<Redo2 size={14} />}
-                    disabled={!canRedo}
+                    disabled={readOnly || !canRedo}
                     onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
                     title="Redo (Ctrl+Y)"
                 />
@@ -171,7 +177,7 @@ export function ToolbarPlugin() {
             <Separator orientation="vertical" className="h-5 mx-1 bg-gray-600" />
 
             {/* Font Family */}
-            <Select value={fontFamily} onValueChange={applyFontFamily}>
+            <Select value={fontFamily} onValueChange={applyFontFamily} disabled={readOnly}>
                 <SelectTrigger className="w-[100px] h-7 text-xs border-gray-600 bg-gray-700 text-gray-200">
                     <SelectValue placeholder="Font" />
                 </SelectTrigger>
@@ -185,7 +191,7 @@ export function ToolbarPlugin() {
             </Select>
 
             {/* Font Size */}
-            <Select value={fontSize} onValueChange={applyFontSize}>
+            <Select value={fontSize} onValueChange={applyFontSize} disabled={readOnly}>
                 <SelectTrigger className="w-[60px] h-7 text-xs border-gray-600 bg-gray-700 text-gray-200">
                     <SelectValue placeholder="Size" />
                 </SelectTrigger>
@@ -205,24 +211,28 @@ export function ToolbarPlugin() {
                 <ToolbarButton
                     icon={<Bold size={14} />}
                     active={isBold}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
                     title="Bold (Ctrl+B)"
                 />
                 <ToolbarButton
                     icon={<Italic size={14} />}
                     active={isItalic}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
                     title="Italic (Ctrl+I)"
                 />
                 <ToolbarButton
                     icon={<Underline size={14} />}
                     active={isUnderline}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
                     title="Underline (Ctrl+U)"
                 />
                 <ToolbarButton
                     icon={<Strikethrough size={14} />}
                     active={isStrikethrough}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'strikethrough')}
                     title="Strikethrough"
                 />
@@ -235,12 +245,14 @@ export function ToolbarPlugin() {
                 <ToolbarButton
                     icon={<Subscript size={14} />}
                     active={isSubscript}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'subscript')}
                     title="Subscript"
                 />
                 <ToolbarButton
                     icon={<Superscript size={14} />}
                     active={isSuperscript}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'superscript')}
                     title="Superscript"
                 />
@@ -252,21 +264,25 @@ export function ToolbarPlugin() {
             <div className="flex items-center gap-0.5">
                 <ToolbarButton
                     icon={<AlignLeft size={14} />}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, 'left')}
                     title="Align Left"
                 />
                 <ToolbarButton
                     icon={<AlignCenter size={14} />}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, 'center')}
                     title="Align Center"
                 />
                 <ToolbarButton
                     icon={<AlignRight size={14} />}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, 'right')}
                     title="Align Right"
                 />
                 <ToolbarButton
                     icon={<AlignJustify size={14} />}
+                    disabled={readOnly}
                     onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, 'justify')}
                     title="Justify"
                 />

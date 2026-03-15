@@ -1,899 +1,889 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { jsPDF } from 'jspdf';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
-    Send,
-    FileCheck,
-    Download,
-    ChevronDown,
+    ChevronLeft,
     ChevronRight,
-    FileText,
-    FolderOpen,
-    Upload,
-    Clock,
-    History,
+    FilePlus2,
     Loader2,
+    Search,
     X,
 } from 'lucide-react';
 import { ReportEditor } from './ReportEditor';
 import type { ReportEditorRef } from './ReportEditor';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import { useReportContext } from '@/components/ReportLayout';
 import { apiService } from '@/lib/api';
-import { getOpenedReportCases, removeOpenedReportCase, OPENED_REPORT_CASES_STORAGE_KEY, type OpenedReportCase } from '@/lib/reportWindow';
+import {
+    getOpenedReportCases,
+    removeOpenedReportCase,
+    upsertOpenedReportCase,
+    OPENED_REPORT_CASES_STORAGE_KEY,
+    type OpenedReportCase,
+} from '@/lib/reportWindow';
 import { PatientDetailsSection } from './PatientDetailsSection';
+import {
+    getAllReportTemplates,
+    TEMPLATE_MODALITY_OPTIONS,
+    type TemplateModality,
+    type ReportTemplate,
+} from '@/lib/reportTemplates';
 import toast from 'react-hot-toast';
+
+type ReportStatus = 'unreported' | 'drafted' | 'signed_off';
 
 interface PatientInfo {
     patientName: string;
     patientId: string;
     age: string;
     sex: string;
-    accessionNo: string;
-    scanDateTime: string;
-    reportDateTime: string;
-    serviceName: string;
     referredBy: string;
+    studyDate: string;
+    studyDescription: string;
 }
 
-interface Template {
-    id: string;
-    name: string;
-    content: string;
+interface SignatureBlock {
+    doctor_name: string;
+    degree?: string;
+    registration_number?: string;
+    signature_url?: string;
+    signed_at?: string;
 }
 
-interface TemplateCategory {
-    id: string;
-    name: string;
-    templates: Template[];
+interface AddendumEntry {
+    text: string;
+    added_at?: string;
 }
 
-// Sample template data
-const TEMPLATE_CATEGORIES: TemplateCategory[] = [
-    {
-        id: 'ct-scans',
-        name: 'CT Scans',
-        templates: [
-            { id: 'ct-head', name: 'CT Head Without Contrast', content: 'CT HEAD WITHOUT CONTRAST\n\nINVESTIGATION:\nNCCT _____ HEAD\n\nTECHNIQUE:\nNoncontrast MDCT scan of the _____ head was studied. This was followed by multiplanar reconstructions.\n\nCLINICAL INDICATIONS:\n\nPRIOR IMAGING:\n\nFINDINGS:\nThe study shows normal cortical outline, trabecular pattern and attenuation of medullary contents.\n\nIMPRESSION:\nCT imaging reveals no significant abnormality.\n\nADVICE:\nClinical / lab parameter correlation.' },
-            { id: 'ct-chest', name: 'CT Chest', content: 'CT CHEST\n\nINVESTIGATION:\nCT Chest with/without contrast\n\nTECHNIQUE:\nAxial sections of the chest were obtained.\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'ct-abdomen', name: 'CT Abdomen/Pelvis', content: 'CT ABDOMEN AND PELVIS\n\nINVESTIGATION:\nCT Abdomen and Pelvis\n\nTECHNIQUE:\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'ncct-thigh', name: 'NCCT Thigh', content: 'CT Report\n\nINVESTIGATION:\nNCCT _____ THIGH\n\nTECHNIQUE:\nNoncontrast MDCT scan of the _____ thigh was studied. This was followed by multiplanar reconstructions.\n\nCLINICAL INDICATIONS:\n\nPRIOR IMAGING:\n\nFINDINGS:\nThe study shows normal cortical outline, trabecular pattern and attenuation of medullary contents in femur.\n\nVisualized hip joint appears normal.\n\nVisualized knee joint grossly appears normal.\n\nNo fracture is seen.\n\nMuscles and soft tissues show normal attenuation.\n\nIMPRESSION:\nCT imaging reveals no significant abnormality.\n\nOn comparison with the previous imaging, dated _____, the present study shows....\n\nADVICE:\nClinical / lab parameter correlation.' },
-        ],
-    },
-    {
-        id: 'mri',
-        name: 'MRI',
-        templates: [
-            { id: 'mri-brain', name: 'MRI Brain', content: 'MRI BRAIN\n\nINVESTIGATION:\nMRI Brain with/without contrast\n\nTECHNIQUE:\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'mri-spine', name: 'MRI Spine', content: 'MRI SPINE\n\nINVESTIGATION:\nMRI Spine\n\nTECHNIQUE:\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'mri-knee', name: 'MRI Knee', content: 'MRI KNEE\n\nINVESTIGATION:\nMRI Knee\n\nTECHNIQUE:\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-        ],
-    },
-    {
-        id: 'xray',
-        name: 'X-Ray',
-        templates: [
-            { id: 'xray-chest', name: 'Chest X-Ray', content: 'CHEST X-RAY\n\nINVESTIGATION:\nChest X-Ray PA View\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'xray-abdomen', name: 'Abdominal X-Ray', content: 'ABDOMINAL X-RAY\n\nINVESTIGATION:\nAbdominal X-Ray\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-        ],
-    },
-    {
-        id: 'ultrasound',
-        name: 'Ultrasound',
-        templates: [
-            { id: 'usg-abdomen', name: 'USG Abdomen', content: 'USG ABDOMEN\n\nINVESTIGATION:\nUltrasound Abdomen\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-            { id: 'usg-pelvis', name: 'USG Pelvis', content: 'USG PELVIS\n\nINVESTIGATION:\nUltrasound Pelvis\n\nFINDINGS:\n\nIMPRESSION:\n\nADVICE:' },
-        ],
-    },
-];
+interface StudyReport {
+    localId: string;
+    reportId: string | null;
+    label: string;
+    status: ReportStatus;
+    editorState: Record<string, any> | null;
+    contentHtml: string;
+    contentPlainText: string;
+    signatureBlock: SignatureBlock | null;
+    addendums: AddendumEntry[];
+}
 
-// Sample recent templates - would come from localStorage/API in production
-const RECENT_TEMPLATES = [
-    { id: 'ct-head', name: 'CT Head Without Contrast' },
-    { id: 'mri-brain', name: 'MRI Brain' },
-];
+interface ServerReport {
+    _id?: string;
+    content?: Record<string, any>;
+    content_html?: string;
+    content_plain_text?: string;
+    title?: string;
+    reporting_status?: string;
+    signature_block?: SignatureBlock;
+    addendums?: Array<{ text?: string; added_at?: string }>;
+}
 
-// Sample report history - would come from API in production
-const REPORT_HISTORY = [
-    { id: 'h1', name: 'CT Abdomen Report', date: '2026-01-05', patientName: 'John Doe' },
-    { id: 'h2', name: 'MRI Spine Report', date: '2026-01-04', patientName: 'Jane Smith' },
-    { id: 'h3', name: 'Chest X-Ray Report', date: '2026-01-03', patientName: 'Mike Johnson' },
-];
+const toReportStatus = (status: string | undefined): ReportStatus => {
+    if (status === 'signed_off') return 'signed_off';
+    if (status === 'drafted') return 'drafted';
+    return 'unreported';
+};
+
+const toPlainText = (value: string): string => {
+    if (!value) return '';
+    const maybeHtml = /<\/?[a-z][\s\S]*>/i.test(value);
+    if (!maybeHtml || typeof document === 'undefined') return value;
+    const temp = document.createElement('div');
+    temp.innerHTML = value;
+    return (temp.textContent || '').trim();
+};
+
+const extractPlainTextFromEditorState = (content: any): string => {
+    const texts: string[] = [];
+
+    const traverse = (node: any) => {
+        if (!node) return;
+        if (typeof node.text === 'string') {
+            texts.push(node.text);
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach(traverse);
+        }
+    };
+
+    if (content?.root) {
+        traverse(content.root);
+    }
+
+    return texts.join(' ').trim();
+};
+
+const parseDicomDateTime = (dateStr?: string, timeStr?: string): string => {
+    if (!dateStr) return 'N/A';
+    if (/^\d{8}$/.test(dateStr)) {
+        const year = dateStr.slice(0, 4);
+        const month = dateStr.slice(4, 6);
+        const day = dateStr.slice(6, 8);
+        if (timeStr && /^\d{6}/.test(timeStr)) {
+            const hh = timeStr.slice(0, 2);
+            const mm = timeStr.slice(2, 4);
+            return `${day}-${month}-${year} ${hh}:${mm}`;
+        }
+        return `${day}-${month}-${year}`;
+    }
+
+    try {
+        const date = new Date(dateStr);
+        if (Number.isNaN(date.getTime())) return dateStr;
+        return date.toLocaleDateString('en-GB').replace(/\//g, '-');
+    } catch {
+        return dateStr;
+    }
+};
+
+const calculateAge = (dob?: string): string => {
+    if (!dob) return 'N/A';
+    let birthDate: Date;
+
+    if (/^\d{8}$/.test(dob)) {
+        const year = Number(dob.slice(0, 4));
+        const month = Number(dob.slice(4, 6)) - 1;
+        const day = Number(dob.slice(6, 8));
+        birthDate = new Date(year, month, day);
+    } else {
+        birthDate = new Date(dob);
+    }
+
+    if (Number.isNaN(birthDate.getTime())) return 'N/A';
+    const now = new Date();
+    let age = now.getFullYear() - birthDate.getFullYear();
+    const monthDiff = now.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
+        age -= 1;
+    }
+    return `${age}Y`;
+};
+
+const buildDraftReport = (index: number): StudyReport => ({
+    localId: `local-${Date.now()}-${index}`,
+    reportId: null,
+    label: `Report ${index + 1}`,
+    status: 'unreported',
+    editorState: null,
+    contentHtml: '',
+    contentPlainText: '',
+    signatureBlock: null,
+    addendums: [],
+});
 
 export function ReportView() {
     const { caseData, reportData } = useReportContext();
     const { id: activeCaseId } = useParams();
     const navigate = useNavigate();
     const editorRef = useRef<ReportEditorRef>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-    const [currentContent, setCurrentContent] = useState('');
-    const [isDraft, setIsDraft] = useState(true);
-    const [searchQuery] = useState('');
-    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['ct-scans']));
-    const [activeSection, setActiveSection] = useState<'templates' | 'recent' | 'history'>('templates');
-    const [isSaving, setIsSaving] = useState(false);
-    const [savedReportId, setSavedReportId] = useState<string | null>(reportData?._id || null);
+
     const [openedCases, setOpenedCases] = useState<OpenedReportCase[]>(() => getOpenedReportCases());
+    const [studyReports, setStudyReports] = useState<StudyReport[]>([buildDraftReport(0)]);
+    const [activeReportIndex, setActiveReportIndex] = useState(0);
+    const [isLoadingReports, setIsLoadingReports] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+    const [templateSearch, setTemplateSearch] = useState('');
+    const [selectedModalities, setSelectedModalities] = useState<TemplateModality[]>([...TEMPLATE_MODALITY_OPTIONS]);
+    const [templateStorageVersion, setTemplateStorageVersion] = useState(0);
+    const [currentContent, setCurrentContent] = useState('');
+    const [isAddendumMode, setIsAddendumMode] = useState(false);
+    const [addendumText, setAddendumText] = useState('');
 
-    // Initialize editor with existing report content
-    useEffect(() => {
-        if (reportData) {
-            setSavedReportId(reportData._id);
-            setIsDraft(reportData.is_draft);
-            // Load existing content into editor
-            if (reportData.content && editorRef.current) {
-                editorRef.current.setEditorState(reportData.content);
-            }
-            if (reportData.template_id) {
-                setSelectedTemplateId(reportData.template_id);
-            }
-        }
-    }, [reportData]);
+    const studyReportsRef = useRef(studyReports);
+    const activeReportIndexRef = useRef(activeReportIndex);
+    const isSavingRef = useRef(isSaving);
+    const activeCaseIdRef = useRef(activeCaseId);
 
-    // Update opened cases list when storage changes or component mounts
     useEffect(() => {
-        const cases = getOpenedReportCases();
-        setOpenedCases(cases);
-    }, [activeCaseId, caseData, reportData]);
+        studyReportsRef.current = studyReports;
+    }, [studyReports]);
+
+    useEffect(() => {
+        activeReportIndexRef.current = activeReportIndex;
+    }, [activeReportIndex]);
+
+    useEffect(() => {
+        activeCaseIdRef.current = activeCaseId;
+    }, [activeCaseId]);
+
+    useEffect(() => {
+        isSavingRef.current = isSaving;
+    }, [isSaving]);
 
     useEffect(() => {
         const handleStorage = (event: StorageEvent) => {
-            if (event.key && event.key !== OPENED_REPORT_CASES_STORAGE_KEY) return;
-            setOpenedCases(getOpenedReportCases());
+            if (!event.key || event.key === OPENED_REPORT_CASES_STORAGE_KEY) {
+                setOpenedCases(getOpenedReportCases());
+            }
         };
-
         window.addEventListener('storage', handleStorage);
         return () => window.removeEventListener('storage', handleStorage);
     }, []);
 
-    const getCasePrimaryLabel = useCallback((openedCase: OpenedReportCase) => {
-        return (
-            openedCase.patientName ||
-            openedCase.description ||
-            openedCase.caseUid ||
-            openedCase.accessionNumber ||
-            `Case ${openedCase.caseId.slice(-6)}`
-        );
-    }, []);
-
-    const getCaseSecondaryLabel = useCallback((openedCase: OpenedReportCase) => {
-        return openedCase.patientId || openedCase.caseId;
-    }, []);
-
-    // Helper function to extract plain text from Lexical state
-    const extractPlainText = useCallback((content: any): string => {
-        const texts: string[] = [];
-
-        function traverse(node: any) {
-            if (node.text) {
-                texts.push(node.text);
-            }
-            if (node.children) {
-                node.children.forEach(traverse);
-            }
+    // Sync opened cases from storage when current case data loads (same-window updates
+    // don't fire storage events, so we must refresh after ReportLayout upserts metadata)
+    useEffect(() => {
+        if (activeCaseId && caseData?._id === activeCaseId) {
+            setOpenedCases(getOpenedReportCases());
         }
+    }, [activeCaseId, caseData?._id]);
 
-        if (content?.root) {
-            traverse(content.root);
-        }
-        return texts.join(' ');
-    }, []);
+    // Fill metadata for any tab that was added without it (e.g. via openReportInSingleWindow(caseId) from dashboard)
+    const fetchingMetadataForRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const cases = getOpenedReportCases();
+        const needMetadata = cases.filter((c) => !c.patientName || !c.patientId);
+        if (needMetadata.length === 0) return;
 
-    // Auto-save before switching tabs
-    const handleCaseTabClick = useCallback(
-        async (caseId: string) => {
-            if (!caseId || caseId === activeCaseId) return;
-            
-            // Auto-save current report before switching (only if not signed off)
-            if (isDraft && currentContent && editorRef.current && !reportData?.is_signed_off) {
+        const run = async () => {
+            for (const opened of needMetadata) {
+                if (fetchingMetadataForRef.current.has(opened.caseId)) continue;
+                fetchingMetadataForRef.current.add(opened.caseId);
                 try {
-                    const editorState = editorRef.current?.getEditorState();
-                    const html = editorRef.current?.getHtml();
-                    
-                    if (editorState && caseData && savedReportId) {
-                        const plainText = extractPlainText(editorState);
-                        await apiService.updateReport(savedReportId, {
-                            content: editorState,
-                            content_html: html || '',
-                            content_plain_text: plainText,
-                            reporting_status: 'drafted',
+                    const res = (await apiService.getCaseById(opened.caseId)) as { success?: boolean; data?: { patient?: { name?: string; patient_id?: string; sex?: string }; case_uid?: string; accession_number?: string; description?: string; body_part?: string; modality?: string } };
+                    const data = res?.data;
+                    if (data) {
+                        const patientName = data.patient?.name;
+                        const patientId = data.patient?.patient_id;
+                        const patientSex = data.patient?.sex;
+                        upsertOpenedReportCase({
+                            caseId: opened.caseId,
+                            caseUid: data.case_uid,
+                            patientName,
+                            patientId,
+                            patientSex,
+                            accessionNumber: data.accession_number,
+                            description: data.description || data.body_part,
+                            modality: data.modality,
                         });
-                        toast.success('Report auto-saved');
+                        setOpenedCases(getOpenedReportCases());
                     }
-                } catch (error) {
-                    console.error('Auto-save failed:', error);
-                    // Continue with navigation even if auto-save fails
+                } finally {
+                    fetchingMetadataForRef.current.delete(opened.caseId);
                 }
             }
-            
-            navigate(`/case/${caseId}/report`);
-        },
-        [activeCaseId, navigate, isDraft, currentContent, caseData, savedReportId, extractPlainText, reportData]
-    );
+        };
+        run();
+    }, [openedCases]);
 
-    // Helper function to format date
-    const formatDateTime = (dateStr: string, timeStr?: string) => {
-        if (!dateStr) return 'N/A';
-        try {
-            const date = new Date(dateStr);
-            const formattedDate = date.toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-            }).replace(/\//g, '-');
-            if (timeStr) {
-                return `${formattedDate} ${timeStr}`;
+    useEffect(() => {
+        const handleTemplateStorage = (event: StorageEvent) => {
+            if (event.key === 'syncpacs_report_user_templates_v1') {
+                setTemplateStorageVersion((prev) => prev + 1);
             }
-            return formattedDate;
-        } catch {
-            return dateStr;
-        }
-    };
+        };
+        window.addEventListener('storage', handleTemplateStorage);
+        return () => window.removeEventListener('storage', handleTemplateStorage);
+    }, []);
 
-    // Helper function to calculate age from DOB (supports DICOM format YYYYMMDD)
-    const calculateAge = (dob: string) => {
-        if (!dob) return 'N/A';
-        try {
-            let birthDate: Date;
-            // Check if DICOM format (YYYYMMDD)
-            if (/^\d{8}$/.test(dob)) {
-                const year = parseInt(dob.substring(0, 4), 10);
-                const month = parseInt(dob.substring(4, 6), 10) - 1; // JS months are 0-indexed
-                const day = parseInt(dob.substring(6, 8), 10);
-                birthDate = new Date(year, month, day);
-            } else {
-                birthDate = new Date(dob);
-            }
+    const allTemplates = useMemo(() => getAllReportTemplates(), [templateStorageVersion]);
+    const deferredTemplateSearch = useDeferredValue(templateSearch);
 
-            if (isNaN(birthDate.getTime())) return 'N/A';
+    const filteredTemplates = useMemo(() => {
+        const query = deferredTemplateSearch.trim().toLowerCase();
+        return allTemplates.filter((template) => {
+            const matchesModality = selectedModalities.includes(template.modality);
+            const matchesSearch = !query || template.name.toLowerCase().includes(query);
+            return matchesModality && matchesSearch;
+        });
+    }, [allTemplates, deferredTemplateSearch, selectedModalities]);
 
-            const today = new Date();
-            let age = today.getFullYear() - birthDate.getFullYear();
-            const monthDiff = today.getMonth() - birthDate.getMonth();
-            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                age--;
-            }
-            return `${age}Y`;
-        } catch {
-            return 'N/A';
-        }
-    };
+    useEffect(() => {
+        const fetchCaseReports = async () => {
+            if (!caseData?._id) return;
 
-    // Helper to parse DICOM date/time (YYYYMMDD / HHMMSS)
-    const parseDicomDate = (dateStr?: string, timeStr?: string) => {
-        if (!dateStr) return 'N/A';
-        try {
-            // Check if it matches YYYYMMDD
-            if (/^\d{8}$/.test(dateStr)) {
-                const year = dateStr.substring(0, 4);
-                const month = dateStr.substring(4, 6);
-                const day = dateStr.substring(6, 8);
+            setIsLoadingReports(true);
+            try {
+                const response: any = await apiService.getReportsByCaseAll(caseData._id);
+                const reports = Array.isArray(response?.data) ? (response.data as ServerReport[]) : [];
 
-                let formattedDate = `${day}-${month}-${year}`;
+                const mapped = reports.map((report, index) => ({
+                    localId: report._id || `server-${index}`,
+                    reportId: report._id || null,
+                    label: report.title?.trim() || `Report ${index + 1}`,
+                    status: toReportStatus(report.reporting_status),
+                    editorState: report.content || null,
+                    contentHtml: report.content_html || '',
+                    contentPlainText:
+                        report.content_plain_text ||
+                        extractPlainTextFromEditorState(report.content) ||
+                        '',
+                    signatureBlock: report.signature_block || null,
+                    addendums: (report.addendums || [])
+                        .map((entry) => ({
+                            text: entry.text || '',
+                            added_at: entry.added_at,
+                        }))
+                        .filter((entry) => entry.text.trim().length > 0),
+                }));
 
-                if (timeStr && /^\d{6}/.test(timeStr)) {
-                    const hours = timeStr.substring(0, 2);
-                    const minutes = timeStr.substring(2, 4);
-                    formattedDate += ` ${hours}:${minutes}`;
+                if (mapped.length > 0) {
+                    setStudyReports(mapped);
+                    setActiveReportIndex(0);
+                } else if (reportData) {
+                    setStudyReports([
+                        {
+                            localId: reportData._id,
+                            reportId: reportData._id,
+                            label: reportData.title || 'Report 1',
+                            status: toReportStatus((reportData as any).reporting_status),
+                            editorState: reportData.content || null,
+                            contentHtml: reportData.content_html || '',
+                            contentPlainText:
+                                reportData.content_plain_text ||
+                                extractPlainTextFromEditorState(reportData.content),
+                            signatureBlock: (reportData as any).signature_block || null,
+                            addendums: (((reportData as any).addendums || []) as Array<{ text?: string; added_at?: string }>)
+                                .map((entry) => ({
+                                    text: entry.text || '',
+                                    added_at: entry.added_at,
+                                }))
+                                .filter((entry) => entry.text.trim().length > 0),
+                        },
+                    ]);
+                    setActiveReportIndex(0);
+                } else {
+                    setStudyReports([buildDraftReport(0)]);
+                    setActiveReportIndex(0);
                 }
-
-                return formattedDate;
+            } catch {
+                if (reportData) {
+                    setStudyReports([
+                        {
+                            localId: reportData._id,
+                            reportId: reportData._id,
+                            label: reportData.title || 'Report 1',
+                            status: toReportStatus((reportData as any).reporting_status),
+                            editorState: reportData.content || null,
+                            contentHtml: reportData.content_html || '',
+                            contentPlainText:
+                                reportData.content_plain_text ||
+                                extractPlainTextFromEditorState(reportData.content),
+                            signatureBlock: (reportData as any).signature_block || null,
+                            addendums: [],
+                        },
+                    ]);
+                    setActiveReportIndex(0);
+                } else {
+                    setStudyReports([buildDraftReport(0)]);
+                    setActiveReportIndex(0);
+                }
+            } finally {
+                setIsLoadingReports(false);
             }
-            // Fallback for standard ISO strings
-            return formatDateTime(dateStr, timeStr);
-        } catch (e) {
-            return dateStr || 'N/A';
-        }
-    };
+        };
 
-    // Dynamic patient info from context
+        fetchCaseReports();
+    }, [caseData?._id, reportData]);
+
+    const prevActiveReportIndexRef = useRef(activeReportIndex);
+    useEffect(() => {
+        if (isSavingRef.current) return;
+        const activeReport = studyReports[activeReportIndex];
+        if (!activeReport || !editorRef.current) return;
+
+        const reportPlain = (activeReport.contentPlainText || '').trim();
+        const switchedReport = prevActiveReportIndexRef.current !== activeReportIndex;
+        prevActiveReportIndexRef.current = activeReportIndex;
+
+        if (!switchedReport) {
+            const currentPlain = (extractPlainTextFromEditorState(editorRef.current.getEditorState()) || '').trim();
+            if (currentPlain === reportPlain) {
+                setCurrentContent(activeReport.contentPlainText || '');
+                return;
+            }
+        }
+
+        if (activeReport.editorState) {
+            try {
+                editorRef.current.setEditorState(activeReport.editorState);
+            } catch {
+                editorRef.current.setContent(activeReport.contentPlainText || '');
+            }
+        } else {
+            editorRef.current.setContent(activeReport.contentPlainText || '');
+        }
+
+        setCurrentContent(activeReport.contentPlainText || '');
+        setIsAddendumMode(false);
+        setAddendumText('');
+    }, [activeReportIndex, studyReports]);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(async () => {
+            if (isSavingRef.current || isAddendumMode) return;
+            await saveCurrentReportAsDraft(true);
+        }, 8000);
+
+        return () => window.clearInterval(intervalId);
+    }, [isAddendumMode, activeReportIndex, studyReports, caseData]);
+
+    const activeReport = studyReports[activeReportIndex];
+    const isReported = activeReport?.status === 'signed_off';
+    const isEditorReadOnly = Boolean(isReported && !isAddendumMode);
+
     const patientInfo: PatientInfo = useMemo(() => ({
         patientName: caseData?.patient?.name || 'N/A',
         patientId: caseData?.patient?.patient_id || 'N/A',
-        age: calculateAge(caseData?.patient?.dob || ''),
+        age: calculateAge(caseData?.patient?.dob || caseData?.patient?.date_of_birth),
         sex: caseData?.patient?.sex || 'N/A',
-        accessionNo: caseData?.accession_number || 'N/A',
-        scanDateTime: parseDicomDate(caseData?.case_date, caseData?.case_time),
-        reportDateTime: formatDateTime(new Date().toISOString()),
-        serviceName: caseData?.description || caseData?.body_part || 'N/A',
         referredBy: caseData?.assigned_to?.full_name || 'N/A',
+        studyDate: parseDicomDateTime(caseData?.case_date, caseData?.case_time),
+        studyDescription: caseData?.description || caseData?.body_part || 'N/A',
     }), [caseData]);
 
-    const toggleCategory = (categoryId: string) => {
-        const newExpanded = new Set(expandedCategories);
-        if (newExpanded.has(categoryId)) {
-            newExpanded.delete(categoryId);
-        } else {
-            newExpanded.add(categoryId);
-        }
-        setExpandedCategories(newExpanded);
+    const getEditorSnapshot = () => {
+        if (!editorRef.current) return null;
+        const editorState = editorRef.current.getEditorState();
+        const contentHtml = editorRef.current.getHtml();
+        const contentPlainText = extractPlainTextFromEditorState(editorState);
+        return {
+            editorState,
+            contentHtml,
+            contentPlainText,
+        };
     };
 
-    const filteredCategories = TEMPLATE_CATEGORIES.map(category => ({
-        ...category,
-        templates: category.templates.filter(
-            template => template.name.toLowerCase().includes(searchQuery.toLowerCase())
-        ),
-    })).filter(category => category.templates.length > 0);
+    const saveCurrentReportAsDraft = async (silent: boolean) => {
+        if (!caseData || !activeReport) return null;
+        if (activeReport.status === 'signed_off' || isAddendumMode) return null;
 
-    const handleTemplateSelect = useCallback((template: Template) => {
-        setSelectedTemplateId(template.id);
-        editorRef.current?.setContent(template.content);
-        setIsDraft(true);
-    }, []);
+        const snapshot = getEditorSnapshot();
+        if (!snapshot) return null;
 
-    const handleContentChange = useCallback((content: string) => {
-        setCurrentContent(content);
-        setIsDraft(true);
-    }, []);
-
-    const handleLoadPreviousReport = useCallback((content: string, mode: 'replace' | 'append') => {
-        if (!editorRef.current) return;
-
-        if (mode === 'replace') {
-            // Replace entire content
-            editorRef.current.setContent(content);
-            toast.success('Previous report loaded - content replaced');
-        } else {
-            // Append to existing content
-            const currentHtml = editorRef.current.getHtml();
-            const separator = '\n\n--- Previous Report ---\n\n';
-            const newContent = currentHtml + separator + content;
-            editorRef.current.setContent(newContent);
-            toast.success('Previous report appended to current content');
-        }
-        
-        setIsDraft(true);
-    }, []);
-
-    const handleSaveDraft = useCallback(async () => {
-        if (!caseData) {
-            toast.error('Case data not available');
-            return;
+        if (!activeReport.reportId && !snapshot.contentPlainText.trim()) {
+            return null;
         }
 
+        const caseIdForSave = caseData._id;
+        isSavingRef.current = true;
         setIsSaving(true);
+
         try {
-            const editorState = editorRef.current?.getEditorState();
-            const html = editorRef.current?.getHtml();
+            const assignedToId =
+                typeof caseData.assigned_to === 'string'
+                    ? caseData.assigned_to
+                    : caseData.assigned_to?._id;
 
-            if (!editorState) {
-                toast.error('No content to save');
-                setIsSaving(false);
-                return;
-            }
-
-            // Extract plain text from content
-            const plainText = extractPlainText(editorState);
-
-            // Helper to check if template_id is a valid ObjectId (24 hex chars)
-            const isValidObjectId = (id: string | null) => {
-                return id && /^[0-9a-fA-F]{24}$/.test(id);
-            };
-
-            const reportData: any = {
-                case_id: caseData._id,
-                patient_id: caseData.patient_id,
-                assigned_to: caseData.assigned_to?._id || caseData.assigned_to,
-                hospital_id: caseData.hospital_id,
-                content: editorState,
-                content_html: html || '',
-                content_plain_text: plainText,
-                title: patientInfo.serviceName || 'Medical Report',
-                impression: '',
-            };
-
-            // Only include template_id if it's a valid ObjectId
-            if (selectedTemplateId && isValidObjectId(selectedTemplateId)) {
-                reportData.template_id = selectedTemplateId;
-            }
-
-            let response: any;
-            if (savedReportId) {
-                // Update existing report
-                response = await apiService.updateReport(savedReportId, {
-                    content: reportData.content,
-                    content_html: reportData.content_html,
-                    content_plain_text: reportData.content_plain_text,
+            let reportId = activeReport.reportId;
+            if (!reportId) {
+                const createResponse: any = await apiService.createReport({
+                    case_id: caseData._id,
+                    patient_id: caseData.patient_id,
+                    assigned_to: assignedToId,
+                    hospital_id: caseData.hospital_id,
+                    content: snapshot.editorState,
+                    content_html: snapshot.contentHtml,
+                    content_plain_text: snapshot.contentPlainText,
+                    title: activeReport.label,
+                });
+                reportId = createResponse?.data?._id || null;
+            } else {
+                await apiService.updateReport(reportId, {
+                    content: snapshot.editorState,
+                    content_html: snapshot.contentHtml,
+                    content_plain_text: snapshot.contentPlainText,
+                    title: activeReport.label,
                     reporting_status: 'drafted',
                 });
-            } else {
-                // Create new report
-                response = await apiService.createReport(reportData);
-                if (response.success && response.data?._id) {
-                    setSavedReportId(response.data._id);
-                }
             }
 
-            if (response.success) {
-                setIsDraft(false);
-                toast.success('Draft saved successfully');
-            } else {
-                toast.error(response.message || 'Failed to save draft');
+            if (activeCaseIdRef.current === caseIdForSave) {
+                const freshSnapshot = getEditorSnapshot();
+                const contentToStore = freshSnapshot ?? snapshot;
+                setStudyReports((prev) =>
+                    prev.map((report, index) =>
+                        index === activeReportIndexRef.current
+                            ? {
+                                ...report,
+                                reportId,
+                                status: 'drafted',
+                                editorState: contentToStore.editorState,
+                                contentHtml: contentToStore.contentHtml,
+                                contentPlainText: contentToStore.contentPlainText,
+                            }
+                            : report
+                    )
+                );
             }
+
+            if (!silent) {
+                toast.success('Draft saved');
+            }
+            return reportId;
         } catch (error: any) {
-            console.error('Error saving draft:', error);
-            toast.error(error.message || 'Failed to save draft');
+            if (!silent) {
+                toast.error(error?.message || 'Failed to save draft');
+            }
+            return null;
+        } finally {
+            isSavingRef.current = false;
+            setIsSaving(false);
+        }
+    };
+
+    const advanceAfterCompletion = async () => {
+        const reports = studyReportsRef.current;
+        const currentIndex = activeReportIndexRef.current;
+
+        const nextReportIndex = reports.findIndex((_, index) => index > currentIndex);
+        if (nextReportIndex !== -1) {
+            setActiveReportIndex(nextReportIndex);
+            return;
+        }
+
+        if (!activeCaseId) return;
+        const remainingCases = removeOpenedReportCase(activeCaseId);
+        setOpenedCases(remainingCases);
+        if (remainingCases.length > 0) {
+            navigate(`/case/${remainingCases[0].caseId}/report`);
+        } else {
+            window.close();
+        }
+    };
+
+    const handleSaveDraftClick = async () => {
+        setIsSaving(true);
+        try {
+            const saved = await saveCurrentReportAsDraft(true);
+            if (!saved) {
+                toast.error('Nothing to save');
+                return;
+            }
+            await advanceAfterCompletion();
         } finally {
             setIsSaving(false);
         }
-    }, [caseData, patientInfo.serviceName, selectedTemplateId, savedReportId, extractPlainText]);
+    };
 
-    const handleSignOff = useCallback(async () => {
-        if (!caseData) {
-            toast.error('Case data not available');
-            return;
-        }
-
-        if (!savedReportId) {
-            toast.error('Please save the draft before signing off');
-            return;
-        }
+    const handleSignOffClick = async () => {
+        if (!activeReport || !caseData) return;
 
         setIsSaving(true);
         try {
-            const editorState = editorRef.current?.getEditorState();
-            const html = editorRef.current?.getHtml();
+            if (isAddendumMode) {
+                if (!activeReport.reportId) {
+                    toast.error('Cannot add addendum without an existing report');
+                    return;
+                }
+                if (!addendumText.trim()) {
+                    toast.error('Addendum text is required');
+                    return;
+                }
 
-            if (!editorState) {
-                toast.error('No content to sign off');
+                const addendumResponse: any = await apiService.addAddendum(activeReport.reportId, {
+                    addendum_text: addendumText.trim(),
+                });
+
+                const updated: ServerReport = addendumResponse?.data || {};
+                setStudyReports((prev) =>
+                    prev.map((report, index) =>
+                        index === activeReportIndexRef.current
+                            ? {
+                                ...report,
+                                status: 'signed_off',
+                                contentHtml: updated.content_html || report.contentHtml,
+                                contentPlainText: updated.content_plain_text || report.contentPlainText,
+                                editorState: updated.content || report.editorState,
+                                signatureBlock: updated.signature_block || report.signatureBlock,
+                                addendums: (updated.addendums || report.addendums || []).map((entry: any) => ({
+                                    text: entry.text || '',
+                                    added_at: entry.added_at,
+                                })),
+                            }
+                            : report
+                    )
+                );
+                setIsAddendumMode(false);
+                setAddendumText('');
+                toast.success('Addendum signed off');
+                await advanceAfterCompletion();
                 return;
             }
 
-            const plainText = extractPlainText(editorState);
-
-            const response: any = await apiService.updateReport(savedReportId, {
-                content: editorState,
-                content_html: html || '',
-                content_plain_text: plainText,
-                reporting_status: 'signed_off',
-            });
-
-            if (response.success) {
-                setIsDraft(false);
-                toast.success('Report signed off successfully');
+            let reportId = activeReport.reportId;
+            if (!reportId) {
+                reportId = await saveCurrentReportAsDraft(true);
             } else {
-                toast.error(response.message || 'Failed to sign off report');
+                await saveCurrentReportAsDraft(true);
             }
+
+            if (!reportId) {
+                toast.error('Please add report content before sign off');
+                return;
+            }
+
+            const signOffResponse: any = await apiService.signOffReport(reportId);
+            const updated: ServerReport = signOffResponse?.data || {};
+
+            setStudyReports((prev) =>
+                prev.map((report, index) =>
+                    index === activeReportIndexRef.current
+                        ? {
+                            ...report,
+                            reportId,
+                            status: 'signed_off',
+                            contentHtml: updated.content_html || report.contentHtml,
+                            contentPlainText: updated.content_plain_text || report.contentPlainText,
+                            editorState: updated.content || report.editorState,
+                            signatureBlock: updated.signature_block || report.signatureBlock,
+                            addendums: (updated.addendums || report.addendums || []).map((entry: any) => ({
+                                text: entry.text || '',
+                                added_at: entry.added_at,
+                            })),
+                        }
+                        : report
+                )
+            );
+
+            toast.success('Report signed off');
+            await advanceAfterCompletion();
         } catch (error: any) {
-            console.error('Error signing off report:', error);
-            toast.error(error.message || 'Failed to sign off report');
+            toast.error(error?.message || 'Failed to sign off');
         } finally {
             setIsSaving(false);
         }
-    }, [caseData, savedReportId, extractPlainText]);
+    };
 
-    const handleUploadTemplate = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const content = e.target?.result as string;
-                editorRef.current?.setContent(content);
-                setSelectedTemplateId(`uploaded-${Date.now()}`);
-                setIsDraft(true);
-            };
-            reader.readAsText(file);
-        }
-    }, []);
+    const handleSwitchReport = async (nextIndex: number) => {
+        if (nextIndex === activeReportIndex) return;
+        await saveCurrentReportAsDraft(true);
+        setActiveReportIndex(nextIndex);
+    };
 
-
-
-    const handleDownload = useCallback(async () => {
-        if (!savedReportId) {
-            toast.error('Please save the report first before downloading');
-            return;
+    const handleTemplateApply = async (template: ReportTemplate) => {
+        const hasExistingContent = (editorRef.current?.getContent() || '').trim().length > 0;
+        if (hasExistingContent) {
+            const shouldProceed = window.confirm(
+                'This will overwrite current report content. Do you want to continue?'
+            );
+            if (!shouldProceed) return;
         }
 
-        try {
-            const response: any = await apiService.downloadReport(savedReportId);
+        await saveCurrentReportAsDraft(true);
+        editorRef.current?.setContent(template.content);
+        setCurrentContent(template.content);
+        toast.success('Template loaded');
+    };
 
-            if (response.success) {
-                const { report, patient, doctor, case: caseInfo } = response.data;
-                const doc = new jsPDF();
+    const handleLoadPreviousReport = async (content: string, mode: 'replace' | 'append') => {
+        await saveCurrentReportAsDraft(true);
 
-                // --- HEADER ---
-                // Add header/title
-                doc.setFontSize(22);
-                doc.setFont('helvetica', 'bold');
-                // Add horizontal line under title
-                doc.setLineWidth(0.5);
-                doc.line(20, 25, 190, 25);
+        const incoming = toPlainText(content);
+        const existing = editorRef.current?.getContent() || '';
+        const nextValue = mode === 'append'
+            ? `${existing}\n\n--- Previous Report ---\n${incoming}`
+            : incoming;
 
-                // --- PATIENT INFO SECTION ---
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'normal');
+        editorRef.current?.setContent(nextValue);
+        setCurrentContent(nextValue);
+        toast.success(mode === 'append' ? 'Previous report appended' : 'Previous report loaded');
+    };
 
-                const startY = 35;
-                const lineHeight = 7;
-                const col1X = 20;
-                const col2X = 50;
-                const col3X = 110;
-                const col4X = 140;
+    const handleCaseTabClick = async (caseId: string) => {
+        if (!caseId || caseId === activeCaseId) return;
+        await saveCurrentReportAsDraft(true);
+        navigate(`/case/${caseId}/report`);
+    };
 
-                // Helper for bold labels
-                const addField = (label: string, value: string, x1: number, x2: number, y: number) => {
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(label, x1, y);
-                    doc.setFont('helvetica', 'normal');
-                    doc.text(value || 'N/A', x2, y);
-                };
-
-                // Row 1
-                addField('Name:', patient.name, col1X, col2X, startY);
-                addField('Case UID:', caseInfo.case_uid, col3X, col4X, startY);
-
-                // Row 2
-                // Handle DOB formats (YYYYMMDD or regular date)
-                const patientDOB = parseDicomDate(patient.dob);
-                // Handle Case Date formats
-                const caseDateTime = parseDicomDate(caseInfo.case_date, caseInfo.case_time);
-
-                addField('DOB:', patientDOB, col1X, col2X, startY + lineHeight);
-                addField('Date:', caseDateTime, col3X, col4X, startY + lineHeight);
-
-                // Row 3
-                addField('Sex:', patient.sex, col1X, col2X, startY + lineHeight * 2);
-                addField('Modality:', caseInfo.modality, col3X, col4X, startY + lineHeight * 2);
-
-                // Horizontal Line after patient info
-                doc.line(20, startY + lineHeight * 3, 190, startY + lineHeight * 3);
-
-                // --- REPORT CONTENT ---
-                let currentY = startY + lineHeight * 3 + 15;
-                doc.setFontSize(11); // Slightly larger for readability
-
-                // Extract text from HTML to preserve structure better than plain_text
-                // Plain text from backend seems to lose newlines sometimes based on user feedback
-                // So let's try to simple-parse the HTML or use the plain text but handle it better
-
-                let reportText = report.content_plain_text || '';
-
-                // If the plain text is one giant blob, try to use html to find breaks
-                // Simple HTML text extractor that preserves some structure
-                if (report.content_html) {
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = report.content_html
-                        .replace(/<p[^>]*>/g, '\n') // Start paragraph with newline
-                        .replace(/<\/p>/g, '\n')    // End paragraph with double newline for spacing
-                        .replace(/<br\s*\/?>/g, '\n'); // Valid breaks
-
-                    const extractedText = tempDiv.textContent || tempDiv.innerText || '';
-                    // Clean up excessive newlines
-                    reportText = extractedText.replace(/\n\s*\n/g, '\n\n').trim();
-                }
-
-                // Split text to fit page width
-                const splitText = doc.splitTextToSize(reportText, 170);
-
-                // Pagination loop
-                // We need to print line by line to check for page breaks
-                // splitText is an array of strings
-                const pageHeight = doc.internal.pageSize.height;
-                const marginBottom = 60; // Space for signature
-
-                for (let i = 0; i < splitText.length; i++) {
-                    if (currentY > pageHeight - marginBottom) {
-                        doc.addPage();
-                        currentY = 20; // Reset Y for new page
-                    }
-                    doc.text(splitText[i], 20, currentY);
-                    currentY += 6; // Line height for report text
-                }
-
-                // --- FOOTER (DOCTOR & SIG) ---
-                // Calculate position for footer
-                let signatureY = currentY + 15;
-
-                // Ensure signature block isn't split or off-page
-                if (signatureY > pageHeight - 40) {
-                    doc.addPage();
-                    signatureY = 40;
-                }
-
-                // Doctor Name
-                doc.setFontSize(10);
-                doc.text('Reported By:', 140, signatureY);
-
-                doc.setFontSize(12);
-                doc.setFont('helvetica', 'bold');
-                doc.text(doctor.doctor_id?.full_name || 'Doctor', 140, signatureY + 8);
-                doc.setFont('helvetica', 'normal');
-
-                // Signature
-                if (doctor.signature_url) {
-                    try {
-                        // We need to fetch the image first to convert to base64 or blob
-                        // Since standard img tags work with URLs, for jsPDF we typically need base64
-                        // For this implementation, we'll try to add it if it is accessible or skip if CORS issues
-                        // Note: In a real browser environment, handling external image CORS for jsPDF can be tricky
-                        // simpler approach: add text placeholder if image fails
-                        const imgParams = doctor.signature_url.includes('png') ? 'PNG' : 'JPEG';
-                        doc.addImage(doctor.signature_url, imgParams, 140, signatureY + 12, 40, 20);
-                    } catch (e) {
-                        console.error('Could not load signature image', e);
-                        doc.text('(Signed)', 140, signatureY + 20);
-                    }
-                } else {
-                    doc.text('(Signed)', 140, signatureY + 20);
-                }
-
-                const fileName = (patient.name || 'Patient').replace(/\s+/g, '_') + '_Report.pdf';
-                doc.save(fileName);
-                toast.success('Report downloaded successfully');
-            } else {
-                toast.error(response.message || 'Failed to download report');
+    const toggleModality = (modality: TemplateModality) => {
+        setSelectedModalities((prev) => {
+            if (prev.includes(modality)) {
+                const next = prev.filter((item) => item !== modality);
+                return next.length > 0 ? next : prev;
             }
-        } catch (error: any) {
-            console.error('Error downloading report:', error);
-            toast.error(error.message || 'Failed to download report');
-        }
-    }, [savedReportId]);
+            return [...prev, modality];
+        });
+    };
+
+    const toggleLeftPanel = async () => {
+        await saveCurrentReportAsDraft(true);
+        setIsLeftPanelCollapsed((prev) => !prev);
+    };
+
+    const handleAddReport = async () => {
+        await saveCurrentReportAsDraft(true);
+        setStudyReports((prev) => [...prev, buildDraftReport(prev.length)]);
+        setActiveReportIndex(studyReportsRef.current.length);
+    };
+
+    const handleAddendumMode = () => {
+        if (!activeReport || activeReport.status !== 'signed_off') return;
+        setIsAddendumMode(true);
+        setAddendumText('');
+    };
 
     return (
         <div className="flex h-full bg-gray-900">
-            {/* Hidden file input for upload */}
-            <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleUploadTemplate}
-                accept=".txt,.doc,.docx,.rtf"
-                className="hidden"
-            />
-
-            {/* Opened Cases Sidebar */}
-            <div className="w-56 bg-gray-800 border-r border-gray-700 flex flex-col">
-                <div className="p-2 border-b border-gray-700 bg-gray-900">
-                    <h3 className="text-xs font-semibold text-white">Opened Cases</h3>
-                    <p className="text-[10px] text-gray-400 mt-0.5">One report window, switch cases here</p>
+            <div
+                className={`${isLeftPanelCollapsed ? 'w-14' : 'w-[360px]'} border-r border-gray-700 bg-gray-800 flex flex-col transition-all`}
+            >
+                <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
+                    {!isLeftPanelCollapsed && <h3 className="text-sm font-semibold text-gray-100">Case Workspace</h3>}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-gray-300 hover:text-white hover:bg-gray-700"
+                        onClick={toggleLeftPanel}
+                    >
+                        {isLeftPanelCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                    </Button>
                 </div>
 
-                <ScrollArea className="flex-1 p-2">
-                    {openedCases.length === 0 ? (
-                        <p className="text-xs text-gray-500 text-center py-3">No cases opened yet</p>
-                    ) : (
-                        <div className="space-y-1">
-                            {openedCases.map((openedCase) => {
-                                const isActive = openedCase.caseId === activeCaseId;
-
-                                return (
-                                    <button
-                                        key={openedCase.caseId}
-                                        onClick={() => handleCaseTabClick(openedCase.caseId)}
-                                        className={`w-full rounded-md px-2 py-1.5 text-left transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-gray-700/60 text-gray-200 hover:bg-gray-700'
-                                            }`}
-                                    >
-                                        <p className="text-xs font-medium truncate">{getCasePrimaryLabel(openedCase)}</p>
-                                        <p className={`text-[10px] truncate ${isActive ? 'text-blue-100' : 'text-gray-400'}`}>
-                                            {getCaseSecondaryLabel(openedCase)}
-                                        </p>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    )}
-                </ScrollArea>
-            </div>
-
-            {/* Template Sidebar with Upload, Recent, History */}
-            <div className="w-56 bg-gray-800 border-r border-gray-700 flex flex-col shadow-sm">
-                {/* Sidebar Header with Upload */}
-                <div className="p-2 border-b border-gray-700 bg-gray-900">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-semibold text-white">Templates</h3>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[10px] text-gray-300 cursor-pointer hover:bg-gray-700 hover:text-white"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            <Upload size={12} className="mr-1" />
-                            Upload
-                        </Button>
+                {isLeftPanelCollapsed ? (
+                    <div className="flex-1 flex flex-col items-center gap-3 py-4">
+                        <Badge className="bg-gray-700 text-gray-200 text-[10px] px-2 py-0.5">PT</Badge>
+                        <Badge className="bg-gray-700 text-gray-200 text-[10px] px-2 py-0.5">TP</Badge>
+                        <Badge className="bg-gray-700 text-gray-200 text-[10px] px-2 py-0.5">HX</Badge>
+                        <Badge className="bg-gray-700 text-gray-200 text-[10px] px-2 py-0.5">RP</Badge>
                     </div>
-                    {/* <div className="relative">
-                        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-                        <Input
-                            placeholder="Search..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-6 h-7 text-xs bg-gray-700 border-gray-600 text-gray-200 placeholder:text-gray-500"
+                ) : (
+                    <ScrollArea className="flex-1 p-3">
+                        <PatientDetailsSection
+                            patientName={patientInfo.patientName}
+                            patientId={patientInfo.patientId}
+                            patientLookupId={caseData?.patient_id}
+                            age={patientInfo.age}
+                            sex={patientInfo.sex}
+                            referredBy={patientInfo.referredBy}
+                            studyDate={patientInfo.studyDate}
+                            studyDescription={patientInfo.studyDescription}
+                            modality={caseData?.modality || 'N/A'}
+                            onLoadReport={handleLoadPreviousReport}
                         />
-                    </div> */}
-                </div>
 
-                {/* Section Tabs: All | Recent | History */}
-                <div className="flex border-b border-gray-700 bg-gray-800">
-                    <button
-                        onClick={() => setActiveSection('templates')}
-                        className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-0.5 ${activeSection === 'templates' ? 'text-blue-400 border-b-2 border-blue-500 bg-gray-700' : 'text-gray-400 hover:bg-gray-700'}`}
-                    >
-                        <FileText size={10} />
-                        All
-                    </button>
-                    <button
-                        onClick={() => setActiveSection('recent')}
-                        className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-0.5 ${activeSection === 'recent' ? 'text-blue-400 border-b-2 border-blue-500 bg-gray-700' : 'text-gray-400 hover:bg-gray-700'}`}
-                    >
-                        <Clock size={10} />
-                        Recent
-                    </button>
-                    <button
-                        onClick={() => setActiveSection('history')}
-                        className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-0.5 ${activeSection === 'history' ? 'text-blue-400 border-b-2 border-blue-500 bg-gray-700' : 'text-gray-400 hover:bg-gray-700'}`}
-                    >
-                        <History size={10} />
-                        History
-                    </button>
-                </div>
+                        <div className="mb-4 border border-gray-700 rounded-lg bg-gray-900/60">
+                            <div className="px-3 py-2 border-b border-gray-700">
+                                <h4 className="text-sm font-semibold text-gray-100">Templates</h4>
+                            </div>
+                            <div className="p-3 space-y-3">
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
+                                    <Input
+                                        value={templateSearch}
+                                        onChange={(e) => setTemplateSearch(e.target.value)}
+                                        placeholder="Search templates..."
+                                        className="pl-8 h-8 text-xs bg-gray-800 border-gray-600 text-gray-100"
+                                    />
+                                </div>
 
-                {/* Content based on active section */}
-                <ScrollArea className="flex-1">
-                    {/* All Templates */}
-                    {activeSection === 'templates' && (
-                        <>
-                            {filteredCategories.map((category) => (
-                                <div key={category.id} className="border-b border-gray-700">
-                                    <button
-                                        onClick={() => toggleCategory(category.id)}
-                                        className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-gray-700 transition-colors text-left"
-                                    >
-                                        {expandedCategories.has(category.id) ? (
-                                            <ChevronDown size={12} className="text-gray-500" />
-                                        ) : (
-                                            <ChevronRight size={12} className="text-gray-500" />
-                                        )}
-                                        <FolderOpen size={12} className="text-blue-400" />
-                                        <span className="text-xs font-medium flex-1 text-gray-200">{category.name}</span>
-                                        <Badge variant="secondary" className="h-4 text-[10px] px-1 bg-gray-700 text-gray-300">{category.templates.length}</Badge>
-                                    </button>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {TEMPLATE_MODALITY_OPTIONS.map((modality) => {
+                                        const active = selectedModalities.includes(modality);
+                                        return (
+                                            <button
+                                                key={modality}
+                                                onClick={() => toggleModality(modality)}
+                                                className={`px-2 py-1 rounded text-[10px] border transition-colors ${active
+                                                    ? 'bg-blue-600 border-blue-500 text-white'
+                                                    : 'bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700'
+                                                    }`}
+                                            >
+                                                {modality}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
 
-                                    {expandedCategories.has(category.id) && (
-                                        <div className="pb-1">
-                                            {category.templates.map((template) => (
-                                                <button
-                                                    key={template.id}
-                                                    onClick={() => handleTemplateSelect(template)}
-                                                    className={`w-full flex items-center gap-1.5 px-3 py-1 text-left text-xs transition-colors ml-2 mr-1 rounded ${selectedTemplateId === template.id
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'hover:bg-gray-700 text-gray-300'
-                                                        }`}
-                                                >
-                                                    <FileText size={10} />
-                                                    <span className="truncate">{template.name}</span>
-                                                </button>
-                                            ))}
-                                        </div>
+                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                    {filteredTemplates.map((template) => (
+                                        <button
+                                            key={template.id}
+                                            onClick={() => handleTemplateApply(template)}
+                                            className="w-full text-left px-2 py-1.5 rounded text-xs bg-gray-800 text-gray-200 border border-gray-700 hover:bg-gray-700"
+                                        >
+                                            <p className="font-medium truncate">{template.name}</p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">{template.modality} • {template.source === 'system' ? 'System' : 'User'}</p>
+                                        </button>
+                                    ))}
+                                    {filteredTemplates.length === 0 && (
+                                        <p className="text-xs text-gray-500 py-2 text-center">No templates found</p>
                                     )}
                                 </div>
-                            ))}
-                        </>
-                    )}
-
-                    {/* Recent Templates */}
-                    {activeSection === 'recent' && (
-                        <div className="p-2">
-                            <p className="text-[10px] text-gray-500 px-1 mb-1">Recently used</p>
-                            {RECENT_TEMPLATES.map((template) => {
-                                const fullTemplate = TEMPLATE_CATEGORIES
-                                    .flatMap(c => c.templates)
-                                    .find(t => t.id === template.id);
-                                return (
-                                    <button
-                                        key={template.id}
-                                        onClick={() => fullTemplate && handleTemplateSelect(fullTemplate)}
-                                        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-xs transition-colors rounded hover:bg-gray-700 text-gray-300"
-                                    >
-                                        <Clock size={10} className="text-gray-500" />
-                                        <span className="truncate">{template.name}</span>
-                                    </button>
-                                );
-                            })}
-                            {RECENT_TEMPLATES.length === 0 && (
-                                <p className="text-xs text-gray-500 text-center py-4">No recent templates</p>
-                            )}
+                            </div>
                         </div>
-                    )}
 
-                    {/* Report History */}
-                    {activeSection === 'history' && (
-                        <div className="p-2">
-                            <p className="text-[10px] text-gray-500 px-1 mb-1">Previous reports</p>
-                            {REPORT_HISTORY.map((report) => (
-                                <div
-                                    key={report.id}
-                                    className="flex flex-col gap-0.5 px-2 py-1.5 text-xs transition-colors rounded hover:bg-gray-700 cursor-pointer"
-                                >
-                                    <div className="flex items-center gap-1.5">
-                                        <History size={10} className="text-gray-500 shrink-0" />
-                                        <span className="truncate font-medium text-gray-200">{report.name}</span>
+                        <div className="mb-4 border border-gray-700 rounded-lg bg-gray-900/60">
+                            <div className="px-3 py-2 border-b border-gray-700">
+                                <h4 className="text-sm font-semibold text-gray-100">Clinical History</h4>
+                            </div>
+                            <div className="p-3">
+                                {Array.isArray((caseData as any)?.patient_history) && (caseData as any).patient_history.length > 0 ? (
+                                    <div className="space-y-1.5">
+                                        {(caseData as any).patient_history.map((item: string, index: number) => (
+                                            <a
+                                                key={`${item}-${index}`}
+                                                href={item}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="block text-xs text-blue-300 hover:text-blue-200 underline truncate"
+                                            >
+                                                History Document {index + 1}
+                                            </a>
+                                        ))}
                                     </div>
-                                    <div className="pl-4 text-[10px] text-gray-500">
-                                        {report.patientName} • {report.date}
-                                    </div>
-                                </div>
-                            ))}
-                            {REPORT_HISTORY.length === 0 && (
-                                <p className="text-xs text-gray-500 text-center py-4">No report history</p>
-                            )}
+                                ) : (
+                                    <p className="text-xs text-gray-500">No clinical history provided by center.</p>
+                                )}
+                            </div>
                         </div>
-                    )}
-                </ScrollArea>
 
-                {/* Selected Template Indicator */}
-                {selectedTemplateId && (
-                    <div className="p-2 border-t border-gray-700 bg-blue-900/30">
-                        <p className="text-[10px] text-blue-300 font-medium">Loaded:</p>
-                        <p className="text-xs text-blue-200 truncate">
-                            {TEMPLATE_CATEGORIES.flatMap(c => c.templates).find(t => t.id === selectedTemplateId)?.name || 'Uploaded Template'}
-                        </p>
-                    </div>
+                        <Button
+                            onClick={handleAddReport}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
+                        >
+                            <FilePlus2 size={14} className="mr-1.5" />
+                            Add Report
+                        </Button>
+                    </ScrollArea>
                 )}
             </div>
 
-            {/* Main Editor Area */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Case Tabs - Browser-style tabs */}
                 {openedCases.length > 0 && (
-                    <div className="bg-gray-900 border-b border-gray-700 flex items-end overflow-x-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                    <div className="bg-gray-900 border-b border-gray-700 flex items-end overflow-x-auto">
                         <div className="flex items-end h-10 px-2 gap-1">
                             {openedCases.map((openedCase) => {
-                                const isActive = openedCase.caseId === activeCaseId;
-                                
-                                // Get patient details - use stored data first, then context for active case
-                                let patientName = openedCase.patientName || 'Unknown Patient';
-                                let patientIdDisplay = openedCase.patientId || 'N/A';
-                                let sex = openedCase.patientSex || 'U';
-                                let studyDescription = openedCase.description || openedCase.modality || 'Study';
-                                
-                                // If this is the active case, prefer fresh data from context
-                                if (isActive && caseData) {
-                                    patientName = caseData.patient?.name || patientName;
-                                    patientIdDisplay = caseData.patient?.patient_id || patientIdDisplay;
-                                    sex = caseData.patient?.sex || sex;
-                                    studyDescription = caseData.description || caseData.body_part || studyDescription;
-                                }
-                                
+                                const isActiveCase = openedCase.caseId === activeCaseId;
+                                const patientName = isActiveCase
+                                    ? caseData?.patient?.name || openedCase.patientName || 'Unknown Patient'
+                                    : openedCase.patientName || 'Unknown Patient';
+                                const patientId = isActiveCase
+                                    ? caseData?.patient?.patient_id || openedCase.patientId || 'N/A'
+                                    : openedCase.patientId || 'N/A';
+                                const sex = isActiveCase
+                                    ? caseData?.patient?.sex || openedCase.patientSex || 'U'
+                                    : openedCase.patientSex || 'U';
+                                const studyDescription = isActiveCase
+                                    ? caseData?.description || caseData?.body_part || openedCase.description || 'Study'
+                                    : openedCase.description || 'Study';
+
                                 return (
                                     <div
                                         key={openedCase.caseId}
-                                        className={`
-                                            group relative flex items-center gap-2 px-3 py-2 min-w-[250px] max-w-[450px] 
-                                            rounded-t-md cursor-pointer transition-all
-                                            ${isActive 
-                                                ? 'bg-gray-800 text-white border-t-2 border-t-blue-500 shadow-lg z-10' 
-                                                : 'bg-gray-800/50 text-gray-400 hover:bg-gray-800/70 hover:text-gray-200'
-                                            }
-                                        `}
                                         onClick={() => handleCaseTabClick(openedCase.caseId)}
+                                        className={`group relative flex items-center gap-2 px-3 py-2 min-w-[300px] max-w-[520px] rounded-t-md cursor-pointer ${isActiveCase
+                                            ? 'bg-gray-800 text-white border-t-2 border-blue-500'
+                                            : 'bg-gray-800/50 text-gray-300 hover:bg-gray-800/80'
+                                            }`}
                                     >
-                                        <div className="flex-1 overflow-hidden">
-                                            <p className={`text-xs font-medium truncate ${isActive ? 'text-white' : 'text-gray-300'}`}>
-                                                {patientName} | {patientIdDisplay} / {sex} | {studyDescription}
-                                            </p>
-                                        </div>
-                                        
-                                        {/* Close button - shows on hover */}
+                                        <p className="text-xs font-medium truncate">
+                                            {patientName} | {patientId} / {sex} | {studyDescription}
+                                        </p>
                                         <button
-                                            className={`
-                                                p-0.5 rounded hover:bg-gray-700 transition-opacity
-                                                ${isActive ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover:opacity-60 hover:opacity-100!'}
-                                            `}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
+                                            className={`ml-auto p-0.5 rounded hover:bg-gray-700 ${isActiveCase ? 'opacity-60 hover:opacity-100' : 'opacity-0 group-hover:opacity-60 hover:opacity-100'}`}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
                                                 const updatedCases = removeOpenedReportCase(openedCase.caseId);
                                                 setOpenedCases(updatedCases);
-                                                
-                                                // If closing the active tab, navigate to the first remaining case or close window
-                                                if (isActive && updatedCases.length > 0) {
-                                                    navigate(`/case/${updatedCases[0].caseId}/report`);
-                                                } else if (isActive && updatedCases.length === 0) {
+                                                if (updatedCases.length === 0) {
                                                     window.close();
+                                                } else if (isActiveCase) {
+                                                    navigate(`/case/${updatedCases[0].caseId}/report`);
                                                 }
                                             }}
                                         >
@@ -906,108 +896,134 @@ export function ReportView() {
                     </div>
                 )}
 
-                {/* Actions Bar - Simplified */}
-                <div className="bg-gray-900 border-b border-gray-700 shadow-sm">
-                    <div className="flex items-center justify-between px-3 py-2">
-                        {/* Report Title/Status */}
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-gray-200">Report Editor</span>
-                            {reportData?.is_signed_off && (
-                                <Badge className="bg-green-600 text-white">Signed Off</Badge>
-                            )}
-                            {isDraft && !reportData?.is_signed_off && (
-                                <Badge variant="secondary" className="bg-yellow-600 text-white">Draft</Badge>
-                            )}
-                        </div>
+                <div className="px-4 py-2 border-b border-gray-700 bg-gray-900 flex items-center gap-2 overflow-x-auto">
+                    {studyReports.map((report, index) => {
+                        const isActive = index === activeReportIndex;
+                        return (
+                            <button
+                                key={report.localId}
+                                onClick={() => handleSwitchReport(index)}
+                                className={`px-3 py-1.5 rounded text-xs border whitespace-nowrap ${isActive
+                                    ? 'bg-blue-600 border-blue-500 text-white'
+                                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                                    }`}
+                            >
+                                {report.label}
+                                <span className="ml-2 text-[10px] opacity-80">
+                                    {report.status === 'signed_off' ? 'Signed' : report.status === 'drafted' ? 'Draft' : 'New'}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" disabled={isSaving || !savedReportId} onClick={handleDownload} className="h-7 px-2 text-xs text-gray-400 hover:text-white hover:bg-gray-700">
-                                <Download size={14} />
-                            </Button>
-                            <div className="h-6 w-px bg-gray-600 mx-1" />
+                <div className="flex-1 min-h-0 bg-gray-800">
+                    <div className="h-full p-4">
+                        {isLoadingReports ? (
+                            <div className="h-full flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                            </div>
+                        ) : (
+                            <div className="h-full bg-gray-900 rounded-lg border border-gray-700 overflow-hidden flex flex-col">
+                                <ReportEditor
+                                    ref={editorRef}
+                                    readOnly={isEditorReadOnly}
+                                    onChange={setCurrentContent}
+                                    placeholder={
+                                        isEditorReadOnly
+                                            ? 'Reported case. Click Add Addendum to make changes.'
+                                            : 'Start typing your report...'
+                                    }
+                                />
+
+                                {activeReport?.signatureBlock && (
+                                    <div className="px-4 py-3 border-t border-gray-700 bg-gray-900/80 text-xs text-gray-300">
+                                        <p className="font-medium text-gray-100">{activeReport.signatureBlock.doctor_name}</p>
+                                        {activeReport.signatureBlock.degree && (
+                                            <p>{activeReport.signatureBlock.degree}</p>
+                                        )}
+                                        {activeReport.signatureBlock.registration_number && (
+                                            <p>Reg No: {activeReport.signatureBlock.registration_number}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {activeReport?.addendums.length > 0 && (
+                                    <div className="px-4 py-3 border-t border-gray-700 bg-gray-900/70">
+                                        <p className="text-xs font-semibold text-gray-100 mb-2">Addendums</p>
+                                        <div className="space-y-2 max-h-24 overflow-y-auto">
+                                            {activeReport.addendums.map((addendum, index) => (
+                                                <div key={`${addendum.added_at || index}`} className="text-xs text-gray-300">
+                                                    <p className="text-[10px] text-gray-500">
+                                                        {addendum.added_at ? new Date(addendum.added_at).toLocaleString() : 'Addendum'}
+                                                    </p>
+                                                    <p className="whitespace-pre-wrap">{addendum.text}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {isAddendumMode && (
+                                    <div className="px-4 py-3 border-t border-gray-700 bg-blue-900/20">
+                                        <p className="text-xs font-semibold text-blue-200 mb-2">Addendum Mode</p>
+                                        <Textarea
+                                            value={addendumText}
+                                            onChange={(event) => setAddendumText(event.target.value)}
+                                            placeholder="Write addendum notes here..."
+                                            className="min-h-24 text-xs bg-gray-900 border-gray-600 text-gray-100"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="border-t border-gray-600 bg-gray-800 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs text-gray-400">
+                            Words: {currentContent.split(/\s+/).filter(Boolean).length}
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {isSaving && (
+                                <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                                    <Loader2 size={12} className="animate-spin shrink-0" />
+                                    Saving...
+                                </span>
+                            )}
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={handleSaveDraft}
-                                disabled={isSaving}
-                                className="h-7 px-2 text-xs border-gray-600 text-black cursor-pointer hover:bg-gray-700 hover:text-white"
+                                onClick={handleSaveDraftClick}
+                                disabled={isSaving || isReported || isAddendumMode}
+                                className="h-9 min-w-[88px] px-4 text-sm font-medium bg-gray-700/80 border-gray-500 text-white hover:bg-gray-600 hover:border-gray-400 disabled:opacity-50 disabled:bg-gray-800 disabled:border-gray-600"
                             >
-                                {isSaving ? (
-                                    <>
-                                        <Loader2 size={14} className="mr-1 animate-spin" />
-                                        Saving...
-                                    </>
-                                ) : (
-                                    <>
-                                        <FileCheck size={14} className="mr-1" />
-                                        Draft
-                                    </>
-                                )}
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : null}
+                                Draft
                             </Button>
-                            {/* <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-gray-600 cursor-pointer text-black hover:bg-gray-700 hover:text-white">
-                                <Eye size={14} className="mr-1" />
-                                Reviewed
-                            </Button> */}
+                            <Button
+                                variant={isAddendumMode ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={handleAddendumMode}
+                                disabled={isSaving || (!isReported && !isAddendumMode)}
+                                className={`h-9 min-w-[120px] px-4 text-sm font-medium ${isAddendumMode
+                                    ? 'bg-amber-600 hover:bg-amber-500 text-white border-0'
+                                    : 'bg-gray-700/80 border-gray-500 text-white hover:bg-gray-600 hover:border-gray-400 disabled:opacity-50 disabled:bg-gray-800 disabled:border-gray-600'
+                                    }`}
+                            >
+                                Add Addendum
+                            </Button>
                             <Button
                                 size="sm"
-                                onClick={handleSignOff}
-                                disabled={isSaving || !savedReportId}
-                                className="h-7 px-3 text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={handleSignOffClick}
+                                disabled={isSaving || (isReported && !isAddendumMode)}
+                                className="h-9 min-w-[88px] px-4 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white border-0 disabled:opacity-50"
                             >
-                                {isSaving ? (
-                                    <>
-                                        <Loader2 size={14} className="mr-1 animate-spin" />
-                                        Signing...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Send size={14} className="mr-1" />
-                                        Sign Off
-                                    </>
-                                )}
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : null}
+                                Sign Off
                             </Button>
                         </div>
-                    </div>
-                </div>
-
-                {/* Editor with Patient Details Section */}
-                <div className="flex-1 min-h-0 bg-gray-800 overflow-auto">
-                    <div className="max-w-5xl mx-auto p-4">
-                        {/* Patient Details Section - Always visible */}
-                        <PatientDetailsSection
-                            patientName={patientInfo.patientName}
-                            patientId={patientInfo.patientId}
-                            age={patientInfo.age}
-                            sex={patientInfo.sex}
-                            referredBy={patientInfo.referredBy}
-                            studyDate={patientInfo.scanDateTime}
-                            studyDescription={patientInfo.serviceName}
-                            modality={caseData?.modality || 'N/A'}
-                            onLoadReport={handleLoadPreviousReport}
-                        />
-                        
-                        {/* Editor */}
-                        <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
-                            <ReportEditor
-                                ref={editorRef}
-                                onChange={handleContentChange}
-                                placeholder="Select a template or start typing your report..."
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Minimal Footer */}
-                <div className="flex items-center justify-between px-3 py-1 bg-gray-900 border-t border-gray-700 text-[10px] text-gray-500">
-                    <div className="flex items-center gap-3">
-                        <span>Page 1/1</span>
-                        <span>Words: {currentContent.split(/\s+/).filter(Boolean).length}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <Badge variant={isDraft ? 'secondary' : 'default'} className="h-4 text-[10px] bg-gray-700 text-gray-300">
-                            {isDraft ? 'Draft' : 'Saved'}
-                        </Badge>
                     </div>
                 </div>
             </div>
